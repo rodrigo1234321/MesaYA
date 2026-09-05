@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+package-lock.json
+*.log
+repomix-output.*
+screenshots/
+.git/
+graphify-out/
+.env

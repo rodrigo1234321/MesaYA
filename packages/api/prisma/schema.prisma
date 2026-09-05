@@ -1,0 +1,461 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Restaurant {
+  id            String         @id @default(uuid())
+  name          String
+  slug          String         @unique
+  planTier      String         @default("LEAN") // LEAN | SALON_TABLET | FULL_SMARTBAND
+  timezone      String         @default("America/Argentina/Buenos_Aires")
+  whatsappPhone String?
+  pdfMenuUrl    String?
+  logoUrl       String?
+  coverImageUrl String?
+  themeColor    String         @default("#f59e0b") // Color de acento
+  templateId    String         @default("GOURMET_OBSIDIAN") // GOURMET_OBSIDIAN | NEON_BURGER | COASTAL_BEACH | MINIMAL_BISTRO
+  customFont    String         @default("plus-jakarta") // plus-jakarta | playfair | outfit | inter
+  latitude      Float?         // Para geofencing opcional (ej: -38.0055)
+  longitude     Float?         // Para geofencing opcional (ej: -57.5426)
+  radiusMeters  Int            @default(200) // Radio máximo de llamado en metros
+  createdAt     DateTime       @default(now())
+
+  tables        Table[]
+  staffUsers    StaffUser[]
+  shifts        Shift[]
+  subscription  Subscription?
+  categories    MenuCategory[]
+  moduleConfig  RestaurantModuleConfig?
+  paymentCreds  RestaurantPaymentCredentials?
+  waitlist      WaitlistEntry[]
+  loyaltyUsers  CustomerLoyalty[]
+  rewardItems   RewardItem[]
+  floorZones    FloorZone[]
+  floorLayouts  FloorPlanLayout[]
+  occupancySessions OccupancySession[]
+}
+
+// ==========================================
+// 1. CONFIGURACIÓN MODULAR PÚBLICA (UI FLAGS)
+// ==========================================
+model RestaurantModuleConfig {
+  id                      String      @id @default(cuid())
+  restaurantId            String      @unique
+  restaurant              Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  
+  // Módulo 1: Cobro y Cierre de Mesa (Flags de interfaz)
+  paymentMode             String      @default("WAITER_ONLY") // WAITER_ONLY | DIGITAL_MP | HYBRID
+  allowSplitBill          Boolean     @default(false)
+  
+  // Módulo 2: Comandas & Carrito Colaborativo
+  allowOrdering           Boolean     @default(true)
+  syncSocialCart          Boolean     @default(true)
+  requireWaiterValidation Boolean     @default(true)
+  
+  // Módulo 3: Smart Upselling
+  enableUpsell            Boolean     @default(true)
+  
+  // Módulo 4: Smart Tipping & Reseñas Éticas
+  enableSmartTips         Boolean     @default(true)
+  suggestedTipPercentages String      @default("[10, 15, 20]") // Stored as JSON string for SQLite/Postgres compatibility
+  enableReviews           Boolean     @default(true)
+  googlePlaceId           String?     // Place ID para: search.google.com/local/writereview?placeid=...
+  
+  // Módulo 5: Fila Virtual
+  enableWaitlist          Boolean     @default(false)
+  enableWaitlistPreOrder  Boolean     @default(false)
+  
+  // Módulo 6: Fidelización
+  enableRewards           Boolean     @default(false)
+  pointsPerHundredPesos   Int         @default(1)
+  
+  updatedAt               DateTime    @updatedAt
+}
+
+// ==========================================
+// 2. CREDENCIALES DE PAGO PRIVADAS (AISLADAS)
+// ==========================================
+model RestaurantPaymentCredentials {
+  id                        String      @id @default(cuid())
+  restaurantId              String      @unique
+  restaurant                Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  
+  mpCollectorId             String      // ID de usuario / vendedor de Mercado Pago
+  mpPublicKey               String?     // Clave pública
+  mpAccessTokenEncrypted    String      // AES-256-GCM (iv:tag:ciphertext)
+  mpRefreshTokenEncrypted   String      // AES-256-GCM (iv:tag:ciphertext)
+  mpTokenExpiresAt          DateTime    // Timestamp exacto de expiración
+  
+  createdAt                 DateTime    @default(now())
+  updatedAt                 DateTime    @updatedAt
+}
+
+// ==========================================
+// 3. AUDITORÍA INMUTABLE DE CONFIGURACIÓN
+// ==========================================
+model RestaurantModuleConfigAudit {
+  id             String   @id @default(cuid())
+  restaurantId   String
+  changedBy      String?  // ID o nombre del encargado/admin
+  changedField   String
+  oldValue       String?
+  newValue       String?
+  changedAt      DateTime @default(now())
+
+  @@index([restaurantId, changedAt])
+}
+
+model MenuCategory {
+  id           String      @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String      // ej: "Pastas Artesanales", "Bebidas & Tragos"
+  icon         String?     // ej: "🍝", "🍹"
+  orderIndex   Int         @default(0)
+  items        MenuItem[]
+  createdAt    DateTime    @default(now())
+}
+
+model MenuItem {
+  id           String       @id @default(uuid())
+  categoryId   String
+  category     MenuCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name         String       // ej: "Sorrentinos de Salmón & Ciboulette"
+  description  String?      // ej: "Con crema de puerros y crocante de nuez"
+  price        Float        // ej: 14500
+  imageUrl     String?
+  isAvailable  Boolean      @default(true) // Hay stock / pausado
+  isFeatured   Boolean      @default(false)
+  tags         String       @default("[]") // JSON string: ["GLUTEN_FREE", "VEGAN", "CHEF_PICK"]
+  orderIndex   Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  orderItems   OrderItem[]
+}
+
+model Table {
+  id            String       @id @default(uuid())
+  restaurantId  String
+  restaurant    Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  label         String       // e.g. "Mesa 12", "Terraza 3"
+  sector        String       @default("SALON_PRINCIPAL") // SALON_PRINCIPAL | TERRAZA | PLANTA_ALTA | VEREDA | BARRA
+  isOutdoor     Boolean      @default(false)
+  mergedWithTableId String?
+
+  // ─── RTMS: Coordenadas Canvas 2D & Geometría ───
+  posX          Float        @default(0)
+  posY          Float        @default(0)
+  width         Float        @default(80)
+  height        Float        @default(80)
+  rotation      Float        @default(0)
+  shape         String       @default("RECT") // RECT | ROUND | SQUARE | BOOTH
+  capacity      Int          @default(4)
+  floorZoneId   String?
+  floorZone     FloorZone?   @relation(fields: [floorZoneId], references: [id], onDelete: SetNull)
+
+  // ─── RTMS: Estado FSM Actual ───
+  currentState    String     @default("AVAILABLE")
+  stateChangedAt  DateTime   @default(now())
+
+  sessions          TableSession[]
+  stateEvents       TableStateEvent[]
+  occupancySessions OccupancySession[]
+
+  @@unique([restaurantId, label])
+}
+
+model TableSession {
+  id            String       @id @default(uuid())
+  tableId       String
+  table         Table        @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  token         String       @unique // UUID v4 rotativo
+  shiftId       String?
+  shift         Shift?       @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  activeKey     String?      @unique // tableId mientras la sesión está activa; null al revocar
+  expiresAt     DateTime     // TTL: 3 horas
+  closedAt      DateTime?
+  createdAt     DateTime     @default(now())
+
+  calls         CallRequest[]
+  feedback      Feedback?
+  orders        Order[]
+}
+
+model Shift {
+  id            String       @id @default(uuid())
+  restaurantId  String
+  restaurant    Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  activeKey     String?      @unique // restaurantId mientras el turno está abierto; null al cerrar
+  openedAt      DateTime     @default(now())
+  closedAt      DateTime?
+
+  sessions      TableSession[]
+}
+
+model CallRequest {
+  id              String        @id @default(uuid())
+  tableSessionId  String
+  tableSession    TableSession  @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  type            String        // BILL | WAITER | SUPPLIES | CUSTOM
+  paymentMethod   String        @default("NOT_APPLICABLE") // CASH | MERCADO_PAGO | CARD | NOT_APPLICABLE
+  note            String?
+  origin          String        @default("WEB_DIRECT") // WEB_DIRECT | WHATSAPP_FALLBACK
+  status          String        @default("PENDING") // PENDING | IN_PROGRESS | RESOLVED | CANCELLED
+  activeKey       String?       @unique // tableSessionId mientras el llamado está activo; null al resolver/cancelar
+  createdAt       DateTime      @default(now())
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+}
+
+model RateLimitBucket {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  count           Int      @default(0)
+  windowStartedAt DateTime @default(now())
+  expiresAt       DateTime
+  updatedAt       DateTime @updatedAt
+}
+
+// ==========================================
+// 4. COMANDAS, SPLIT BILL & TRANSACCIONES
+// ==========================================
+model Order {
+  id             String       @id @default(cuid())
+  tableSessionId String
+  tableSession   TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  status         String       @default("DRAFT") // DRAFT | PENDING_VALIDATION | CONFIRMED | IN_KITCHEN | SERVED | CANCELLED
+  totalAmount    Float        @default(0.0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  items          OrderItem[]
+  payments       PaymentTransaction[]
+  splitSessions  SplitBillSession[]
+}
+
+model OrderItem {
+  id             String      @id @default(cuid())
+  orderId        String
+  order          Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId     String
+  menuItem       MenuItem    @relation(fields: [menuItemId], references: [id])
+  quantity       Int         @default(1)
+  unitPrice      Float
+  notes          String?
+  addedByGuest   String      // guest session id
+  
+  // Bloqueo optimista para Split Bill por Ítem
+  claimedByGuest String?     // identificador de comensal
+  claimVersion   Int         @default(0)
+  isPaid         Boolean     @default(false)
+  
+  createdAt      DateTime    @default(now())
+}
+
+model SplitBillSession {
+  id              String       @id @default(cuid())
+  orderId         String
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  mode            String       // BY_ITEM | EQUAL_PARTS
+  totalParts      Int          @default(1) // Para EQUAL_PARTS (ej: 4 personas)
+  paidParts       Int          @default(0)
+  partAmount      Float?       // Monto por persona
+  totalAmount     Float
+  remainingAmount Float
+  status          String       @default("OPEN") // OPEN | FULLY_PAID | CANCELLED
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model PaymentTransaction {
+  id             String   @id @default(cuid())
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  tableSessionId String
+  guestSessionId String
+  splitSessionId String?  // Vínculo opcional a SplitBillSession
+  method         String   // WAITER_CASH | WAITER_CARD | WAITER_MP_QR | DIGITAL_MP_FULL | DIGITAL_MP_SPLIT
+  amount         Float
+  tipAmount      Float    @default(0.0)
+  applicationFee Float?   // Comisión de MesaYA descontada por MP
+  mpPaymentId    String?  // ID devuelto por MP para reconciliación
+  status         String   @default("PENDING") // PENDING | APPROVED | REJECTED | REFUNDED
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+  resolvedAt     DateTime?
+}
+
+// ==========================================
+// 5. FILA VIRTUAL (SMART WAITLIST)
+// ==========================================
+model WaitlistEntry {
+  id                   String     @id @default(cuid())
+  restaurantId         String
+  restaurant           Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  guestName            String
+  partySize            Int
+  phone                String     // E.164 (+549...)
+  status               String     @default("WAITING") // WAITING | CALLED | SEATED | CANCELLED | NO_SHOW
+  preOrderData         String?    // JSON string de ítems pre-seleccionados
+  estimatedWaitMinutes Int?
+  calledAt             DateTime?
+  seatedAt             DateTime?
+  createdAt            DateTime   @default(now())
+  
+  @@index([restaurantId, status])
+}
+
+// ==========================================
+// 6. FIDELIZACIÓN (MESAYA REWARDS)
+// ==========================================
+model CustomerLoyalty {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  phone        String     // E.164 (+549...)
+  points       Int        @default(0)
+  verifiedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  redemptions  RewardRedemption[]
+
+  @@unique([restaurantId, phone])
+}
+
+model RewardItem {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  pointsCost   Int
+  isAvailable  Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+}
+
+model RewardRedemption {
+  id                String          @id @default(cuid())
+  customerLoyaltyId String
+  customerLoyalty   CustomerLoyalty @relation(fields: [customerLoyaltyId], references: [id], onDelete: Cascade)
+  rewardItemId      String
+  status            String          @default("PENDING") // PENDING | REDEEMED | CANCELLED
+  createdAt         DateTime        @default(now())
+}
+
+model StaffUser {
+  id               String      @id @default(uuid())
+  restaurantId     String
+  restaurant       Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name             String
+  pinHash          String
+  role             String      @default("WAITER") // WAITER | MANAGER
+  assignedSector   String?     // e.g. SALON_PRINCIPAL
+  pushSubscription String?     // JSON serialized
+  createdAt        DateTime    @default(now())
+}
+
+model Feedback {
+  id              String        @id @default(uuid())
+  tableSessionId  String        @unique
+  tableSession    TableSession  @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  rating          Int           // 1 a 5
+  comment         String?
+  createdAt       DateTime      @default(now())
+}
+
+model Subscription {
+  id               String      @id @default(uuid())
+  restaurantId     String      @unique
+  restaurant       Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  planTier         String      @default("LEAN")
+  monthlyPriceArs  Int         @default(25000)
+  isHighSeason     Boolean     @default(true)
+  status           String      @default("ACTIVE")
+  currentPeriodEnd DateTime
+}
+
+// ==========================================
+// 7. RTMS: GESTIÓN DE SALÓN EN TIEMPO REAL
+// ==========================================
+
+model FloorZone {
+  id            String      @id @default(cuid())
+  restaurantId  String
+  restaurant    Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name          String      // ej: "Salón Principal", "Terraza"
+  color         String      @default("#3b82f6")
+  orderIndex    Int         @default(0)
+  polygonPoints String?     // JSON string '[{"x":0,"y":0},{"x":200,"y":0},...]'
+
+  tables        Table[]
+
+  @@unique([restaurantId, name])
+}
+
+model FloorPlanLayout {
+  id            String      @id @default(cuid())
+  restaurantId  String
+  restaurant    Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name          String      @default("Principal")
+  canvasWidth   Int         @default(1200)
+  canvasHeight  Int         @default(800)
+  gridSize      Int         @default(20)
+  backgroundUrl String?
+  isActive      Boolean     @default(true)
+  version       Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([restaurantId, name])
+}
+
+model TableStateEvent {
+  id          String   @id @default(cuid())
+  tableId     String
+  table       Table    @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  fromState   String
+  toState     String
+  trigger     String
+  source      String   // SYSTEM_TIMEOUT | CUSTOMER_QR | CUSTOMER_NFC | CUSTOMER_APP | CASHIER_CHECKOUT | STAFF_TERMINAL_TAP | MANAGER_OVERRIDE
+  staffUserId String?
+  metadata    String?  // JSON string
+  createdAt   DateTime @default(now())
+
+  @@index([tableId, createdAt])
+  @@index([source, createdAt])
+}
+
+model OccupancySession {
+  id                   String      @id @default(cuid())
+  tableId              String
+  table                Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  restaurantId         String
+  restaurant           Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  shiftId              String?
+  partySize            Int?
+  seatedAt             DateTime    @default(now())
+  orderedAt            DateTime?
+  servedAt             DateTime?
+  billAt               DateTime?
+  paidAt               DateTime?
+  vacatedAt            DateTime?
+  cleanedAt            DateTime?
+  totalRevenue         Float?
+
+  // Métricas denormalizadas (calculadas al cerrar sesión)
+  durationMinutes      Int?
+  timeToOrderMinutes   Int?
+  timeToServeMinutes   Int?
+  dwellAfterPayMinutes Int?
+  turnTimeMinutes      Int?
+
+  @@index([restaurantId, seatedAt])
+  @@index([tableId, seatedAt])
+}

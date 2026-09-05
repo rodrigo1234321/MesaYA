@@ -1,0 +1,464 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   MesaYA — Gastronomic Design System & Multi-Template Rendering Engine
+   ========================================================================== */
+
+:root {
+  --bg-canvas: #070a12;
+  --card-bg: rgba(13, 19, 33, 0.94);
+  --accent-primary: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-glow: rgba(245, 158, 11, 0.35);
+  --border-subtle: rgba(245, 158, 11, 0.25);
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* ==========================================================================
+   THEME 1: 🍷 GOURMET OBSIDIAN & GOLD (Trattoria, Parrilla, Bodegón de Autor)
+   ========================================================================== */
+html.theme-gourmet, body.theme-gourmet, .theme-gourmet {
+  --bg-canvas: #0b0907;
+  --card-bg: rgba(22, 18, 14, 0.96);
+  --accent-primary: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-glow: rgba(245, 158, 11, 0.35);
+  --border-subtle: rgba(245, 158, 11, 0.28);
+  --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #0b0907 !important;
+  background-image: radial-gradient(circle at 50% -10%, #26180a 0%, #0b0907 80%) !important;
+}
+
+.theme-gourmet .font-heading {
+  font-family: 'Outfit', sans-serif !important;
+}
+
+/* Classic Dot Leader for Gourmet Menus */
+.gourmet-dot-leader {
+  flex-grow: 1;
+  border-bottom: 1px dotted rgba(245, 158, 11, 0.4);
+  margin: 0 0.5rem 0.3rem 0.5rem;
+  height: 1px;
+}
+
+.gourmet-frame-gold {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.8), inset 0 0 15px rgba(245, 158, 11, 0.05);
+}
+
+.gourmet-seal-badge {
+  background: radial-gradient(circle, #b45309 0%, #78350f 100%);
+  border: 1px solid #fcd34d;
+  color: #fef3c7;
+}
+
+/* ==========================================================================
+   THEME 2: ⚡ CYBER NEON STREET (Smash Burgers, Bares & Cervecerías)
+   ========================================================================== */
+html.theme-neon, body.theme-neon, .theme-neon {
+  --bg-canvas: #07080a;
+  --card-bg: rgba(18, 20, 24, 0.97);
+  --accent-primary: #a3e635;
+  --accent-hover: #84cc16;
+  --accent-glow: rgba(163, 230, 53, 0.45);
+  --border-subtle: rgba(163, 230, 53, 0.35);
+  --font-family: 'Outfit', sans-serif;
+  --font-heading: 'Outfit', sans-serif;
+  background-color: #07080a !important;
+  background-image: 
+    radial-gradient(circle at 50% -10%, #152208 0%, #07080a 80%),
+    radial-gradient(circle at 90% 90%, rgba(244, 63, 94, 0.08) 0%, transparent 40%) !important;
+}
+
+.theme-neon .font-heading {
+  font-family: 'Outfit', sans-serif !important;
+  font-weight: 900 !important;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
+.theme-neon header {
+  border-color: rgba(163, 230, 53, 0.25) !important;
+}
+.theme-neon #restaurantLogoBadge {
+  background: linear-gradient(135deg, #a3e635, #65a30d) !important;
+  color: #090b0e !important;
+  box-shadow: 0 0 20px rgba(163, 230, 53, 0.4) !important;
+}
+.theme-neon #tableBadge {
+  background: rgba(163, 230, 53, 0.2) !important;
+  border-color: rgba(163, 230, 53, 0.5) !important;
+  color: #a3e635 !important;
+}
+.theme-neon #btnOpenMenuHeader {
+  background: rgba(163, 230, 53, 0.15) !important;
+  border-color: rgba(163, 230, 53, 0.4) !important;
+  color: #bef264 !important;
+}
+.theme-neon #btnActionBill {
+  background: linear-gradient(155deg, rgba(20, 25, 35, 0.95), rgba(12, 15, 20, 0.95)) !important;
+  border-color: rgba(163, 230, 53, 0.4) !important;
+}
+.theme-neon #btnActionWaiter {
+  background: linear-gradient(155deg, rgba(20, 25, 35, 0.95), rgba(12, 15, 20, 0.95)) !important;
+  border-color: rgba(244, 63, 94, 0.4) !important;
+}
+.theme-neon #btnActionSupplies {
+  background: linear-gradient(155deg, rgba(20, 25, 35, 0.95), rgba(12, 15, 20, 0.95)) !important;
+  border-color: rgba(250, 204, 21, 0.4) !important;
+}
+.theme-neon #heroMenuCard {
+  border-color: rgba(163, 230, 53, 0.5) !important;
+  box-shadow: 0 15px 35px -10px rgba(163, 230, 53, 0.25) !important;
+}
+.theme-neon #btnOpenMenuHero {
+  background: linear-gradient(135deg, #a3e635, #65a30d) !important;
+  color: #09090b !important;
+  box-shadow: 0 8px 25px rgba(163, 230, 53, 0.4) !important;
+}
+
+.neon-sticker-badge {
+  background: #a3e635;
+  color: #09090b;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 900;
+  transform: rotate(-2deg);
+  box-shadow: 0 4px 15px rgba(163, 230, 53, 0.4);
+}
+
+.neon-card-street {
+  border: 1px solid rgba(163, 230, 53, 0.35);
+  background: linear-gradient(145deg, rgba(24, 27, 34, 0.98), rgba(13, 16, 20, 0.98));
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.8), 0 0 15px -3px rgba(163, 230, 53, 0.15);
+}
+
+.neon-price-tag {
+  background: linear-gradient(135deg, #a3e635, #65a30d);
+  color: #000;
+  font-weight: 900;
+  font-family: 'Outfit', sans-serif;
+}
+
+/* ==========================================================================
+   THEME 3: 🌊 COASTAL SUN & SEA (Marisquerías & Paradores MDP)
+   ========================================================================== */
+html.theme-coastal, body.theme-coastal, .theme-coastal {
+  --bg-canvas: #020b17;
+  --card-bg: rgba(8, 26, 48, 0.96);
+  --accent-primary: #06b6d4;
+  --accent-hover: #0891b2;
+  --accent-glow: rgba(6, 182, 212, 0.45);
+  --border-subtle: rgba(6, 182, 212, 0.3);
+  --font-family: 'Outfit', sans-serif;
+  --font-heading: 'Outfit', sans-serif;
+  background-color: #020b17 !important;
+  background-image: 
+    radial-gradient(circle at 50% -10%, #042544 0%, #020b17 80%),
+    radial-gradient(circle at 100% 100%, rgba(14, 165, 233, 0.1) 0%, transparent 50%) !important;
+}
+
+.theme-coastal .font-heading {
+  font-family: 'Outfit', sans-serif !important;
+  font-weight: 800 !important;
+}
+
+.theme-coastal header {
+  border-color: rgba(6, 182, 212, 0.25) !important;
+}
+.theme-coastal #restaurantLogoBadge {
+  background: linear-gradient(135deg, #06b6d4, #0284c7) !important;
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.4) !important;
+}
+.theme-coastal #tableBadge {
+  background: rgba(6, 182, 212, 0.2) !important;
+  border-color: rgba(6, 182, 212, 0.5) !important;
+  color: #67e8f9 !important;
+}
+.theme-coastal #btnOpenMenuHeader {
+  background: rgba(6, 182, 212, 0.15) !important;
+  border-color: rgba(6, 182, 212, 0.4) !important;
+  color: #67e8f9 !important;
+}
+.theme-coastal #btnActionBill {
+  background: linear-gradient(155deg, rgba(12, 74, 110, 0.45), rgba(7, 26, 51, 0.95)) !important;
+  border-color: rgba(6, 182, 212, 0.45) !important;
+}
+.theme-coastal #btnActionWaiter {
+  background: linear-gradient(155deg, rgba(3, 105, 161, 0.45), rgba(7, 26, 51, 0.95)) !important;
+  border-color: rgba(56, 189, 248, 0.45) !important;
+}
+.theme-coastal #btnActionSupplies {
+  background: linear-gradient(155deg, rgba(14, 116, 144, 0.45), rgba(7, 26, 51, 0.95)) !important;
+  border-color: rgba(45, 212, 191, 0.45) !important;
+}
+.theme-coastal #heroMenuCard {
+  border-color: rgba(6, 182, 212, 0.5) !important;
+  box-shadow: 0 20px 40px -15px rgba(6, 182, 212, 0.25) !important;
+}
+.theme-coastal #btnOpenMenuHero {
+  background: linear-gradient(135deg, #06b6d4, #0284c7) !important;
+  color: #020c1b !important;
+  box-shadow: 0 8px 25px rgba(6, 182, 212, 0.4) !important;
+}
+
+.coastal-card-marine {
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  background: linear-gradient(145deg, rgba(14, 30, 58, 0.95), rgba(7, 18, 36, 0.95));
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.8), 0 0 20px -5px rgba(6, 182, 212, 0.2);
+}
+
+.coastal-seal-badge {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.35));
+  border: 1px solid rgba(6, 182, 212, 0.5);
+  color: #67e8f9;
+}
+
+/* ==========================================================================
+   THEME 4: ☕ MINIMALIST SPECIALTY BISTRO (Cafetería, Brunch & Bakery)
+   ========================================================================== */
+html.theme-minimal, body.theme-minimal, .theme-minimal {
+  --bg-canvas: #120e0b;
+  --card-bg: rgba(28, 23, 19, 0.97);
+  --accent-primary: #e6ccb2;
+  --accent-hover: #ddb892;
+  --accent-glow: rgba(230, 204, 178, 0.35);
+  --border-subtle: rgba(230, 204, 178, 0.25);
+  --font-family: 'Outfit', sans-serif;
+  --font-heading: 'Outfit', sans-serif;
+  background-color: #120e0b !important;
+  background-image: 
+    radial-gradient(circle at 50% -10%, #291a11 0%, #120e0b 80%) !important;
+}
+
+.theme-minimal .font-heading {
+  font-family: 'Outfit', sans-serif !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.01em;
+}
+
+.theme-minimal header {
+  border-color: rgba(176, 137, 104, 0.25) !important;
+}
+.theme-minimal #restaurantLogoBadge {
+  background: linear-gradient(135deg, #b08968, #7f5539) !important;
+  color: #fcfbf9 !important;
+  box-shadow: 0 0 20px rgba(176, 137, 104, 0.3) !important;
+}
+.theme-minimal #tableBadge {
+  background: rgba(176, 137, 104, 0.2) !important;
+  border-color: rgba(176, 137, 104, 0.45) !important;
+  color: #eddcd2 !important;
+}
+.theme-minimal #btnOpenMenuHeader {
+  background: rgba(176, 137, 104, 0.15) !important;
+  border-color: rgba(176, 137, 104, 0.35) !important;
+  color: #eddcd2 !important;
+}
+.theme-minimal #btnActionBill {
+  background: linear-gradient(155deg, rgba(40, 32, 26, 0.95), rgba(20, 17, 15, 0.95)) !important;
+  border-color: rgba(176, 137, 104, 0.35) !important;
+}
+.theme-minimal #btnActionWaiter {
+  background: linear-gradient(155deg, rgba(40, 32, 26, 0.95), rgba(20, 17, 15, 0.95)) !important;
+  border-color: rgba(176, 137, 104, 0.35) !important;
+}
+.theme-minimal #btnActionSupplies {
+  background: linear-gradient(155deg, rgba(40, 32, 26, 0.95), rgba(20, 17, 15, 0.95)) !important;
+  border-color: rgba(176, 137, 104, 0.35) !important;
+}
+.theme-minimal #heroMenuCard {
+  border-color: rgba(176, 137, 104, 0.4) !important;
+  box-shadow: 0 20px 40px -15px rgba(127, 85, 57, 0.25) !important;
+}
+.theme-minimal #btnOpenMenuHero {
+  background: linear-gradient(135deg, #ddb892, #b08968) !important;
+  color: #14110f !important;
+  box-shadow: 0 8px 25px rgba(176, 137, 104, 0.35) !important;
+}
+
+.minimal-tasting-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ==========================================================================
+   SMART QUICK SERVICE CARDS (ABOVE THE FOLD GLASSMORPHISM)
+   ========================================================================== */
+.service-quick-btn {
+  position: relative;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease, border-color 0.18s ease;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.service-bill {
+  background: linear-gradient(155deg, rgba(6, 78, 59, 0.45), rgba(15, 23, 42, 0.85));
+  border: 1px solid rgba(16, 185, 129, 0.38);
+  box-shadow: 0 4px 18px -4px rgba(6, 78, 59, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.service-bill:hover, .service-bill:focus {
+  border-color: rgba(52, 211, 153, 0.65);
+  box-shadow: 0 6px 22px -2px rgba(16, 185, 129, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.service-waiter {
+  background: linear-gradient(155deg, rgba(49, 46, 129, 0.45), rgba(15, 23, 42, 0.85));
+  border: 1px solid rgba(99, 102, 241, 0.38);
+  box-shadow: 0 4px 18px -4px rgba(49, 46, 129, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.service-waiter:hover, .service-waiter:focus {
+  border-color: rgba(129, 140, 248, 0.65);
+  box-shadow: 0 6px 22px -2px rgba(99, 102, 241, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.service-supplies {
+  background: linear-gradient(155deg, rgba(51, 65, 85, 0.45), rgba(15, 23, 42, 0.85));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  box-shadow: 0 4px 18px -4px rgba(245, 158, 11, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.service-supplies:hover, .service-supplies:focus {
+  border-color: rgba(251, 191, 36, 0.6);
+  box-shadow: 0 6px 22px -2px rgba(245, 158, 11, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* ==========================================================================
+   STAGGERED CASCADING ENTRANCE ANIMATIONS
+   ========================================================================== */
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.stagger-1 { animation: slideUpFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) 0.05s backwards; }
+.stagger-2 { animation: slideUpFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) 0.12s backwards; }
+.stagger-3 { animation: slideUpFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) 0.18s backwards; }
+.stagger-4 { animation: slideUpFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) 0.24s backwards; }
+
+/* ==========================================================================
+   GLOBAL UTILITIES & INTERACTION MOTION
+   ========================================================================== */
+body {
+  background-color: var(--bg-canvas) !important;
+  color: var(--text-main);
+  font-family: var(--font-family);
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.25s ease, color 0.25s ease;
+  overflow-x: hidden;
+}
+
+.pb-safe {
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Native Mobile Bottom Sheet Drawer */
+.bottom-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 60;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: manipulation;
+}
+
+.bottom-sheet-backdrop.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bottom-sheet-content {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+  background: var(--card-bg, #0f172a);
+  border-top-left-radius: 1.75rem;
+  border-top-right-radius: 1.75rem;
+  border-top: 1px solid var(--border-subtle);
+  z-index: 70;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -10px 40px -10px rgba(0, 0, 0, 0.7);
+  will-change: transform;
+}
+
+.bottom-sheet-backdrop.active .bottom-sheet-content {
+  transform: translateY(0);
+}
+
+/* Ficha de detalle de plato tiene mayor prioridad z-index si se abre desde el sommelier */
+#dishDetailSheetBackdrop {
+  z-index: 80;
+}
+#dishDetailSheetBackdrop .bottom-sheet-content {
+  z-index: 90;
+}
+
+.drag-handle-container {
+  padding: 0.6rem 0 0.4rem 0;
+  cursor: grab;
+  touch-action: none;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.drag-handle-pill {
+  width: 3rem;
+  height: 0.35rem;
+  border-radius: 9999px;
+  background-color: rgba(255, 255, 255, 0.35);
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.drag-handle-container:hover .drag-handle-pill,
+.drag-handle-container:active .drag-handle-pill {
+  background-color: rgba(255, 255, 255, 0.6);
+  transform: scaleY(1.2);
+}
+
+/* Body lock when modal/drawer is open */
+body.modal-open {
+  overflow: hidden !important;
+  touch-action: none;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.04); opacity: 0.85; }
+}
+
+.animate-glow {
+  animation: pulseGlow 2.5s infinite ease-in-out;
+}

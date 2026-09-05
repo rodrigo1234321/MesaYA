@@ -1,0 +1,67 @@
+# MesaYA — CI de build reproducible y gates de seguridad.
+#
+# Alcance deliberado:
+# - Instalación limpia con `npm ci` (lockfile versionado, ver .gitignore).
+# - Build completo, paridad de schemas, matriz de rutas y suite SQLite aislada.
+# - Job PostgreSQL efímero (servicio, sin infraestructura externa): migraciones
+#   revisadas + smoke serverless con cliente PG + suite PG enfocada.
+# - Esta CI NUNCA ejecuta seed, `db push` ni migraciones contra bases reales.
+#   La migración de release vive en `release-migrate.yml` (manual, con entorno).
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalación limpia reproducible
+        run: npm ci
+      - name: Build completo (6 workspaces)
+        run: node scripts/build.mjs
+      - name: Paridad SQLite/PostgreSQL sin deriva
+        run: node scripts/sync_supabase_schema.js --check
+      - name: Matriz de rutas (sin rutas sin clasificar)
+        run: node scripts/check-route-matrix.mjs
+      - name: Suite aislada SQLite (dev.db intacta)
+        run: node scripts/test-isolated.mjs
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci-ephemeral
+          POSTGRES_DB: mesaya_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MESAYA_PG_DATABASE_URL: postgresql://postgres:ci-ephemeral@localhost:5432/mesaya_ci
+      MESAYA_PG_DIRECT_URL: postgresql://postgres:ci-ephemeral@localhost:5432/mesaya_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalación limpia reproducible
+        run: npm ci
+      - name: Build productivo PostgreSQL explícito
+        run: npm run build:pg
+      - name: Smoke serverless con cliente PG (migraciones revisadas, base efímera)
+        run: npm run smoke:serverless
+      - name: Suite PG enfocada (guardado atómico del plano)
+        run: node scripts/test-postgres.mjs packages/api/test/floorplan-atomic-save.test.ts

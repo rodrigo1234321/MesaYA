@@ -1,0 +1,31 @@
+# MesaYA — Release controlada de migraciones (MANUAL, separada del build/preview).
+#
+# - Sólo ejecución manual (`workflow_dispatch`) contra el entorno `production`
+#   (aprobadores requeridos en GitHub Environments).
+# - Aplica ÚNICAMENTE el historial revisado con `migrate deploy` mediante
+#   `scripts/postgres-migrate.mjs`, que exige MESAYA_PG_DATABASE_URL y
+#   MESAYA_PG_DIRECT_URL explícitas y no acepta DATABASE_URL/DIRECT_URL.
+# - PROHIBIDO en este workflow: seed, `db push`, `migrate dev/reset`.
+#   Ver docs/DEPLOY_VERCEL_SUPABASE.md y docs/implementacion/SCRIPTS_AUDITADOS.md.
+name: release-migrate
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalación limpia reproducible
+        run: npm ci
+      - name: Aplicar migraciones revisadas (deploy, sin seed)
+        env:
+          MESAYA_PG_DATABASE_URL: ${{ secrets.MESAYA_PG_DATABASE_URL }}
+          MESAYA_PG_DIRECT_URL: ${{ secrets.MESAYA_PG_DIRECT_URL }}
+        run: npm --workspace=@mesaya/api run prisma:postgres:migrate

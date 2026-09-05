@@ -1,0 +1,16 @@
+{
+  "name": "@mesaya/qr-generator",
+  "version": "1.0.0",
+  "scripts": {
+    "generate": "tsx generate.ts"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/qrcode": "^1.5.5",
+    "tsx": "^4.10.5",
+    "typescript": "^5.4.5"
+  }
+}

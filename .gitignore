@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Database & Environment
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+.env
+.env.*
+!.env.example
+
+# Logs & temp
+.tmp/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Bundler outputs (el lockfile raíz SÍ se versiona para builds reproducibles)
+repomix-output.*
+
+# Graphify analysis outputs & artifacts
+graphify-out/
+
+# Hardware & QR generator outputs
+hardware/qr-generator/output/
+
+# IDE & OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+

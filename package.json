@@ -1,0 +1,37 @@
+{
+  "name": "mesaya-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema de Servicio de Mesa NFC + QR para Gastronomía MdP",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "hardware/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/start_dev_ip.js",
+    "dev:api": "npm --workspace=@mesaya/api run dev",
+    "dev:client": "npm --workspace=@mesaya/client-web run dev",
+    "dev:staff": "npm --workspace=@mesaya/staff-panel run dev",
+    "dev:admin": "npm --workspace=@mesaya/admin-dashboard run dev",
+    "prisma:seed": "npm --workspace=@mesaya/api run prisma:seed",
+    "build": "node scripts/build.mjs",
+    "build:shared": "npm --workspace=@mesaya/shared run build",
+    "build:api": "npm --workspace=@mesaya/api run build",
+    "build:pg": "node scripts/build-pg.mjs",
+    "vercel-build": "node scripts/build-pg.mjs",
+    "smoke:serverless": "node scripts/test-postgres.mjs packages/api/test/serverless-smoke.test.ts",
+    "check:routes": "node scripts/check-route-matrix.mjs",
+    "check:supabase-schema": "node scripts/sync_supabase_schema.js --check",
+    "prisma:generate": "npm --workspace=@mesaya/api run prisma:generate",
+    "prisma:migrate": "npm --workspace=@mesaya/api run prisma:migrate",
+    "deploy:supabase:push": "npm --workspace=@mesaya/api run prisma:supabase:push",
+    "deploy:supabase:seed": "npm --workspace=@mesaya/api run prisma:supabase:seed",
+    "qr:generate": "npm --workspace=@mesaya/qr-generator run generate",
+    "bootstrap:restaurant": "npx tsx scripts/bootstrap-restaurant.ts",
+    "test:isolated": "node scripts/test-isolated.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

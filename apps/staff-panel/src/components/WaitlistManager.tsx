@@ -1,0 +1,245 @@
+import React, { useEffect, useState } from 'react';
+import { StaffApi } from '../lib/api';
+import { WaitlistEntryDTO, WaitlistStatus, TableFSMState } from '@mesaya/shared';
+import { Users, Phone, Clock, BellRing, Check, RefreshCw, ShoppingBag, AlertCircle } from 'lucide-react';
+
+interface Props {
+  restaurantId: string;
+}
+
+interface TableOption {
+  id: string;
+  label: string;
+  capacity?: number;
+  sector?: string;
+}
+
+export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
+  const [queue, setQueue] = useState<WaitlistEntryDTO[]>([]);
+  const [availableTables, setAvailableTables] = useState<TableOption[]>([]);
+  const [selectedTables, setSelectedTables] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [seatingId, setSeatingId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const loadData = async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const [waitlistData, floorPlanData] = await Promise.all([
+        StaffApi.getWaitlist(restaurantId),
+        StaffApi.getFloorPlan(restaurantId).catch(() => null)
+      ]);
+      setQueue(waitlistData.queue || []);
+
+      if (floorPlanData && floorPlanData.tables) {
+        const free = floorPlanData.tables
+          .filter((t: any) => t.currentState === TableFSMState.AVAILABLE)
+          .map((t: any) => ({
+            id: t.id,
+            label: t.label,
+            capacity: t.capacity,
+            sector: t.sector
+          }));
+        setAvailableTables(free);
+      } else {
+        const tables = await StaffApi.getTables(restaurantId).catch(() => []);
+        const free = (tables || [])
+          .filter((t: any) => !t.currentState || t.currentState === TableFSMState.AVAILABLE)
+          .map((t: any) => ({
+            id: t.id,
+            label: t.label,
+            capacity: t.capacity,
+            sector: t.sector
+          }));
+        setAvailableTables(free);
+      }
+    } catch (err: any) {
+      console.error('Error al cargar fila y mesas:', err);
+      setErrorMessage(err.message || 'Error al actualizar información');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
+  }, [restaurantId]);
+
+  const handleCall = async (id: string) => {
+    setErrorMessage(null);
+    try {
+      await StaffApi.callWaitlistGuest(id);
+      await loadData();
+    } catch (err: any) {
+      console.error('Error al llamar:', err);
+      setErrorMessage(err.message || 'Error al llamar comensal');
+    }
+  };
+
+  const handleSeat = async (id: string) => {
+    const tableId = selectedTables[id];
+    if (!tableId || !tableId.trim()) {
+      return;
+    }
+    setSeatingId(id);
+    setErrorMessage(null);
+    try {
+      await StaffApi.seatWaitlistGuest(id, tableId.trim());
+      setSelectedTables(prev => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+      await loadData();
+    } catch (err: any) {
+      console.error('Error al sentar:', err);
+      setErrorMessage(err.message || 'Error al sentar comensal en la mesa elegida');
+    } finally {
+      setSeatingId(null);
+    }
+  };
+
+  if (loading && queue.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-16 text-slate-400 space-x-2">
+        <RefreshCw className="w-5 h-5 animate-spin text-cyan-400" />
+        <span className="text-xs font-bold">Cargando fila de espera y mesas...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {errorMessage && (
+        <div className="p-3 bg-red-950/40 border border-red-500/50 rounded-xl text-red-300 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-2 text-xs text-slate-300 font-bold">
+          <Users className="w-4 h-4 text-cyan-400" />
+          <span>Fila de Espera en Puerta ({queue.length})</span>
+          <span className="text-[11px] text-slate-500 font-normal">
+            • {availableTables.length} mesas libres
+          </span>
+        </div>
+        <button
+          onClick={loadData}
+          className="text-xs text-cyan-400 font-semibold flex items-center gap-1 hover:underline"
+        >
+          <RefreshCw className="w-3 h-3" />
+          <span>Refrescar</span>
+        </button>
+      </div>
+
+      {queue.length === 0 ? (
+        <div className="py-12 bg-slate-900/60 border border-slate-800 rounded-2xl text-center space-y-1">
+          <p className="text-xs font-bold text-slate-300">No hay grupos esperando en la puerta</p>
+          <p className="text-[11px] text-slate-500">
+            Apenas un comensal escanee el QR de entrada aparecerá acá
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {queue.map((item, index) => {
+            const chosenTableId = selectedTables[item.id] || '';
+            return (
+              <div
+                key={item.id}
+                className={`p-4 rounded-2xl border transition-all ${
+                  item.status === WaitlistStatus.CALLED
+                    ? 'bg-amber-950/20 border-amber-500/40 shadow-lg shadow-amber-950/20'
+                    : 'bg-slate-900/90 border-slate-800'
+                }`}
+              >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-full bg-cyan-500/20 text-cyan-300 font-black text-xs flex items-center justify-center font-mono">
+                      #{index + 1}
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-white">{item.guestName}</h4>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                        <span className="flex items-center gap-1">
+                          <Users className="w-3 h-3 text-slate-500" />
+                          <strong>{item.partySize}</strong> personas
+                        </span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 font-mono">
+                          <Phone className="w-3 h-3 text-slate-500" />
+                          {item.phone}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {item.status === WaitlistStatus.WAITING ? (
+                      <button
+                        onClick={() => handleCall(item.id)}
+                        className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold flex items-center gap-1 shadow-md shadow-amber-500/20 active:scale-95 transition-all"
+                      >
+                        <BellRing className="w-3.5 h-3.5" />
+                        <span>Llamar</span>
+                      </button>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold text-[11px] flex items-center gap-1 animate-pulse">
+                        <Clock className="w-3 h-3" />
+                        <span>Llamado</span>
+                      </span>
+                    )}
+
+                    {/* Selector explícito de mesa destino libre antes de permitir sentar */}
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={chosenTableId}
+                        onChange={(e) => setSelectedTables(prev => ({ ...prev, [item.id]: e.target.value }))}
+                        className="bg-slate-800 border border-slate-700 text-xs rounded-xl px-2.5 py-1.5 text-white focus:outline-none focus:border-cyan-400"
+                      >
+                        <option value="">-- Mesa libre --</option>
+                        {availableTables.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.label} (Cap: {t.capacity || '?'})
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        disabled={!chosenTableId || seatingId === item.id}
+                        onClick={() => handleSeat(item.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow-md transition-all ${
+                          chosenTableId && seatingId !== item.id
+                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-95 cursor-pointer'
+                            : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50'
+                        }`}
+                        title={!chosenTableId ? 'Selecciona una mesa libre primero' : 'Sentar al grupo'}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{seatingId === item.id ? 'Sentando...' : 'Sentar'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pre-Order preview */}
+                {item.preOrderData && item.preOrderData.length > 0 && (
+                  <div className="mt-2.5 pt-2.5 border-t border-slate-800/80 flex items-center gap-1.5 text-[11px] text-amber-300">
+                    <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
+                    <span className="font-semibold">
+                      Pre-orden lista ({item.preOrderData.reduce((s, it) => s + it.quantity, 0)} platos listos para marchar)
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
