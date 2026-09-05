@@ -42,8 +42,13 @@ const port = Number(process.env.PORT) || 3000;
 export async function buildApp() {
   // Deliberadamente antes de construir o escuchar: producción falla cerrada.
   const environment = getEnvironmentConfig();
+  // trustProxy desactivado explícito: request.ip es la dirección observada
+  // por el servidor. Las cabeceras X-Forwarded-* / X-Real-IP nunca se usan
+  // para derivar IP (ver lib/rate-limit-ip.ts: sólo x-vercel-forwarded-for
+  // en runtime Vercel reconocido). No activar trustProxy global.
   const app = Fastify({
-    logger: process.env.NODE_ENV === 'test' ? false : true
+    logger: process.env.NODE_ENV === 'test' ? false : true,
+    trustProxy: false
   });
 
   await app.register(cors, {
@@ -62,7 +67,20 @@ export async function buildApp() {
 
   // Global Error Handler for standardized JSON responses
   app.setErrorHandler((error, request, reply) => {
-    const statusCode = (error as any).statusCode || (error as any).status || 500;
+    const err = error as {
+      statusCode?: unknown;
+      status?: unknown;
+      code?: unknown;
+      message?: unknown;
+      details?: unknown;
+    };
+    const rawStatus =
+      typeof err.statusCode === 'number'
+        ? err.statusCode
+        : typeof err.status === 'number'
+          ? err.status
+          : 500;
+    const statusCode = rawStatus;
     const isClientError = statusCode >= 400 && statusCode < 500;
 
     if (!isClientError) {
@@ -70,15 +88,15 @@ export async function buildApp() {
     }
 
     const isProd = process.env.NODE_ENV === 'production';
-    const errorMessage = isClientError || !isProd
-      ? (error.message || 'Error en la solicitud')
-      : 'Error interno del servidor';
+    const messageText = typeof err.message === 'string' && err.message ? err.message : 'Error en la solicitud';
+    const errorMessage = isClientError || !isProd ? messageText : 'Error interno del servidor';
 
+    const codeText = typeof err.code === 'string' && err.code ? err.code : undefined;
     const response = {
       error: errorMessage,
-      code: (error as any).code || (statusCode === 404 ? 'NOT_FOUND' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR'),
+      code: codeText || (statusCode === 404 ? 'NOT_FOUND' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR'),
       statusCode,
-      ...(process.env.NODE_ENV === 'development' ? { details: (error as any).details } : {})
+      ...(process.env.NODE_ENV === 'development' ? { details: err.details } : {})
     };
 
     reply.status(statusCode).send(response);

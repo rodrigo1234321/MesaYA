@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
 import { getEnvironmentConfig, STAFF_JWT_EXPIRES_IN } from '../lib/environment';
 import { assertValidPin } from '../lib/pin-policy';
+import { getRateLimitIp } from '../lib/rate-limit-ip';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
 
 export async function authRoutes(fastify: FastifyInstance) {
@@ -95,8 +96,10 @@ export async function authRoutes(fastify: FastifyInstance) {
       }
 
       // Anti-abuso por IP con política propia (no reutilizar WAITLIST_*).
+      // Contrato etapa 02 (lib/rate-limit-ip): fuera de Vercel se ignora
+      // cualquier cabecera de reenvío; en Vercel sólo x-vercel-forwarded-for.
       const registerDecision = await AbuseControlService.consume(
-        `register:ip:${request.ip || 'unknown'}`,
+        `register:ip:${getRateLimitIp(request)}`,
         AbusePolicies.REGISTER_RESTAURANT_BY_IP
       );
       if (!registerDecision.allowed) {
@@ -264,11 +267,11 @@ export async function authRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: 'Restaurante no encontrado' });
       }
 
-      // Fastify request.ip es la dirección observada por el servidor. No se
-      // confía en X-Forwarded-For porque esta app no configura un proxy de
-      // confianza.
+      // Contrato etapa 02 (lib/rate-limit-ip): request.ip con trustProxy
+      // desactivado fuera de Vercel; x-vercel-forwarded-for estricto en
+      // Vercel. Cabeceras falsificadas no cambian la clave fuera de Vercel.
       const loginDecision = await AbuseControlService.consume(
-        `login:tenant:${rest.id}:ip:${request.ip || 'unknown'}`,
+        `login:tenant:${rest.id}:ip:${getRateLimitIp(request)}`,
         AbusePolicies.LOGIN_BY_IP_TENANT
       );
       if (!loginDecision.allowed) {

@@ -3,6 +3,7 @@ import { StaffService } from '../services/staff.service';
 import { StaffLoginDTO } from '@mesaya/shared';
 import { STAFF_JWT_EXPIRES_IN } from '../lib/environment';
 import { assertValidPin } from '../lib/pin-policy';
+import { getRateLimitIp } from '../lib/rate-limit-ip';
 import { verifyManagerRole } from '../middlewares/auth.middleware';
 import { prisma } from '../lib/prisma';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
@@ -37,8 +38,10 @@ export async function staffRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: 'Restaurante no encontrado' });
       }
 
+      // Contrato etapa 02 (lib/rate-limit-ip): misma clave canónica que
+      // login-admin; cabeceras de reenvío ignoradas fuera de Vercel.
       const loginDecision = await AbuseControlService.consume(
-        `login:tenant:${restaurant.id}:ip:${request.ip || 'unknown'}`,
+        `login:tenant:${restaurant.id}:ip:${getRateLimitIp(request)}`,
         AbusePolicies.LOGIN_BY_IP_TENANT
       );
       if (!loginDecision.allowed) {
