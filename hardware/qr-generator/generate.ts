@@ -1,4 +1,3 @@
-import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
 
@@ -9,8 +8,12 @@ interface TableQRConfig {
   baseUrl?: string;
 }
 
-async function generateTableQR(config: TableQRConfig, outputDir: string) {
-  const baseUrl = config.baseUrl || 'https://mesaya.app';
+export async function generateTableQR(config: TableQRConfig, outputDir: string) {
+  // Sin fallback silencioso: baseUrl explícita requerida por el llamante.
+  const baseUrl = config.baseUrl;
+  if (!baseUrl) {
+    throw new Error('generateTableQR requiere baseUrl explícita (ver resolveBaseUrl).');
+  }
   const url = config.token
     ? `${baseUrl}/mesa/${encodeURIComponent(config.tableLabel)}?token=${config.token}`
     : `${baseUrl}/r/${config.restaurantSlug}/mesa/${encodeURIComponent(config.tableLabel)}`;
@@ -22,6 +25,8 @@ async function generateTableQR(config: TableQRConfig, outputDir: string) {
   const safeName = config.tableLabel.toLowerCase().replace(/[^a-z0-9]/g, '_');
   const svgPath = path.join(outputDir, `qr_${safeName}.svg`);
 
+  // Importación diferida: los tests de resolveBaseUrl no requieren 'qrcode'.
+  const { default: QRCode } = await import('qrcode');
   // Generate SVG with high error correction (Level H for laser engraving / logo embedding)
   const svgString = await QRCode.toString(url, {
     type: 'svg',
@@ -57,12 +62,32 @@ async function generateTableQR(config: TableQRConfig, outputDir: string) {
   console.log(`✅ QR generado para [${config.tableLabel}] -> ${svgPath}`);
 }
 
+export function resolveBaseUrl(env: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv): string {
+  const isProduction = env.NODE_ENV === 'production';
+  const explicit = (env.MESAYA_PUBLIC_URL || env.VITE_CLIENT_URL || env.VITE_CLIENT_WEB_URL || '').trim();
+  if (explicit) {
+    let url: URL;
+    try {
+      url = new URL(explicit);
+    } catch (_) {
+      throw new Error(`URL pública de QR inválida: ${explicit}. Configurá MESAYA_PUBLIC_URL (o VITE_CLIENT_URL) con https://<dominio-comensal>.`);
+    }
+    if (url.protocol !== 'https:' || ['localhost', '127.0.0.1', '::1'].includes(url.hostname)) {
+      throw new Error(`URL pública de QR debe ser HTTPS pública: ${explicit}. En local usá --dev (http://localhost:5173).`);
+    }
+    return explicit.replace(/\/$/, '');
+  }
+  if (isProduction) {
+    throw new Error('En producción se exige MESAYA_PUBLIC_URL (o VITE_CLIENT_URL) con URL pública HTTPS para QR. Sin ella no se genera ningún QR.');
+  }
+  // Experiencia local segura: localhost explícito.
+  if (argv.includes('--dev')) return 'http://localhost:5173';
+  return 'http://localhost:5173';
+}
+
 async function main() {
   const outputDir = path.join(__dirname, 'output');
-  const targetBaseUrl =
-    process.env.MESAYA_PUBLIC_URL ||
-    process.env.VITE_CLIENT_URL ||
-    (process.argv.includes('--dev') ? 'http://localhost:5173' : 'https://mesaya.app');
+  const targetBaseUrl = resolveBaseUrl();
 
   console.log(`🏷️ Generando lote de plantillas QR vectoriales (Base URL: ${targetBaseUrl})...`);
 
@@ -86,4 +111,11 @@ async function main() {
   console.log(`\n🎉 Se generaron ${tables.length} archivos SVG en ${outputDir}`);
 }
 
-main().catch(console.error);
+export type { TableQRConfig };
+
+// No lanzar efectos al importar (tests importan resolveBaseUrl/generateTableQR).
+const isQrDirectRun =
+  typeof process.argv[1] === 'string' && /generate(\.[jt]s)?$/.test(process.argv[1]);
+if (isQrDirectRun && !process.env.VITEST_WORKER_ID) {
+  main().catch(console.error);
+}

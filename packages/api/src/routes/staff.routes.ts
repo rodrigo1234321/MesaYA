@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { StaffService } from '../services/staff.service';
 import { StaffLoginDTO } from '@mesaya/shared';
 import { STAFF_JWT_EXPIRES_IN } from '../lib/environment';
+import { assertValidPin } from '../lib/pin-policy';
 import { verifyManagerRole } from '../middlewares/auth.middleware';
 import { prisma } from '../lib/prisma';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
@@ -9,17 +10,21 @@ import { AbuseControlService, AbusePolicies } from '../services/abuse-control.se
 export async function staffRoutes(fastify: FastifyInstance) {
   fastify.post('/staff/login', async (request, reply) => {
     try {
-      const body = request.body as StaffLoginDTO;
+      const body = (request.body || {}) as StaffLoginDTO;
       if (
         !body ||
         typeof body.restaurantSlug !== 'string' ||
         typeof body.pin !== 'string' ||
         !body.restaurantSlug.trim() ||
-        !body.pin.trim() ||
-        body.pin.length > 32 ||
         body.restaurantSlug.length > 100
       ) {
         return reply.status(400).send({ error: 'restaurantSlug y pin son requeridos y deben ser válidos' });
+      }
+      // PIN 4–6 numérico antes de DB/bcrypt, alineado con login-admin.
+      try {
+        assertValidPin(body.pin);
+      } catch (err: any) {
+        return reply.status(400).send({ error: err.message, code: err.code || 'PIN_INVALID' });
       }
 
       const cleanSlug = body.restaurantSlug.trim();
@@ -46,7 +51,7 @@ export async function staffRoutes(fastify: FastifyInstance) {
 
       const { staffUser } = await StaffService.login({
         restaurantSlug: restaurant.slug,
-        pin: body.pin.trim()
+        pin: body.pin
       });
       const token = fastify.jwt.sign({
         sub: staffUser.id,

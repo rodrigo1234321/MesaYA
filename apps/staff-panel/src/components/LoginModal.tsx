@@ -2,7 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { StaffApi, API_BASE } from '../lib/api';
 import { StaffUserDTO } from '@mesaya/shared';
 import { unlockAudio } from '../lib/audio';
-import { Lock, ArrowRight, UserCheck, Shield, Sparkles } from 'lucide-react';
+import { Lock, ArrowRight } from 'lucide-react';
+
+const PIN_PATTERN = /^\d{4,6}$/;
 
 interface LoginModalProps {
   onSuccess: (user: StaffUserDTO) => void;
@@ -33,6 +35,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
 
   const doLogin = useCallback(async (pinToUse: string) => {
     if (!pinToUse || loading) return;
+    if (!PIN_PATTERN.test(pinToUse)) {
+      setError('El PIN debe tener entre 4 y 6 dígitos.');
+      return;
+    }
     setLoading(true);
     setError(null);
     unlockAudio();
@@ -52,12 +58,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
   }, [slug, loading, onSuccess]);
 
   const handleKeyPress = (num: string) => {
-    if (pin.length < 4) {
+    if (pin.length < 6) {
       const newPin = pin + num;
       setPin(newPin);
       setError(null);
       unlockAudio();
-      if (newPin.length === 4) {
+      if (newPin.length === 6) {
         doLogin(newPin);
       }
     }
@@ -68,7 +74,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
     setError(null);
   };
 
-  // Listen to physical keyboard events
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (loading) return;
@@ -76,9 +81,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
       if (e.key >= '0' && e.key <= '9') {
         e.preventDefault();
         setPin(prev => {
-          if (prev.length < 4) {
+          if (prev.length < 6) {
             const next = prev + e.key;
-            if (next.length === 4) {
+            if (next.length === 6) {
               setTimeout(() => doLogin(next), 50);
             }
             return next;
@@ -103,11 +108,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [pin, loading, doLogin]);
 
-  const handleQuickLogin = (quickPin: string) => {
-    setPin(quickPin);
-    doLogin(quickPin);
-  };
-
   return (
     <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto">
       <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 my-auto">
@@ -117,7 +117,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
           </div>
           <h2 className="text-xl font-black text-white tracking-tight">Panel Mozo / Staff</h2>
           <p className="text-xs text-slate-400">
-            Ingresá tu PIN de 4 dígitos (teclado en pantalla o físico)
+            Ingresá tu PIN de 4 a 6 dígitos (teclado en pantalla o físico). Se envía con Enter/botón o al sexto dígito.
           </p>
         </div>
 
@@ -145,9 +145,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
           </div>
         )}
 
-        {/* PIN display dots */}
-        <div className="flex justify-center items-center space-x-3.5 py-1">
-          {[0, 1, 2, 3].map(idx => (
+        {/* PIN display dots (4–6) */}
+        <div className="flex justify-center items-center space-x-2.5 py-1">
+          {[0, 1, 2, 3, 4, 5].map(idx => (
             <div
               key={idx}
               className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
@@ -200,37 +200,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
               <ArrowRight className="w-5 h-5" />
             )}
           </button>
-        </div>
-
-        {/* 1-Click Fast Login for Demo */}
-        <div className="pt-2 border-t border-slate-800/80 space-y-2">
-          <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold px-1">
-            <span className="flex items-center gap-1 text-slate-400">
-              <Sparkles className="w-3 h-3 text-indigo-400" /> Acceso Rápido Demo
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={loading}
-              onClick={() => handleQuickLogin('1234')}
-              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-800/60 text-indigo-200 text-xs font-bold active:scale-95 transition-all"
-            >
-              <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Mozo (1234)</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={loading}
-              onClick={() => handleQuickLogin('9999')}
-              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 text-slate-300 text-xs font-bold active:scale-95 transition-all"
-            >
-              <Shield className="w-3.5 h-3.5 text-amber-400" />
-              <span>Admin (9999)</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>

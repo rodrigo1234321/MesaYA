@@ -38,9 +38,10 @@ export class AdminApi {
     const error = await response.json().catch(() => ({ error: fallback }));
     if (response.status === 401 || response.status === 403) {
       this.logout();
-      throw new Error('Tu sesión no tiene autorización para esta acción. Volvé a iniciar sesión.');
+      // 403 debe mostrar el message descriptivo de la API, no sólo FORBIDDEN.
+      throw new Error((error as any).message || (error as any).error || fallback);
     }
-    throw new Error(error.error || fallback);
+    throw new Error((error as any).message || (error as any).error || fallback);
   }
   static getAuthToken(): string | null {
     return localStorage.getItem('mesaya_admin_token');
@@ -93,7 +94,7 @@ export class AdminApi {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Error al registrar local' }));
-      throw new Error(err.error || 'Error al registrar restaurante');
+      throw new Error((err as any).message || (err as any).error || 'Error al registrar restaurante');
     }
 
     const resData = await res.json();
@@ -111,7 +112,7 @@ export class AdminApi {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Error de autenticación' }));
-      throw new Error(err.error || 'PIN o restaurante incorrecto');
+      throw new Error((err as any).message || (err as any).error || 'PIN o restaurante incorrecto');
     }
 
     const resData = await res.json();

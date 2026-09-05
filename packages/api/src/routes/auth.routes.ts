@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
 import { getEnvironmentConfig, STAFF_JWT_EXPIRES_IN } from '../lib/environment';
+import { assertValidPin } from '../lib/pin-policy';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
 
 export async function authRoutes(fastify: FastifyInstance) {
@@ -37,12 +38,12 @@ export async function authRoutes(fastify: FastifyInstance) {
         name,
         slug,
         managerName = 'Administrador',
-        pin = '1234',
+        pin,
         templateId = 'GOURMET_OBSIDIAN',
         themeColor = '#f59e0b',
         tablesCount = 5,
         coverImageUrl
-      } = request.body as {
+      } = (request.body || {}) as {
         name: string;
         slug: string;
         managerName?: string;
@@ -53,15 +54,58 @@ export async function authRoutes(fastify: FastifyInstance) {
         coverImageUrl?: string;
       };
 
-      if (!name || !name.trim() || !slug || !slug.trim()) {
-        return reply.status(400).send({ error: 'El nombre y el slug del restaurante son requeridos' });
+      // Validación barata de estructura/límites ANTES del contador anti-abuso
+      // y de cualquier lectura/escritura: entradas inválidas no consumen bucket.
+      if (typeof name !== 'string' || !name.trim() || name.trim().length > 120) {
+        return reply.status(400).send({ error: 'El nombre del restaurante es requerido (máx. 120)' });
+      }
+      if (typeof slug !== 'string' || !slug.trim() || slug.trim().length > 100) {
+        return reply.status(400).send({ error: 'El slug del restaurante es requerido (máx. 100)' });
+      }
+      if (typeof managerName !== 'string' || !managerName.trim() || managerName.trim().length > 120) {
+        return reply.status(400).send({ error: 'Nombre de encargado inválido' });
+      }
+      try {
+        // Sin trim: espacios invalidan el PIN y se hashea la misma representación.
+        assertValidPin(pin);
+      } catch (err: any) {
+        return reply.status(err.statusCode || 400).send({ error: err.message, code: err.code || 'PIN_INVALID' });
+      }
+      if (!Number.isInteger(tablesCount) || (tablesCount as number) < 0 || (tablesCount as number) > 100) {
+        return reply.status(400).send({ error: 'tablesCount debe ser un entero entre 0 y 100', code: 'TABLES_COUNT_INVALID' });
+      }
+      if (typeof templateId !== 'string' || templateId.length > 60) {
+        return reply.status(400).send({ error: 'templateId inválido' });
+      }
+      if (typeof themeColor !== 'string' || themeColor.length > 32) {
+        return reply.status(400).send({ error: 'themeColor inválido' });
+      }
+      if (coverImageUrl !== undefined && (typeof coverImageUrl !== 'string' || coverImageUrl.length > 500)) {
+        return reply.status(400).send({ error: 'coverImageUrl inválido' });
       }
 
       const cleanSlug = slug
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9-]/g, '-')
-        .replace(/-+/g, '-');
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(cleanSlug) || cleanSlug.length < 3 || cleanSlug.length > 100) {
+        return reply.status(400).send({ error: 'Slug canónico inválido (a-z, 0-9 y guiones, 3–100)', code: 'SLUG_INVALID' });
+      }
+
+      // Anti-abuso por IP con política propia (no reutilizar WAITLIST_*).
+      const registerDecision = await AbuseControlService.consume(
+        `register:ip:${request.ip || 'unknown'}`,
+        AbusePolicies.REGISTER_RESTAURANT_BY_IP
+      );
+      if (!registerDecision.allowed) {
+        reply.header('Retry-After', String(registerDecision.retryAfterSeconds));
+        return reply.status(429).send({
+          error: 'Demasiados intentos de alta. Por favor aguardá unos minutos.',
+          code: 'RATE_LIMIT_EXCEEDED'
+        });
+      }
 
       // Check if slug already exists
       const existing = await prisma.restaurant.findUnique({
@@ -72,8 +116,8 @@ export async function authRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: `El slug '${cleanSlug}' ya se encuentra en uso. Por favor elige otro.` });
       }
 
-      const pinHash = await bcrypt.hash(pin.trim(), 10);
-      const count = Math.max(1, Math.min(Number(tablesCount) || 5, 50));
+      const pinHash = await bcrypt.hash(pin, 10);
+      const count = tablesCount as number;
 
       const result = await prisma.$transaction(async (tx) => {
         // 1. Create Restaurant
@@ -195,10 +239,20 @@ export async function authRoutes(fastify: FastifyInstance) {
   // 3. Manager/Admin Login
   fastify.post('/auth/login-admin', async (request, reply) => {
     try {
-      const { restaurantSlug, pin } = request.body as { restaurantSlug: string; pin: string };
+      const { restaurantSlug, pin } = (request.body || {}) as { restaurantSlug: string; pin: string };
 
-      if (!restaurantSlug || !pin) {
-        return reply.status(400).send({ error: 'restaurantSlug y pin son requeridos' });
+      if (
+        typeof restaurantSlug !== 'string' ||
+        !restaurantSlug.trim() ||
+        restaurantSlug.length > 100
+      ) {
+        return reply.status(400).send({ error: 'restaurantSlug es requerido y debe ser válido' });
+      }
+      // PIN 4–6 numérico validado ANTES de DB/bcrypt (400 PIN_INVALID).
+      try {
+        assertValidPin(pin);
+      } catch (err: any) {
+        return reply.status(400).send({ error: err.message, code: err.code || 'PIN_INVALID' });
       }
 
       const rest = await prisma.restaurant.findFirst({
@@ -228,7 +282,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       // Check PIN against managers or staff
       let authenticatedUser = null;
       for (const user of rest.staffUsers) {
-        const isMatch = await bcrypt.compare(pin.trim(), user.pinHash);
+        const isMatch = await bcrypt.compare(pin, user.pinHash);
         if (isMatch) {
           authenticatedUser = user;
           break;

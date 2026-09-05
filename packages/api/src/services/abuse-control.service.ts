@@ -11,13 +11,20 @@ export interface RateLimitDecision {
   retryAfterSeconds: number;
 }
 
-/** Límites deliberadamente pequeños y explícitos para superficies costosas o públicas. */
+/** Límites deliberadamente pequeños y explícitos para superficies costosas o públicas.
+ * LOGIN_BY_IP_TENANT: 25 intentos por 5 minutos (C02/punto inicial del plan).
+ * No se presenta como protección completa ante PIN corto: el control
+ * complementario de fallos (persistencia nueva si se requiere) queda para la
+ * etapa de datos. Clave canónica por restaurante e IP + Retry-After. */
 export const AbusePolicies = {
-  LOGIN_BY_IP_TENANT: { limit: 5, windowSeconds: 5 * 60 },
+  LOGIN_BY_IP_TENANT: { limit: 25, windowSeconds: 5 * 60 },
   // Permite reintentos legítimos (p. ej. llamado al mozo y luego cuenta) sin
   // relajar la deduplicación de activos, que sigue siendo una clave única.
   CALL_BY_SESSION: { limit: 10, windowSeconds: 60 },
   WAITLIST_BY_IP_TENANT: { limit: 3, windowSeconds: 10 * 60 },
+  // Alta pública de restaurantes: superficie propia (no reutilizar la
+  // semántica WAITLIST_BY_IP_TENANT). Mismo umbral inicial 3/10 min.
+  REGISTER_RESTAURANT_BY_IP: { limit: 3, windowSeconds: 10 * 60 },
   AI_BY_TENANT: { limit: 10, windowSeconds: 60 * 60 }
 } as const satisfies Record<string, RateLimitPolicy>;
 

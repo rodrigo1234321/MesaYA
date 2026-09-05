@@ -31,7 +31,11 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ restaurantId }) => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !pin) return;
+    if (!name.trim()) return;
+    if (!/^\d{4,6}$/.test(pin)) {
+      setError('El PIN debe tener entre 4 y 6 dígitos numéricos, sin espacios.');
+      return;
+    }
 
     try {
       setError(null);
@@ -111,16 +115,20 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ restaurantId }) => {
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">PIN Numérico (4 dígitos)</label>
+                <label className="block text-slate-400 mb-1">PIN Numérico (4 a 6 dígitos)</label>
                 <input
                   type="password"
                   maxLength={6}
-                  placeholder="1234"
+                  minLength={4}
+                  inputMode="numeric"
+                  pattern="\d{4,6}"
+                  placeholder="4–6 dígitos"
                   value={pin}
-                  onChange={e => setPin(e.target.value.replace(/[^0-9]/g, ''))}
+                  onChange={e => setPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white text-center tracking-widest text-base font-mono focus:outline-none focus:border-indigo-500"
                   required
                 />
+                <p className="mt-1 text-[11px] text-slate-500">Sólo dígitos, 4 a 6, sin espacios. Duplicados por local rechazados.</p>
               </div>
 
               <div>

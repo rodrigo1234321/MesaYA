@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AdminApi, TableItem, RestaurantItem } from './lib/api';
 import { TablesManager } from './components/TablesManager';
 import { MenuManager } from './components/MenuManager';
@@ -8,7 +8,106 @@ import { StaffManager } from './components/StaffManager';
 import { ModuleConfigManager } from './components/ModuleConfigManager';
 import { FloorPlanManager } from './components/FloorPlan/FloorPlanManager';
 import { RTMSAnalyticsView } from './components/RTMSAnalyticsView';
-import { Utensils, LayoutGrid, BookOpen, Users, BarChart3, RefreshCw, Plus, Store, ChevronDown, Sliders, Map } from 'lucide-react';
+import { Utensils, LayoutGrid, BookOpen, Users, BarChart3, RefreshCw, Plus, Store, ChevronDown, Sliders, Map, LogOut, Lock } from 'lucide-react';
+
+const ADMIN_PIN_PATTERN = /^\d{4,6}$/;
+// Registro público oculto salvo flag Vite explícito C05 (nunca por defecto).
+// Contrato exacto: VITE_PILOT_PUBLIC_ONBOARDING_ENABLED === 'true'.
+const PUBLIC_ONBOARDING_ENABLED = (import.meta as any).env?.VITE_PILOT_PUBLIC_ONBOARDING_ENABLED === 'true';
+
+const AdminLoginModal: React.FC<{
+  slug: string;
+  onSlugChange: (s: string) => void;
+  restaurants: RestaurantItem[];
+  onSuccess: () => void;
+}> = ({ slug, onSlugChange, restaurants, onSuccess }) => {
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!ADMIN_PIN_PATTERN.test(pin)) {
+      setError('El PIN debe tener entre 4 y 6 dígitos numéricos, sin espacios.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await AdminApi.loginAdmin(slug, pin);
+      setPin('');
+      onSuccess();
+    } catch (err: any) {
+      // Mensaje visible; expiración 401/403 se propaga como error de sesión.
+      setError(err.message || 'PIN o restaurante incorrecto');
+      setPin('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <form onSubmit={submit} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center mx-auto">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-black text-white">Acceso Administrador</h2>
+          <p className="text-xs text-slate-400">Iniciá sesión con tu PIN de 4 a 6 dígitos para operar el panel.</p>
+        </div>
+        {restaurants.length > 0 ? (
+          <div className="space-y-1">
+            <label className="block text-[11px] font-semibold text-slate-400">Restaurante / Local</label>
+            <select
+              value={slug}
+              onChange={(e) => onSlugChange(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500"
+            >
+              {restaurants.map((r) => (
+                <option key={r.id} value={r.slug}>{r.name} ({r.slug})</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <label className="block text-[11px] font-semibold text-slate-400">Slug del restaurante</label>
+            <input
+              type="text"
+              value={slug}
+              onChange={(e) => onSlugChange(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+              placeholder="mi-local"
+              autoComplete="off"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500"
+            />
+            <p className="text-[11px] text-slate-500">La lista pública está vacía o no cargó: escribí el slug manualmente.</p>
+          </div>
+        )}
+        {error && <p role="alert" className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold">{error}</p>}
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-400 mb-1">PIN Administrador (4–6 dígitos)</label>
+          <input
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={6}
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-mono text-center tracking-widest focus:outline-none focus:border-indigo-500"
+            placeholder="••••"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={loading || !ADMIN_PIN_PATTERN.test(pin)}
+          className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs disabled:opacity-40 active:scale-95 transition-all"
+        >
+          {loading ? 'Verificando…' : 'Iniciar sesión'}
+        </button>
+      </form>
+    </div>
+  );
+};
 
 export const App: React.FC = () => {
   const [restaurants, setRestaurants] = useState<RestaurantItem[]>([]);
@@ -21,12 +120,14 @@ export const App: React.FC = () => {
   const [tables, setTables] = useState<TableItem[]>([]);
   const [currentShift, setCurrentShift] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [authed, setAuthed] = useState<boolean>(() => !!AdminApi.getAuthToken());
 
-  // New Restaurant Onboarding Modal State
+  // New Restaurant Onboarding Modal State (oculto salvo flag explícito)
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [regName, setRegName] = useState('');
   const [regSlug, setRegSlug] = useState('');
-  const [regPin, setRegPin] = useState('1234');
+  const [regPin, setRegPin] = useState('');
   const [regTablesCount, setRegTablesCount] = useState(6);
   const [regTemplate, setRegTemplate] = useState('GOURMET_OBSIDIAN');
   const [regError, setRegError] = useState<string | null>(null);
@@ -41,41 +142,91 @@ export const App: React.FC = () => {
     createdAt: ''
   };
 
-  const loadRestaurants = async () => {
+  const loadRestaurants = useCallback(async () => {
     try {
       const list = await AdminApi.getRestaurants();
       setRestaurants(list);
       if (list.length > 0 && !list.some(r => r.slug === selectedSlug || r.id === selectedSlug)) {
         setSelectedSlug(list[0].slug);
       }
-    } catch (_) {}
-  };
+    } catch (err: any) {
+      setLoadError(err?.message || 'No se pudo cargar la lista de restaurantes.');
+    }
+  }, [selectedSlug]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    // Bloqueo hasta login real: sin token no se cargan datos privados.
+    if (!AdminApi.getAuthToken()) {
+      setAuthed(false);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setLoadError(null);
     try {
-      if (!AdminApi.getAuthToken()) {
-        await AdminApi.loginAdmin(selectedSlug, '9999').catch(() => {});
-      }
       await loadRestaurants();
-      const tablesData = await AdminApi.getTables(selectedSlug).catch(() => []);
-      setTables(tablesData);
-      const shiftData = await AdminApi.getCurrentShift(selectedSlug).catch(() => null);
-      setCurrentShift(shiftData);
-    } catch (err) {
-      console.error(err);
+      try {
+        const tablesData = await AdminApi.getTables(selectedSlug);
+        setTables(tablesData);
+      } catch (err: any) {
+        // Sin ocultar errores como listas vacías: mensaje visible.
+        setTables([]);
+        throw err;
+      }
+      try {
+        const shiftData = await AdminApi.getCurrentShift(selectedSlug);
+        setCurrentShift(shiftData);
+      } catch (err: any) {
+        setCurrentShift(null);
+        throw err;
+      }
+    } catch (err: any) {
+      // Expiración 401/403: requireAuthorized ya limpió el token; reautenticar.
+      if (!AdminApi.getAuthToken()) {
+        setAuthed(false);
+        setLoadError('Sesión expirada o sin autorización. Volvé a iniciar sesión.');
+      } else {
+        setLoadError(err?.message || 'No se pudieron cargar los datos. Reintentá.');
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedSlug, loadRestaurants]);
+
+  // Lista pública de restaurantes siempre; datos privados sólo con sesión.
+  useEffect(() => {
+    loadRestaurants();
+  }, [loadRestaurants]);
 
   useEffect(() => {
     loadData();
-  }, [selectedSlug]);
+  }, [loadData, authed]);
+
+  const handleTenantChange = (val: string) => {
+    // Reautenticación al cambiar de tenant: el token es por restaurante.
+    if (val !== selectedSlug) {
+      AdminApi.logout();
+      setAuthed(false);
+      setTables([]);
+      setCurrentShift(null);
+      setSelectedSlug(val);
+    }
+  };
+
+  const handleLogout = () => {
+    AdminApi.logout();
+    setAuthed(false);
+    setTables([]);
+    setCurrentShift(null);
+  };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regName.trim() || !regSlug.trim()) return;
+    if (!ADMIN_PIN_PATTERN.test(regPin)) {
+      setRegError('El PIN debe tener entre 4 y 6 dígitos numéricos, sin espacios.');
+      return;
+    }
 
     setRegSubmitting(true);
     setRegError(null);
@@ -83,7 +234,7 @@ export const App: React.FC = () => {
       const res = await AdminApi.registerRestaurant({
         name: regName.trim(),
         slug: regSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-        pin: regPin.trim(),
+        pin: regPin,
         tablesCount: Number(regTablesCount) || 6,
         templateId: regTemplate
       });
@@ -91,6 +242,8 @@ export const App: React.FC = () => {
       setShowRegisterModal(false);
       setRegName('');
       setRegSlug('');
+      setRegPin('');
+      setAuthed(true);
       await loadRestaurants();
       setSelectedSlug(res.restaurant.slug);
     } catch (err: any) {
@@ -99,6 +252,20 @@ export const App: React.FC = () => {
       setRegSubmitting(false);
     }
   };
+
+  if (!authed) {
+    return (
+      <div className="min-h-full mx-auto p-4 sm:p-6 max-w-5xl">
+        <AdminLoginModal
+          slug={selectedSlug}
+          onSlugChange={handleTenantChange}
+          restaurants={restaurants}
+          onSuccess={() => { setAuthed(true); }}
+        />
+        {loadError && <p role="alert" className="mt-4 rounded-xl border border-rose-800 bg-rose-950/50 px-3 py-2 text-xs text-rose-200">{loadError}</p>}
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-full mx-auto p-4 sm:p-6 space-y-6 ${activeTab === 'floorplan' ? 'max-w-7xl' : 'max-w-5xl'}`}>
@@ -132,7 +299,7 @@ export const App: React.FC = () => {
                 value={selectedSlug}
                 onChange={(e) => {
                   const val = e.target.value;
-                  setSelectedSlug(val);
+                  handleTenantChange(val);
                   const found = restaurants.find(r => r.slug === val);
                   if (found) AdminApi.setSavedRestaurant(found);
                 }}
@@ -148,13 +315,15 @@ export const App: React.FC = () => {
             </div>
           )}
 
-          <button
-            onClick={() => setShowRegisterModal(true)}
-            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/20 active:scale-95 transition-all"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Nuevo Local</span>
-          </button>
+          {PUBLIC_ONBOARDING_ENABLED && (
+            <button
+              onClick={() => setShowRegisterModal(true)}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/20 active:scale-95 transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Nuevo Local</span>
+            </button>
+          )}
 
           <button
             onClick={loadData}
@@ -164,8 +333,23 @@ export const App: React.FC = () => {
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Actualizar</span>
           </button>
+
+          <button
+            onClick={handleLogout}
+            title="Cerrar sesión de administrador"
+            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-rose-700 text-rose-300 text-xs font-semibold active:scale-95 transition-all"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Salir</span>
+          </button>
         </div>
       </header>
+
+      {loadError && (
+        <p role="alert" className="rounded-xl border border-rose-800 bg-rose-950/50 px-3 py-2 text-xs text-rose-200">
+          {loadError}
+        </p>
+      )}
 
       {/* Shift Controller Card */}
       <ShiftManager
@@ -290,8 +474,8 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* SaaS Register New Restaurant Modal */}
-      {showRegisterModal && (
+      {/* SaaS Register New Restaurant Modal (sólo con flag explícito) */}
+      {PUBLIC_ONBOARDING_ENABLED && showRegisterModal && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleRegisterSubmit} className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
             <div className="flex items-center space-x-2.5">
@@ -345,12 +529,12 @@ export const App: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-slate-400 mb-1">PIN Inicial Admin</label>
+                  <label className="block text-slate-400 mb-1">PIN Inicial Admin (4–6 dígitos)</label>
                   <input
                     type="password"
                     maxLength={6}
                     value={regPin}
-                    onChange={(e) => setRegPin(e.target.value)}
+                    onChange={(e) => setRegPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
                     required
                   />
@@ -360,8 +544,8 @@ export const App: React.FC = () => {
                   <label className="block text-slate-400 mb-1">Cantidad de Mesas</label>
                   <input
                     type="number"
-                    min={1}
-                    max={50}
+                    min={0}
+                    max={100}
                     value={regTablesCount}
                     onChange={(e) => setRegTablesCount(Number(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
@@ -407,4 +591,3 @@ export const App: React.FC = () => {
     </div>
   );
 };
-

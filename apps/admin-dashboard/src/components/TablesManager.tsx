@@ -10,8 +10,7 @@ interface TablesManagerProps {
   onRefresh: () => void;
 }
 
-export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurantId, restaurantSlug, onRefresh }) => {
-  const [selectedSector, setSelectedSector] = useState<Sector | 'ALL'>('ALL');
+export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurantId, restaurantSlug, onRefresh }) => {  const [selectedSector, setSelectedSector] = useState<Sector | 'ALL'>('ALL');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newSector, setNewSector] = useState<Sector>(Sector.SALON_PRINCIPAL);
@@ -35,17 +34,34 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
     }
   };
 
-  const getTablePermanentUrl = (label: string) => {
+  const isProduction = (import.meta as any).env?.PROD === true;
+  const rawClientBaseUrl = ((import.meta as any).env?.VITE_CLIENT_WEB_URL as string | undefined)?.trim();
+  const isHttpsPublicUrl = (v: string | undefined): v is string => {
+    if (!v) return false;
+    try {
+      const u = new URL(v);
+      return u.protocol === 'https:' && !['localhost', '127.0.0.1', '::1'].includes(u.hostname);
+    } catch { return false; }
+  };
+  // En producción se exige URL pública HTTPS explícita; sin ella NO se
+  // genera/copia/abre ningún QR (error accionable, sin QR incorrecto).
+  const qrMisconfigured = isProduction && !isHttpsPublicUrl(rawClientBaseUrl);
+  const qrConfigError = qrMisconfigured
+    ? 'QR deshabilitado: configurá VITE_CLIENT_WEB_URL=https://<dominio-comensal> en el build de Admin y reconstruí. Sin URL pública HTTPS no se genera ningún QR.'
+    : null;
+
+  const getTablePermanentUrl = (label: string): string | null => {
     const slug = restaurantSlug || restaurantId;
-    const clientBaseUrl = (import.meta as any).env?.VITE_CLIENT_WEB_URL;
-    if (clientBaseUrl) {
-      const base = clientBaseUrl.replace(/\/$/, '');
+    if (rawClientBaseUrl) {
+      if (!isHttpsPublicUrl(rawClientBaseUrl) && isProduction) return null;
+      const base = rawClientBaseUrl.replace(/\/$/, '');
       return `${base}/?r=${encodeURIComponent(slug)}&m=${encodeURIComponent(label)}`;
     }
+    if (isProduction) return null;
     const host = typeof window !== 'undefined' ? window.location.hostname || 'localhost' : 'localhost';
     const protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
     const isDev = host === 'localhost' || host === '127.0.0.1';
-    const port = isDev ? ':5173' : (window.location.port ? `:${window.location.port}` : '');
+    const port = isDev ? ':5173' : (typeof window !== 'undefined' && window.location.port ? `:${window.location.port}` : '');
     return `${protocol}//${host}${port}/?r=${encodeURIComponent(slug)}&m=${encodeURIComponent(label)}`;
   };
 
@@ -53,13 +69,25 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
 
   const copyUrl = (label: string, id: string) => {
     const url = getTablePermanentUrl(label);
+    if (!url) return;
     navigator.clipboard.writeText(url);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const openQrModal = (label: string) => {
+    const url = getTablePermanentUrl(label);
+    if (!url) return;
+    setActiveQrTable({ label, url });
+  };
+
   return (
     <div className="space-y-4">
+      {qrConfigError && (
+        <p role="alert" className="rounded-xl border border-amber-700 bg-amber-950/60 px-3 py-2 text-xs font-semibold text-amber-200">
+          {qrConfigError}
+        </p>
+      )}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 max-w-full">
           {(['ALL', Sector.SALON_PRINCIPAL, Sector.TERRAZA, Sector.VEREDA, Sector.BARRA] as const).map(sec => (
@@ -90,7 +118,7 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {filteredTables.map(table => {
           const clientUrl = getTablePermanentUrl(table.label);
-
+          const qrDisabled = !clientUrl;
           return (
             <div
               key={table.id}
@@ -110,9 +138,10 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
                 </div>
 
                 <button
-                  onClick={() => setActiveQrTable({ label: table.label, url: clientUrl })}
-                  title="Ver Código QR"
-                  className="flex items-center space-x-1 text-[11px] font-bold px-2.5 py-1 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 active:scale-95 transition-all"
+                  onClick={() => openQrModal(table.label)}
+                  disabled={qrDisabled}
+                  title={qrDisabled ? (qrConfigError || 'QR no disponible') : 'Ver Código QR'}
+                  className="flex items-center space-x-1 text-[11px] font-bold px-2.5 py-1 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 active:scale-95 transition-all disabled:opacity-40"
                 >
                   <QrCode className="w-3.5 h-3.5" />
                   <span>QR</span>
@@ -120,26 +149,33 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
               </div>
 
               <div className="bg-slate-950/80 rounded-xl p-2.5 border border-slate-800/80 flex items-center justify-between text-xs font-mono">
-                <span className="truncate max-w-[170px] text-slate-400 text-[11px]" title={clientUrl}>
-                  {clientUrl.replace(/^https?:\/\//, '')}
+                <span className="truncate max-w-[170px] text-slate-400 text-[11px]" title={clientUrl || qrConfigError || 'QR no disponible'}>
+                  {clientUrl ? clientUrl.replace(/^https?:\/\//, '') : 'QR no disponible'}
                 </span>
                 <div className="flex items-center space-x-1">
                   <button
                     onClick={() => copyUrl(table.label, table.id)}
-                    title="Copiar Link Permanente de Mesa"
+                    disabled={qrDisabled}
+                    title={qrDisabled ? (qrConfigError || 'QR no disponible') : 'Copiar Link Permanente de Mesa'}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 active:scale-90 transition-transform"
                   >
                     {copiedId === table.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
-                  <a
-                    href={clientUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Abrir como Comensal"
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-400 active:scale-90 transition-transform"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
+                  {clientUrl ? (
+                    <a
+                      href={clientUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Abrir como Comensal"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-400 active:scale-90 transition-transform"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  ) : (
+                    <span title={qrConfigError || 'QR no disponible'} className="p-1.5 rounded-lg bg-slate-800/50 text-slate-600">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

@@ -45,6 +45,11 @@ function parseCorsOrigins(value: string | undefined, isProduction: boolean): str
     throw new Error('CORS_ORIGIN debe declarar una lista explícita de orígenes; "*" no está permitido.');
   }
   for (const origin of origins) {
+    // Cualquier wildcard explícito está prohibido, incluido
+    // `https://*.vercel.app` u otros sufijos comodín.
+    if (origin.includes('*')) {
+      throw new Error(`CORS_ORIGIN no admite comodines (wildcard): ${origin}`);
+    }
     let url: URL;
     try {
       url = new URL(origin);
