@@ -128,7 +128,11 @@ model MenuItem {
   category     MenuCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   name         String       // ej: "Sorrentinos de Salmón & Ciboulette"
   description  String?      // ej: "Con crema de puerros y crocante de nuez"
-  price        Float        // ej: 14500
+  price        Float        // LEGACY (etapa 03): autoridad nueva en priceCents
+  // Etapa 03: precio canónico en centavos ARS + versión para snapshots.
+  priceCents   Int?
+  priceCurrency String      @default("ARS")
+  priceVersion Int          @default(1)
   imageUrl     String?
   isAvailable  Boolean      @default(true) // Hay stock / pausado
   isFeatured   Boolean      @default(false)
@@ -138,6 +142,7 @@ model MenuItem {
   updatedAt    DateTime     @updatedAt
 
   orderItems   OrderItem[]
+  modifierGroups ModifierGroup[]
 }
 
 model Table {
@@ -186,6 +191,9 @@ model TableSession {
   calls         CallRequest[]
   feedback      Feedback?
   orders        Order[]
+  // Etapa 03 cocina/cuentas (aditivo): identidad de visita y tandas.
+  participants  VisitParticipant[]
+  tandas        OrderTanda[]
 }
 
 model Shift {
@@ -231,7 +239,11 @@ model Order {
   tableSessionId String
   tableSession   TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
   status         String       @default("DRAFT") // DRAFT | PENDING_VALIDATION | CONFIRMED | IN_KITCHEN | SERVED | CANCELLED
-  totalAmount    Float        @default(0.0)
+  totalAmount    Float        @default(0.0) // LEGACY (etapa 03): autoridad nueva en totalCents
+  // Etapa 03: totales canónicos en centavos ARS; idempotencia de creación.
+  currency       String       @default("ARS")
+  totalCents     Int?
+  idempotencyKey String?      @unique
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -247,9 +259,21 @@ model OrderItem {
   menuItemId     String
   menuItem       MenuItem    @relation(fields: [menuItemId], references: [id])
   quantity       Int         @default(1)
-  unitPrice      Float
-  notes          String?
-  addedByGuest   String      // guest session id
+  unitPrice      Float // LEGACY (etapa 03): autoridad nueva en unitPriceCents
+  notes          String? // Texto libre para cocina; NUNCA fuente de precio/reglas
+  addedByGuest   String      // guest session id (legacy; etapa 04 migra a participantId)
+  // Etapa 03: autoría ligada a visita, tanda y snapshots versionados.
+  participantId  String?
+  participant    VisitParticipant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  tandaId        String?
+  tanda          OrderTanda? @relation(fields: [tandaId], references: [id], onDelete: SetNull)
+  productNameSnapshot String? // nombre al confirmar; inmune a cambios de carta
+  unitPriceCents Int? // precio canónico en centavos al confirmar
+  lineTotalCents Int? // unitPriceCents*qty + deltas, entero
+  currency       String      @default("ARS")
+  priceVersion   Int? // versión de precio de MenuItem al confirmar
+  modifierVersion Int? // versión de ModifierGroup al confirmar
+  modifiersSnapshot String? // JSON mesaya.modifiers/v1 legible para cocina
   
   // Bloqueo optimista para Split Bill por Ítem
   claimedByGuest String?     // identificador de comensal
@@ -266,9 +290,15 @@ model SplitBillSession {
   mode            String       // BY_ITEM | EQUAL_PARTS
   totalParts      Int          @default(1) // Para EQUAL_PARTS (ej: 4 personas)
   paidParts       Int          @default(0)
-  partAmount      Float?       // Monto por persona
+  partAmount      Float?       // LEGACY (etapa 03): ver partAmountCents
   totalAmount     Float
   remainingAmount Float
+  // Etapa 03: importes canónicos en centavos + revisión de reparto (etapa 07).
+  currency        String       @default("ARS")
+  totalCents      Int?
+  remainingCents  Int?
+  partAmountCents Int?
+  revision        Int          @default(1)
   status          String       @default("OPEN") // OPEN | FULLY_PAID | CANCELLED
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -282,8 +312,12 @@ model PaymentTransaction {
   guestSessionId String
   splitSessionId String?  // Vínculo opcional a SplitBillSession
   method         String   // WAITER_CASH | WAITER_CARD | WAITER_MP_QR | DIGITAL_MP_FULL | DIGITAL_MP_SPLIT
-  amount         Float
-  tipAmount      Float    @default(0.0)
+  amount         Float // LEGACY (etapa 03): autoridad nueva en amountCents
+  tipAmount      Float    @default(0.0) // LEGACY (etapa 03): ver tipCents
+  // Etapa 03: importes canónicos en centavos ARS (propina separada).
+  amountCents    Int?
+  tipCents       Int?
+  currency       String   @default("ARS")
   applicationFee Float?   // Comisión de MesaYA descontada por MP
   mpPaymentId    String?  // ID devuelto por MP para reconciliación
   status         String   @default("PENDING") // PENDING | APPROVED | REJECTED | REFUNDED
@@ -355,11 +389,16 @@ model StaffUser {
   restaurantId     String
   restaurant       Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   name             String
-  pinHash          String
+  pinHash          String // bcrypt: ÚNICA autoridad de autenticación (etapa 03 no lo reemplaza)
+  // Etapa 03: digest HMAC con secreto del servidor para unicidad concurrente
+  // por restaurante. Nullable para filas previas (sin PIN conocido, sin backfill).
+  pinDigest        String?
   role             String      @default("WAITER") // WAITER | MANAGER
   assignedSector   String?     // e.g. SALON_PRINCIPAL
   pushSubscription String?     // JSON serialized
   createdAt        DateTime    @default(now())
+
+  @@unique([restaurantId, pinDigest])
 }
 
 model Feedback {
@@ -459,4 +498,90 @@ model OccupancySession {
 
   @@index([restaurantId, seatedAt])
   @@index([tableId, seatedAt])
+}
+
+// ==========================================
+// 8. COCINA/CUENTAS ETAPA 03 (ADITIVO)
+// Participantes de visita, tandas y modificadores versionados.
+// Sin endpoints/UI: los flujos se implementan en etapas 04–08.
+// ==========================================
+
+// Identidad de participante emitida por servidor, ligada a una visita de
+// mesa activa (TableSession). Ningún navegador puede atribuirse líneas de
+// otro alterando un UUID: la autoría válida es este registro. Al cerrar la
+// visita/turno los participantes pasan a REVOKED (etapa 04 lo ejecuta;
+// el dato ya lo permite).
+model VisitParticipant {
+  id             String       @id @default(cuid())
+  tableSessionId String
+  tableSession   TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  displayName    String?
+  // SHA-256 del token opaco entregado al navegador al unirse a la visita.
+  // El token plano viaja una sola vez; en base sólo vive el hash.
+  tokenHash      String       @unique
+  status         String       @default("ACTIVE") // ACTIVE | REVOKED
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  authoredTandas OrderTanda[] @relation("TandaAuthor")
+  orderItems     OrderItem[]
+
+  @@index([tableSessionId, status])
+}
+
+// Tanda de pedido independiente dentro de una visita: cada confirmación
+// (Ana confirma, Bruno sigue en borrador) es una tanda con idempotencia
+// propia. La cocina recibe sólo tandas CONFIRMED/IN_KITCHEN (etapa 04/06).
+model OrderTanda {
+  id                     String            @id @default(cuid())
+  tableSessionId         String
+  tableSession           TableSession      @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  seq                    Int // secuencia por visita asignada por servidor (etapa 04; sin default: colisión ruidosa, no silenciosa)
+  status                 String            @default("DRAFT") // DRAFT | CONFIRMED | IN_KITCHEN | SERVED | CANCELLED
+  idempotencyKey         String            @unique
+  createdByParticipantId String?
+  createdByParticipant   VisitParticipant? @relation("TandaAuthor", fields: [createdByParticipantId], references: [id], onDelete: SetNull)
+  confirmedAt            DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  orderItems             OrderItem[]
+
+  @@unique([tableSessionId, seq])
+  @@index([tableSessionId, status])
+}
+
+// Grupo de modificadores versionado y definido POR PRODUCTO (nunca global
+// por defecto: no se ofrece «sin cebolla» en todos los platos).
+model ModifierGroup {
+  id           String   @id @default(cuid())
+  menuItemId   String
+  menuItem     MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name         String
+  required     Boolean  @default(false)
+  minSelect    Int      @default(0)
+  maxSelect    Int?
+  version      Int      @default(1) // se versiona al cambiar opciones/límites
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  options      ModifierOption[]
+
+  @@unique([menuItemId, name, version])
+  @@index([menuItemId, isActive])
+}
+
+model ModifierOption {
+  id              String        @id @default(cuid())
+  groupId         String
+  group           ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name            String
+  priceDeltaCents Int           @default(0) // diferencia en centavos ARS
+  isAvailable     Boolean       @default(true)
+  orderIndex      Int           @default(0)
+  createdAt       DateTime      @default(now())
+
+  @@unique([groupId, name])
+  @@index([groupId, isAvailable])
 }

@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { assertValidPin, duplicatePinError } from '../lib/pin-policy';
+import { computePinDigest, isUniqueViolation, toDuplicatePinError } from '../lib/pin-digest';
 import { StaffLoginDTO, StaffUserDTO, Sector } from '@mesaya/shared';
 
 export class StaffService {
@@ -76,9 +77,12 @@ export class StaffService {
       error.statusCode = 400;
       throw error;
     }
-    // Unicidad de PIN por restaurante (comparación bcrypt porque el hash
-    // con sal no admite constraint único). Secuencial y transaccional;
-    // la carrera concurrente exacta queda pendiente de digest único (etapa 03).
+    // Unicidad de PIN por restaurante en dos capas (etapa 03):
+    // 1) Comparación bcrypt secuencial: cubre filas legacy con pinDigest NULL
+    //    (digest imposible sin el PIN en claro; sin backfill irreversible).
+    // 2) Constraint único (restaurantId, pinDigest): la base rechaza la
+    //    carrera concurrente exacta; P2002 se traduce a 409 PIN_DUPLICATE.
+    // bcrypt sigue siendo la única autoridad de autenticación.
     const existing = await prisma.staffUser.findMany({
       where: { restaurantId },
       select: { pinHash: true }
@@ -89,21 +93,29 @@ export class StaffService {
       }
     }
     const pinHash = await bcrypt.hash(cleanPin, 10);
-    return prisma.staffUser.create({
-      data: {
-        restaurantId,
-        name: cleanName,
-        pinHash,
-        role,
-        assignedSector: assignedSector || null
-      },
-      select: {
-        id: true,
-        name: true,
-        role: true,
-        assignedSector: true,
-        createdAt: true
-      }
-    });
+    const pinDigest = computePinDigest(restaurantId, cleanPin);
+    try {
+      return await prisma.staffUser.create({
+        data: {
+          restaurantId,
+          name: cleanName,
+          pinHash,
+          pinDigest,
+          role,
+          assignedSector: assignedSector || null
+        },
+        select: {
+          id: true,
+          name: true,
+          role: true,
+          assignedSector: true,
+          createdAt: true
+        }
+      });
+    } catch (err: any) {
+      // Carrera concurrente: otro insert ganó el digest único.
+      if (isUniqueViolation(err)) throw toDuplicatePinError();
+      throw err;
+    }
   }
 }
