@@ -74,4 +74,31 @@ describe('Etapa 24 — Atomicidad de turnos y sesiones', () => {
     const sessions = await prisma.tableSession.findMany({ where: { shiftId: shift.id } });
     expect(sessions.every((session) => session.closedAt !== null && session.activeKey === null)).toBe(true);
   });
+
+  it('sanea claves activas residuales de registros cerrados antes de abrir', async () => {
+    const closedShift = await prisma.shift.findFirstOrThrow({
+      where: { restaurantId, closedAt: { not: null } },
+      orderBy: { openedAt: 'desc' }
+    });
+    const closedSession = await prisma.tableSession.findFirstOrThrow({
+      where: { shiftId: closedShift.id, tableId: tableIds[0], closedAt: { not: null } }
+    });
+
+    await prisma.shift.update({
+      where: { id: closedShift.id },
+      data: { activeKey: restaurantId }
+    });
+    await prisma.tableSession.update({
+      where: { id: closedSession.id },
+      data: { activeKey: tableIds[0] }
+    });
+
+    const result = await ShiftService.openShift(restaurantId);
+    expect(result.sessionsCount).toBe(tableIds.length);
+
+    const repairedShift = await prisma.shift.findUniqueOrThrow({ where: { id: closedShift.id } });
+    const repairedSession = await prisma.tableSession.findUniqueOrThrow({ where: { id: closedSession.id } });
+    expect(repairedShift.activeKey).toBeNull();
+    expect(repairedSession.activeKey).toBeNull();
+  });
 });

@@ -16,9 +16,22 @@ export class ShiftService {
             data: { closedAt: now, activeKey: null }
           });
 
+          // Versiones anteriores podían dejar activeKey en registros ya cerrados.
+          // Como la clave es única, hay que sanear también esos residuos antes
+          // de crear el turno y las sesiones nuevas.
+          await tx.shift.updateMany({
+            where: { restaurantId, activeKey: { not: null } },
+            data: { activeKey: null }
+          });
+
           await tx.tableSession.updateMany({
             where: { table: { restaurantId }, closedAt: null },
             data: { closedAt: now, activeKey: null }
+          });
+
+          await tx.tableSession.updateMany({
+            where: { table: { restaurantId }, activeKey: { not: null } },
+            data: { activeKey: null }
           });
 
           const shift = await tx.shift.create({
