@@ -491,258 +491,393 @@ export class BillService {
 
     const normalizedMethod = this.normalizePaymentMethod(paymentMethod);
 
-    // Ejecución transaccional atómica con aislamiento y serialización por visita
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Localización de la sesión de mesa primero para contextualizar la idempotencia
-      let targetSessionId = params.tableSessionId;
+    let targetSessionId = params.tableSessionId;
 
-      if (!targetSessionId && params.orderId) {
-        const order = await tx.order.findUnique({
-          where: { id: params.orderId },
-          select: { tableSessionId: true }
-        });
-        targetSessionId = order?.tableSessionId;
-      }
-
-      if (!targetSessionId && params.tableId) {
-        const activeSession = await tx.tableSession.findFirst({
-          where: { tableId: params.tableId, closedAt: null },
-          orderBy: { createdAt: 'desc' },
-          select: { id: true }
-        });
-        targetSessionId = activeSession?.id;
-      }
-
-      if (!targetSessionId) {
-        const err: any = new Error('No se especificó sesión de mesa ni orden válida para cobrar');
-        err.statusCode = 400;
-        err.code = 'MISSING_SESSION';
-        throw err;
-      }
-
-      const session = await tx.tableSession.findUnique({
-        where: { id: targetSessionId },
-        include: { table: true }
+    if (!targetSessionId && params.orderId) {
+      const order = await prisma.order.findUnique({
+        where: { id: params.orderId },
+        select: { tableSessionId: true }
       });
+      targetSessionId = order?.tableSessionId;
+    }
 
-      if (!session) {
-        const err: any = new Error('Sesión de mesa no encontrada');
-        err.statusCode = 404;
-        err.code = 'SESSION_NOT_FOUND';
-        throw err;
-      }
-
-      // Tenant isolation: el staff sólo puede cobrar mesas de su propio restaurante
-      if (session.table.restaurantId !== staffRestaurantId) {
-        const err: any = new Error('No autorizado para registrar pagos de otro restaurante');
-        err.statusCode = 403;
-        err.code = 'STAFF_TENANT_MISMATCH';
-        throw err;
-      }
-
-      // 2. Verificación estricta de idempotencia: valida restaurante, sesión, método y payload
-      const existingTx = await tx.paymentTransaction.findUnique({
-        where: { idempotencyKey },
-        include: {
-          participant: true,
-          order: {
-            include: {
-              tableSession: {
-                include: { table: true }
-              }
-            }
-          }
-        }
+    if (!targetSessionId && params.tableId) {
+      const activeSession = await prisma.tableSession.findFirst({
+        where: { tableId: params.tableId, closedAt: null },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true }
       });
+      targetSessionId = activeSession?.id;
+    }
 
-      if (existingTx) {
-        const existingAmountCents = existingTx.amountCents ?? toCentsFromFloatPrice(existingTx.amount);
-        const existingTipCents = existingTx.tipCents ?? (existingTx.tipAmount ? toCentsFromFloatPrice(existingTx.tipAmount) : 0);
-        const txSessionId = existingTx.tableSessionId || existingTx.order?.tableSessionId;
-        const txRestaurantId = existingTx.order?.tableSession?.table?.restaurantId;
+    if (!targetSessionId) {
+      const err: any = new Error('No se especificó sesión de mesa ni orden válida para cobrar');
+      err.statusCode = 400;
+      err.code = 'MISSING_SESSION';
+      throw err;
+    }
 
-        if (
-          txSessionId !== targetSessionId ||
-          (txRestaurantId && txRestaurantId !== staffRestaurantId) ||
-          existingTx.method !== normalizedMethod ||
-          existingAmountCents !== amountCents ||
-          existingTipCents !== tipCents ||
-          (participantId && existingTx.participantId && existingTx.participantId !== participantId)
-        ) {
-          const err: any = new Error(
-            `Conflicto de idempotencia: la clave ya fue utilizada con diferente sesión, restaurante, método o importes`
-          );
-          err.statusCode = 409;
-          err.code = 'IDEMPOTENCY_CONFLICT';
+    let fsmBroadcast: any = null;
+    let result: any;
+
+    try {
+      result = await prisma.$transaction(async (tx) => {
+        // 1. Localización y bloqueo de la sesión primero para serializar cobros concurrentes
+        const session = await tx.tableSession.findUnique({
+          where: { id: targetSessionId },
+          include: { table: true }
+        });
+
+        if (!session) {
+          const err: any = new Error('Sesión de mesa no encontrada');
+          err.statusCode = 404;
+          err.code = 'SESSION_NOT_FOUND';
           throw err;
         }
 
-        return { existing: existingTx, session };
-      }
+        // Tenant isolation: el staff sólo puede cobrar mesas de su propio restaurante
+        if (session.table.restaurantId !== staffRestaurantId) {
+          const err: any = new Error('No autorizado para registrar pagos de otro restaurante');
+          err.statusCode = 403;
+          err.code = 'STAFF_TENANT_MISMATCH';
+          throw err;
+        }
 
-      // 3. Serializar cobros concurrentes sobre la sesión para evitar lecturas de saldo desfasadas.
-      // En PostgreSQL esto adquiere un bloqueo exclusivo de fila (row-level lock);
-      // en SQLite se ejecuta de forma serializada dentro de la transacción.
-      await tx.tableSession.update({
-        where: { id: targetSessionId },
-        data: { paymentSeq: { increment: 1 } }
-      });
+        // Serializar cobros concurrentes sobre la sesión para evitar lecturas de saldo desfasadas.
+        // En PostgreSQL esto adquiere un bloqueo exclusivo de fila (row-level lock);
+        // en SQLite se ejecuta de forma serializada dentro de la transacción.
+        await tx.tableSession.update({
+          where: { id: targetSessionId },
+          data: { paymentSeq: { increment: 1 } }
+        });
 
-      // 4. Cálculo de balance dentro de la transacción serializada
-      const nonCancelledOrders = await tx.order.findMany({
-        where: {
-          tableSessionId: session.id,
-          status: { not: OrderStatus.CANCELLED }
-        },
-        include: {
-          items: {
-            include: { tanda: true }
+        // 2. Verificación estricta de idempotencia BAJO BLOQUEO de la sesión
+        const existingTx = await tx.paymentTransaction.findUnique({
+          where: { idempotencyKey },
+          include: {
+            participant: true,
+            order: {
+              include: {
+                tableSession: {
+                  include: { table: true }
+                }
+              }
+            }
+          }
+        });
+
+        if (existingTx) {
+          const existingAmountCents = existingTx.amountCents ?? toCentsFromFloatPrice(existingTx.amount);
+          const existingTipCents = existingTx.tipCents ?? (existingTx.tipAmount ? toCentsFromFloatPrice(existingTx.tipAmount) : 0);
+          const txSessionId = existingTx.tableSessionId || existingTx.order?.tableSessionId;
+          const txRestaurantId = existingTx.order?.tableSession?.table?.restaurantId;
+
+          const reqParticipant = participantId || null;
+          const txParticipant = existingTx.participantId || null;
+
+          if (
+            txSessionId !== targetSessionId ||
+            (txRestaurantId && txRestaurantId !== staffRestaurantId) ||
+            existingTx.method !== normalizedMethod ||
+            existingAmountCents !== amountCents ||
+            existingTipCents !== tipCents ||
+            reqParticipant !== txParticipant
+          ) {
+            const err: any = new Error(
+              `Conflicto de idempotencia: la clave ya fue utilizada con diferente sesión, restaurante, método o importes`
+            );
+            err.statusCode = 409;
+            err.code = 'IDEMPOTENCY_CONFLICT';
+            throw err;
+          }
+
+          return { existing: existingTx, session };
+        }
+
+        // 3. Validación de pertenencia a la sesión (participante e ítem)
+        if (participantId) {
+          const participant = await tx.visitParticipant.findFirst({
+            where: { id: participantId, tableSessionId: session.id }
+          });
+          if (!participant) {
+            const err: any = new Error('El participante especificado no pertenece a la sesión de la mesa');
+            err.statusCode = 400;
+            err.code = 'PARTICIPANT_NOT_IN_SESSION';
+            throw err;
           }
         }
-      });
 
-      let totalSessionCents = 0;
-      for (const ord of nonCancelledOrders) {
-        for (const item of ord.items) {
-          if (item.tanda && item.tanda.status === 'CANCELLED') continue;
-          const lineC =
+        if (orderItemId) {
+          const item = await tx.orderItem.findFirst({
+            where: { id: orderItemId, order: { tableSessionId: session.id } }
+          });
+          if (!item) {
+            const err: any = new Error('El ítem especificado no pertenece a la sesión de la mesa');
+            err.statusCode = 400;
+            err.code = 'ITEM_NOT_IN_SESSION';
+            throw err;
+          }
+        }
+
+        // 4. Cálculo de balance dentro de la transacción serializada
+        const nonCancelledOrders = await tx.order.findMany({
+          where: {
+            tableSessionId: session.id,
+            status: { not: OrderStatus.CANCELLED }
+          },
+          include: {
+            items: {
+              include: { tanda: true }
+            }
+          }
+        });
+
+        let totalSessionCents = 0;
+        for (const ord of nonCancelledOrders) {
+          for (const item of ord.items) {
+            if (item.tanda && item.tanda.status === 'CANCELLED') continue;
+            const lineC =
+              item.lineTotalCents ??
+              (item.unitPriceCents !== null && item.unitPriceCents !== undefined
+                ? item.unitPriceCents * item.quantity
+                : toCentsFromFloatPrice(item.unitPrice) * item.quantity);
+            totalSessionCents += lineC;
+          }
+        }
+
+        const existingSettled = await tx.paymentTransaction.findMany({
+          where: {
+            tableSessionId: session.id,
+            status: { in: ['MANUAL_SETTLED', 'APPROVED'] }
+          }
+        });
+
+        let paidSessionCents = 0;
+        for (const p of existingSettled) {
+          paidSessionCents += p.amountCents ?? toCentsFromFloatPrice(p.amount);
+        }
+
+        const currentRemainingCents = Math.max(0, totalSessionCents - paidSessionCents);
+
+        if (currentRemainingCents <= 0) {
+          const err: any = new Error('La cuenta de la mesa ya se encuentra saldada en su totalidad');
+          err.statusCode = 409;
+          err.code = 'BILL_ALREADY_PAID';
+          throw err;
+        }
+
+        if (amountCents > currentRemainingCents) {
+          const err: any = new Error(
+            `Sobrepago no permitido: el importe a cobrar ($${amountCents / 100}) supera el saldo pendiente ($${currentRemainingCents / 100})`
+          );
+          err.statusCode = 409;
+          err.code = 'OVERPAYMENT_NOT_ALLOWED';
+          throw err;
+        }
+
+        // 5. Seleccionar la orden activa para relacionar la transacción
+        let primaryOrder = nonCancelledOrders.find(
+          (o) => o.status !== OrderStatus.PAID && o.status !== OrderStatus.CANCELLED
+        );
+        if (!primaryOrder && nonCancelledOrders.length > 0) {
+          primaryOrder = nonCancelledOrders[0];
+        }
+
+        if (!primaryOrder) {
+          const err: any = new Error('No hay comandas activas para asociar el cobro');
+          err.statusCode = 400;
+          err.code = 'NO_ACTIVE_ORDER';
+          throw err;
+        }
+
+        const now = new Date();
+
+        // 6. Crear registro de pago presencial con trazabilidad de participante
+        const createdTx = await tx.paymentTransaction.create({
+          data: {
+            idempotencyKey,
+            orderId: primaryOrder.id,
+            tableSessionId: session.id,
+            guestSessionId: staffUserId,
+            participantId: participantId || null,
+            method: normalizedMethod,
+            amount: amountCents / 100,
+            amountCents,
+            tipAmount: tipCents / 100,
+            tipCents,
+            currency: CENTS_CURRENCY,
+            status: 'MANUAL_SETTLED',
+            resolvedAt: now
+          },
+          include: {
+            participant: true
+          }
+        });
+
+        // 7. Asignación contable granular (PaymentAllocation)
+        let itemsToAllocate: typeof nonCancelledOrders[0]['items'] = [];
+
+        if (orderItemId) {
+          itemsToAllocate = nonCancelledOrders.flatMap((o) => o.items).filter((i) => i.id === orderItemId);
+        } else if (participantId) {
+          itemsToAllocate = nonCancelledOrders
+            .flatMap((o) => o.items)
+            .filter(
+              (i) =>
+                (!i.tanda || i.tanda.status !== 'CANCELLED') &&
+                (i.claimedByGuest === participantId || i.participantId === participantId)
+            );
+        } else {
+          itemsToAllocate = nonCancelledOrders
+            .flatMap((o) => o.items)
+            .filter((i) => !i.tanda || i.tanda.status !== 'CANCELLED');
+        }
+
+        let remainingPaymentCents = amountCents;
+        for (const item of itemsToAllocate) {
+          if (remainingPaymentCents <= 0) break;
+
+          const itemTotal =
             item.lineTotalCents ??
             (item.unitPriceCents !== null && item.unitPriceCents !== undefined
               ? item.unitPriceCents * item.quantity
               : toCentsFromFloatPrice(item.unitPrice) * item.quantity);
-          totalSessionCents += lineC;
+
+          const priorAllocs = await tx.paymentAllocation.findMany({
+            where: {
+              orderItemId: item.id,
+              paymentTransaction: {
+                status: { in: ['MANUAL_SETTLED', 'APPROVED'] }
+              }
+            }
+          });
+          const priorCovered = priorAllocs.reduce((sum, a) => sum + a.amountCents, 0);
+          const needed = Math.max(0, itemTotal - priorCovered);
+
+          if (needed > 0) {
+            const allocAmount = Math.min(remainingPaymentCents, needed);
+            await tx.paymentAllocation.create({
+              data: {
+                paymentTransactionId: createdTx.id,
+                orderItemId: item.id,
+                amountCents: allocAmount
+              }
+            });
+            remainingPaymentCents -= allocAmount;
+
+            if (priorCovered + allocAmount >= itemTotal) {
+              await tx.orderItem.update({
+                where: { id: item.id },
+                data: { isPaid: true }
+              });
+            }
+          }
         }
-      }
 
-      const existingSettled = await tx.paymentTransaction.findMany({
-        where: {
-          tableSessionId: session.id,
-          status: { in: ['MANUAL_SETTLED', 'APPROVED'] }
-        }
-      });
-
-      let paidSessionCents = 0;
-      for (const p of existingSettled) {
-        paidSessionCents += p.amountCents ?? toCentsFromFloatPrice(p.amount);
-      }
-
-      const currentRemainingCents = Math.max(0, totalSessionCents - paidSessionCents);
-
-      if (currentRemainingCents <= 0) {
-        const err: any = new Error('La cuenta de la mesa ya se encuentra saldada en su totalidad');
-        err.statusCode = 409;
-        err.code = 'BILL_ALREADY_PAID';
-        throw err;
-      }
-
-      if (amountCents > currentRemainingCents) {
-        const err: any = new Error(
-          `Sobrepago no permitido: el importe a cobrar ($${amountCents / 100}) supera el saldo pendiente ($${currentRemainingCents / 100})`
-        );
-        err.statusCode = 409;
-        err.code = 'OVERPAYMENT_NOT_ALLOWED';
-        throw err;
-      }
-
-      // 5. Seleccionar la orden activa para relacionar la transacción
-      let primaryOrder = nonCancelledOrders.find(
-        (o) => o.status !== OrderStatus.PAID && o.status !== OrderStatus.CANCELLED
-      );
-      if (!primaryOrder && nonCancelledOrders.length > 0) {
-        primaryOrder = nonCancelledOrders[0];
-      }
-
-      if (!primaryOrder) {
-        const err: any = new Error('No hay comandas activas para asociar el cobro');
-        err.statusCode = 400;
-        err.code = 'NO_ACTIVE_ORDER';
-        throw err;
-      }
-
-      const now = new Date();
-
-      // 6. Crear registro de pago presencial con trazabilidad de participante
-      const createdTx = await tx.paymentTransaction.create({
-        data: {
-          idempotencyKey,
-          orderId: primaryOrder.id,
-          tableSessionId: session.id,
-          guestSessionId: staffUserId,
-          participantId: participantId || null,
-          method: normalizedMethod,
-          amount: amountCents / 100,
-          amountCents,
-          tipAmount: tipCents / 100,
-          tipCents,
-          currency: CENTS_CURRENCY,
-          status: 'MANUAL_SETTLED',
-          resolvedAt: now
-        },
-        include: {
-          participant: true
-        }
-      });
-
-      // 7. Si se pagó un ítem específico o un participante, marcar ítems como pagados
-      if (orderItemId) {
-        await tx.orderItem.updateMany({
-          where: { id: orderItemId, order: { tableSessionId: session.id } },
-          data: { isPaid: true }
-        });
-      } else if (participantId) {
-        await tx.orderItem.updateMany({
-          where: {
-            order: { tableSessionId: session.id },
-            OR: [
-              { claimedByGuest: participantId },
-              { participantId }
-            ]
-          },
-          data: { isPaid: true }
-        });
-      }
-
-      // 8. Si el saldo llegó a 0 con este pago, liquidar órdenes y mesa ATÓMICAMENTE
-      const isBalanceCleared = amountCents === currentRemainingCents;
-      if (isBalanceCleared) {
-        await tx.order.updateMany({
-          where: {
-            tableSessionId: session.id,
-            status: { notIn: [OrderStatus.PAID, OrderStatus.CANCELLED] }
-          },
-          data: { status: OrderStatus.PAID }
-        });
-
-        await tx.orderItem.updateMany({
-          where: {
-            order: { tableSessionId: session.id }
-          },
-          data: { isPaid: true }
-        });
-
-        // Transición atómica de mesa a PAID dentro de la misma transacción
-        const freshTable = await tx.table.findUnique({ where: { id: session.tableId } });
-        if (freshTable && freshTable.currentState !== TableFSMState.PAID) {
-          await fsmService.attemptTransition(
-            {
-              tableId: session.tableId,
-              toState: TableFSMState.PAID,
-              source: SignalSource.STAFF_TERMINAL_TAP,
-              trigger: 'Cuenta saldada en su totalidad por personal presencial',
-              staffUserId,
-              isOverride: true
+        // 8. Si el saldo llegó a 0 con este pago, liquidar órdenes y mesa ATÓMICAMENTE
+        const isBalanceCleared = amountCents === currentRemainingCents;
+        if (isBalanceCleared) {
+          await tx.order.updateMany({
+            where: {
+              tableSessionId: session.id,
+              status: { notIn: [OrderStatus.PAID, OrderStatus.CANCELLED] }
             },
-            tx
-          );
-        }
-      }
+            data: { status: OrderStatus.PAID }
+          });
 
-      return {
-        created: createdTx,
-        session,
-        isBalanceCleared
-      };
-    });
+          await tx.orderItem.updateMany({
+            where: {
+              order: { tableSessionId: session.id }
+            },
+            data: { isPaid: true }
+          });
+
+          // Transición atómica de mesa a PAID dentro de la misma transacción
+          const freshTable = await tx.table.findUnique({ where: { id: session.tableId } });
+          if (freshTable && freshTable.currentState !== TableFSMState.PAID) {
+            const fsmRes = await fsmService.attemptTransition(
+              {
+                tableId: session.tableId,
+                toState: TableFSMState.PAID,
+                source: SignalSource.STAFF_TERMINAL_TAP,
+                trigger: 'Cuenta saldada en su totalidad por personal presencial',
+                staffUserId,
+                isOverride: true
+              },
+              tx
+            );
+            if (fsmRes && typeof fsmRes.broadcast === 'function') {
+              fsmBroadcast = fsmRes.broadcast;
+            }
+          }
+        }
+
+        return {
+          created: createdTx,
+          session,
+          isBalanceCleared
+        };
+      });
+    } catch (txErr: any) {
+      // Manejo de carrera concurrente sobre la misma clave de idempotencia
+      if (
+        txErr?.code === 'P2002' ||
+        txErr?.code === 'BILL_ALREADY_PAID' ||
+        txErr?.message?.includes('idempotencyKey')
+      ) {
+        const fallbackTx = await prisma.paymentTransaction.findUnique({
+          where: { idempotencyKey },
+          include: {
+            participant: true,
+            order: {
+              include: {
+                tableSession: {
+                  include: { table: true }
+                }
+              }
+            }
+          }
+        });
+
+        if (fallbackTx) {
+          const fallbackAmountCents = fallbackTx.amountCents ?? toCentsFromFloatPrice(fallbackTx.amount);
+          const fallbackTipCents = fallbackTx.tipCents ?? (fallbackTx.tipAmount ? toCentsFromFloatPrice(fallbackTx.tipAmount) : 0);
+          const txSessionId = fallbackTx.tableSessionId || fallbackTx.order?.tableSessionId;
+          const txRestaurantId = fallbackTx.order?.tableSession?.table?.restaurantId;
+
+          const reqParticipant = participantId || null;
+          const txParticipant = fallbackTx.participantId || null;
+
+          if (
+            txSessionId !== targetSessionId ||
+            (txRestaurantId && txRestaurantId !== staffRestaurantId) ||
+            fallbackTx.method !== normalizedMethod ||
+            fallbackAmountCents !== amountCents ||
+            fallbackTipCents !== tipCents ||
+            reqParticipant !== txParticipant
+          ) {
+            const conflictErr: any = new Error(
+              `Conflicto de idempotencia: la clave ya fue utilizada con diferente sesión, restaurante, método o importes`
+            );
+            conflictErr.statusCode = 409;
+            conflictErr.code = 'IDEMPOTENCY_CONFLICT';
+            throw conflictErr;
+          }
+
+          result = { existing: fallbackTx, session: fallbackTx.order.tableSession };
+        } else {
+          throw txErr;
+        }
+      } else {
+        throw txErr;
+      }
+    }
+
+    if (typeof fsmBroadcast === 'function') {
+      try {
+        fsmBroadcast();
+      } catch (_) {}
+    }
 
     if (result.existing) {
       const bill = await this.calculateTableBill(result.existing.tableSessionId);
@@ -871,6 +1006,8 @@ export class BillService {
 
     const normalizedReason = (params.reason || 'Reversión autorizada por MANAGER').trim().slice(0, 500);
 
+    let fsmRevertBroadcast: any = null;
+
     // Reversión contable y restauración de FSM ATÓMICA en una sola transacción
     await prisma.$transaction(async (prismaTx) => {
       await prismaTx.paymentTransaction.update({
@@ -892,31 +1029,51 @@ export class BillService {
         data: { status: OrderStatus.SERVED }
       });
 
-      // Restaurar ítems como no pagados
-      if (tx.participantId) {
-        await prismaTx.orderItem.updateMany({
-          where: {
-            order: { tableSessionId: tx.tableSessionId },
-            OR: [
-              { claimedByGuest: tx.participantId },
-              { participantId: tx.participantId }
-            ]
-          },
-          data: { isPaid: false }
-        });
-      } else {
-        await prismaTx.orderItem.updateMany({
-          where: {
-            order: { tableSessionId: tx.tableSessionId }
-          },
-          data: { isPaid: false }
-        });
+      // Re-evaluar granularmente cada ítem de la sesión:
+      // Un ítem sólo permanece pagado si la suma de sus allocations activas (MANUAL_SETTLED, APPROVED)
+      // cubre su lineTotalCents. Si no la cubre, se marca isPaid: false.
+      const sessionOrders = await prismaTx.order.findMany({
+        where: {
+          tableSessionId: tx.tableSessionId,
+          status: { not: OrderStatus.CANCELLED }
+        },
+        include: {
+          items: true
+        }
+      });
+
+      for (const ord of sessionOrders) {
+        for (const item of ord.items) {
+          const itemTotal =
+            item.lineTotalCents ??
+            (item.unitPriceCents !== null && item.unitPriceCents !== undefined
+              ? item.unitPriceCents * item.quantity
+              : toCentsFromFloatPrice(item.unitPrice) * item.quantity);
+
+          const activeAllocs = await prismaTx.paymentAllocation.findMany({
+            where: {
+              orderItemId: item.id,
+              paymentTransaction: {
+                status: { in: ['MANUAL_SETTLED', 'APPROVED'] }
+              }
+            }
+          });
+          const coveredCents = activeAllocs.reduce((sum, a) => sum + a.amountCents, 0);
+          const shouldBePaid = coveredCents >= itemTotal && itemTotal > 0;
+
+          if (item.isPaid !== shouldBePaid) {
+            await prismaTx.orderItem.update({
+              where: { id: item.id },
+              data: { isPaid: shouldBePaid }
+            });
+          }
+        }
       }
 
       // Reabrir estado de la mesa en FSM si estaba en PAID ATÓMICAMENTE dentro de la transacción
       const freshTable = await prismaTx.table.findUnique({ where: { id: tableId } });
       if (freshTable && freshTable.currentState === TableFSMState.PAID) {
-        await fsmService.attemptTransition(
+        const fsmRes = await fsmService.attemptTransition(
           {
             tableId,
             toState: TableFSMState.EATING,
@@ -927,8 +1084,17 @@ export class BillService {
           },
           prismaTx
         );
+        if (fsmRes && typeof fsmRes.broadcast === 'function') {
+          fsmRevertBroadcast = fsmRes.broadcast;
+        }
       }
     });
+
+    if (typeof fsmRevertBroadcast === 'function') {
+      try {
+        fsmRevertBroadcast();
+      } catch (_) {}
+    }
 
     const bill = await this.calculateTableBill(tx.tableSessionId);
 

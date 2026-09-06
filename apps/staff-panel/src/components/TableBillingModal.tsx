@@ -43,8 +43,27 @@ export const TableBillingModal: React.FC<TableBillingModalProps> = ({
   const [selectedParticipantId, setSelectedParticipantId] = useState<string>('');
   const [revertingId, setRevertingId] = useState<string | null>(null);
 
-  // Idempotencia persistente en reintentos para no duplicar cobros ante fallos de red
+  // Idempotencia persistente en reintentos para no duplicar cobros ante fallos de red o recarga de página
   const pendingPaymentRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
+
+  const getStoredPayment = useCallback((tId: string): { fingerprint: string; idempotencyKey: string } | null => {
+    try {
+      const raw = sessionStorage.getItem(`mesaya_pending_payment_${tId}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const saveStoredPayment = useCallback((tId: string, data: { fingerprint: string; idempotencyKey: string } | null) => {
+    try {
+      if (data) {
+        sessionStorage.setItem(`mesaya_pending_payment_${tId}`, JSON.stringify(data));
+      } else {
+        sessionStorage.removeItem(`mesaya_pending_payment_${tId}`);
+      }
+    } catch {}
+  }, []);
 
   const fetchBill = useCallback(async () => {
     if (!tableId) return;
@@ -67,9 +86,13 @@ export const TableBillingModal: React.FC<TableBillingModalProps> = ({
     if (isOpen) {
       fetchBill();
       setSuccessMsg(null);
-      pendingPaymentRef.current = null;
+      // Intentar recuperar pago pendiente persistido en sessionStorage
+      const stored = getStoredPayment(tableId);
+      if (stored) {
+        pendingPaymentRef.current = stored;
+      }
     }
-  }, [isOpen, fetchBill]);
+  }, [isOpen, fetchBill, tableId, getStoredPayment]);
 
   const participants = React.useMemo(() => {
     if (!bill?.items) return [];
@@ -107,14 +130,21 @@ export const TableBillingModal: React.FC<TableBillingModalProps> = ({
     const parsedTip = parseFloat(tipPesos.replace(',', '.')) || 0;
     const tipCents = Math.max(0, Math.round(parsedTip * 100));
 
-    // Si es un reintento con los mismos parámetros, reutiliza la misma clave de idempotencia
+    // Si es un reintento con los mismos parámetros, reutiliza la misma clave de idempotencia (memoria o sessionStorage)
     const fingerprint = `${tableId}_${amountCents}_${method}_${tipCents}_${selectedParticipantId || 'all'}`;
+    const stored = getStoredPayment(tableId);
     let idempotencyKey: string;
+
     if (pendingPaymentRef.current && pendingPaymentRef.current.fingerprint === fingerprint) {
       idempotencyKey = pendingPaymentRef.current.idempotencyKey;
+    } else if (stored && stored.fingerprint === fingerprint) {
+      idempotencyKey = stored.idempotencyKey;
+      pendingPaymentRef.current = stored;
     } else {
       idempotencyKey = `pay_${tableId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      pendingPaymentRef.current = { fingerprint, idempotencyKey };
+      const paymentData = { fingerprint, idempotencyKey };
+      pendingPaymentRef.current = paymentData;
+      saveStoredPayment(tableId, paymentData);
     }
 
     try {
@@ -131,8 +161,9 @@ export const TableBillingModal: React.FC<TableBillingModalProps> = ({
         participantId: selectedParticipantId || undefined
       });
 
-      // Cobro exitoso: limpiar la clave pendiente
+      // Cobro exitoso: limpiar la clave pendiente tanto de memoria como de sessionStorage
       pendingPaymentRef.current = null;
+      saveStoredPayment(tableId, null);
       setSuccessMsg('Cobro registrado exitosamente.');
       await fetchBill();
       onSettled?.();

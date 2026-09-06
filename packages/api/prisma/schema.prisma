@@ -284,6 +284,7 @@ model OrderItem {
   claimVersion   Int         @default(0)
   isPaid         Boolean     @default(false)
   
+  allocations    PaymentAllocation[]
   createdAt      DateTime    @default(now())
 }
 
@@ -332,8 +333,22 @@ model PaymentTransaction {
   reversalReason  String?
   reversalStaffId String?
   reversalAt      DateTime?
+  allocations    PaymentAllocation[]
   createdAt      DateTime @default(now())
   resolvedAt     DateTime?
+}
+
+model PaymentAllocation {
+  id                   String             @id @default(cuid())
+  paymentTransactionId String
+  paymentTransaction   PaymentTransaction @relation(fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+  orderItemId          String
+  orderItem            OrderItem          @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  amountCents          Int
+  createdAt            DateTime           @default(now())
+
+  @@index([paymentTransactionId])
+  @@index([orderItemId])
 }
 
 // ==========================================

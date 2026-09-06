@@ -34,6 +34,7 @@ export interface TransitionResult {
   stateEventId: string;
   stateChangedAt: string;
   occupancyMinutes: number | null;
+  broadcast?: () => void;
 }
 
 export class FSMService {
@@ -179,24 +180,29 @@ export class FSMService {
             where: { id: { in: pendingCalls.map((c: any) => c.id) } },
             data: { status: 'RESOLVED', resolvedAt: now }
           });
-          for (const c of pendingCalls) {
-            eventBus.broadcastCall(
-              {
-                id: c.id,
-                restaurantId: table.restaurantId,
-                tableId: table.id,
-                tableLabel: table.label,
-                sector: table.sector as any,
-                type: c.type as any,
-                paymentMethod: c.paymentMethod as any,
-                note: c.note,
-                origin: c.origin as any,
-                status: 'RESOLVED' as any,
-                createdAt: c.createdAt.toISOString(),
-                resolvedAt: now.toISOString()
-              },
-              'call.updated'
-            );
+          const broadcastCalls = () => {
+            for (const c of pendingCalls) {
+              eventBus.broadcastCall(
+                {
+                  id: c.id,
+                  restaurantId: table.restaurantId,
+                  tableId: table.id,
+                  tableLabel: table.label,
+                  sector: table.sector as any,
+                  type: c.type as any,
+                  paymentMethod: c.paymentMethod as any,
+                  note: c.note,
+                  origin: c.origin as any,
+                  status: 'RESOLVED' as any,
+                  createdAt: c.createdAt.toISOString(),
+                  resolvedAt: now.toISOString()
+                },
+                'call.updated'
+              );
+            }
+          };
+          if (!tx) {
+            broadcastCalls();
           }
         }
       }
@@ -260,7 +266,15 @@ export class FSMService {
       timestamp: now.toISOString()
     };
 
-    eventBus.broadcastTableState(sseEvent);
+    const broadcastCallback = () => {
+      eventBus.broadcastTableState(sseEvent);
+    };
+
+    // Si se opera dentro de una transacción explícita (tx), NO emitir en tiempo real antes
+    // de que la transacción externa confirme. El llamador ejecutará broadcast() tras el commit.
+    if (!tx) {
+      broadcastCallback();
+    }
 
     return {
       success: true,
@@ -272,7 +286,8 @@ export class FSMService {
       source,
       stateEventId: stateEvent.id,
       stateChangedAt: now.toISOString(),
-      occupancyMinutes
+      occupancyMinutes,
+      broadcast: broadcastCallback
     };
   }
 

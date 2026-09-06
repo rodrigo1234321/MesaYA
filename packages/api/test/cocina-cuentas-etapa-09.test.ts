@@ -736,4 +736,363 @@ describe('COCINA-CUENTAS Etapa 09 — E2E Integral: Turno, QR, Tandas, Alérgeno
     // paymentSeq debió incrementarse
     expect(updatedSession?.paymentSeq).toBeGreaterThanOrEqual(1);
   });
+
+  it('17. Concurrencia idéntica: dos cobros simultáneos con la misma idempotencyKey devuelven 201 y 200 duplicate sin error P2002', async () => {
+    const timestamp = Date.now();
+    const tableC = await prisma.table.create({
+      data: {
+        restaurantId: restA.id,
+        label: `Mesa Idempotencia Race ${timestamp}`,
+        currentState: TableFSMState.EATING
+      }
+    });
+
+    const sessionC = await prisma.tableSession.create({
+      data: {
+        tableId: tableC.id,
+        shiftId: shiftA.id,
+        token: `tok-session-idem-${timestamp}`,
+        activeKey: tableC.id,
+        expiresAt: new Date(Date.now() + 3600000)
+      }
+    });
+
+    const orderC = await prisma.order.create({
+      data: {
+        tableSessionId: sessionC.id,
+        status: OrderStatus.SERVED,
+        totalCents: 500000,
+        totalAmount: 5000,
+        currency: 'ARS'
+      }
+    });
+
+    await prisma.orderItem.create({
+      data: {
+        orderId: orderC.id,
+        menuItemId: itemSorrentinos.id,
+        quantity: 1,
+        unitPrice: 5000,
+        unitPriceCents: 500000,
+        lineTotalCents: 500000,
+        productNameSnapshot: 'Plato Idempotente',
+        addedByGuest: 'Tester',
+        currency: 'ARS'
+      }
+    });
+
+    const sharedKey = `race-same-key-${timestamp}`;
+
+    const payA = app.inject({
+      method: 'POST',
+      url: '/v1/staff/payments/settle',
+      headers: { Authorization: `Bearer ${tokenWaiterA}` },
+      payload: {
+        tableSessionId: sessionC.id,
+        amountCents: 500000,
+        paymentMethod: 'WAITER_CASH',
+        idempotencyKey: sharedKey
+      }
+    });
+
+    const payB = app.inject({
+      method: 'POST',
+      url: '/v1/staff/payments/settle',
+      headers: { Authorization: `Bearer ${tokenWaiterA}` },
+      payload: {
+        tableSessionId: sessionC.id,
+        amountCents: 500000,
+        paymentMethod: 'WAITER_CASH',
+        idempotencyKey: sharedKey
+      }
+    });
+
+    const [resA, resB] = await Promise.all([payA, payB]);
+    const statuses = [resA.statusCode, resB.statusCode].sort();
+
+    expect(statuses).toEqual([200, 201]);
+
+    const dupRes = resA.statusCode === 200 ? resA : resB;
+    const initialRes = resA.statusCode === 201 ? resA : resB;
+
+    expect(dupRes.json().duplicate).toBe(true);
+    expect(dupRes.json().transaction.id).toBe(initialRes.json().transaction.id);
+
+    // Exactamente 1 transacción persistida
+    const txCount = await prisma.paymentTransaction.count({
+      where: { tableSessionId: sessionC.id }
+    });
+    expect(txCount).toBe(1);
+  });
+
+  it('18. Validación de seguridad: cobro con participantId de otra mesa es rechazado con 400 PARTICIPANT_NOT_IN_SESSION', async () => {
+    const timestamp = Date.now();
+    const tableForeign = await prisma.table.create({
+      data: {
+        restaurantId: restA.id,
+        label: `Mesa Ajena ${timestamp}`,
+        currentState: TableFSMState.EATING
+      }
+    });
+
+    const sessionForeign = await prisma.tableSession.create({
+      data: {
+        tableId: tableForeign.id,
+        shiftId: shiftA.id,
+        token: `tok-foreign-${timestamp}`,
+        activeKey: tableForeign.id,
+        expiresAt: new Date(Date.now() + 3600000)
+      }
+    });
+
+    const foreignParticipant = await prisma.visitParticipant.create({
+      data: {
+        tableSessionId: sessionForeign.id,
+        displayName: 'Comensal Ajeno',
+        tokenHash: crypto.createHash('sha256').update(`foreign-token-${timestamp}`).digest('hex')
+      }
+    });
+
+    // Intentar cobrar en la mesa A pasando el participante de sessionForeign
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/staff/payments/settle',
+      headers: { Authorization: `Bearer ${tokenWaiterA}` },
+      payload: {
+        tableSessionId: sessionA.id,
+        amountCents: 100000,
+        paymentMethod: 'WAITER_CASH',
+        idempotencyKey: `foreign-part-${timestamp}`,
+        participantId: foreignParticipant.id
+      }
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe('PARTICIPANT_NOT_IN_SESSION');
+  });
+
+  it('19. Contabilidad granular: cobro parcial de participante ($3.000 de $7.200) mantiene isPaid: false; segundo cobro ($4.200) pasa a isPaid: true', async () => {
+    const timestamp = Date.now();
+    const tableE = await prisma.table.create({
+      data: {
+        restaurantId: restA.id,
+        label: `Mesa Parcial ${timestamp}`,
+        currentState: TableFSMState.EATING
+      }
+    });
+
+    const sessionE = await prisma.tableSession.create({
+      data: {
+        tableId: tableE.id,
+        shiftId: shiftA.id,
+        token: `tok-session-part-${timestamp}`,
+        activeKey: tableE.id,
+        expiresAt: new Date(Date.now() + 3600000)
+      }
+    });
+
+    const participantE = await prisma.visitParticipant.create({
+      data: {
+        tableSessionId: sessionE.id,
+        displayName: 'Comensal Parcial',
+        tokenHash: crypto.createHash('sha256').update(`token-parcial-${timestamp}`).digest('hex')
+      }
+    });
+
+    const orderE = await prisma.order.create({
+      data: {
+        tableSessionId: sessionE.id,
+        status: OrderStatus.SERVED,
+        totalCents: 720000,
+        totalAmount: 7200,
+        currency: 'ARS'
+      }
+    });
+
+    const itemE = await prisma.orderItem.create({
+      data: {
+        orderId: orderE.id,
+        menuItemId: itemBife.id,
+        quantity: 1,
+        unitPrice: 7200,
+        unitPriceCents: 720000,
+        lineTotalCents: 720000,
+        productNameSnapshot: 'Bife Contable',
+        addedByGuest: 'Tester',
+        claimedByGuest: participantE.id,
+        participantId: participantE.id,
+        currency: 'ARS',
+        isPaid: false
+      }
+    });
+
+    // 1. Pago parcial: $3.000 (300.000 centavos)
+    const payPart1 = await app.inject({
+      method: 'POST',
+      url: '/v1/staff/payments/settle',
+      headers: { Authorization: `Bearer ${tokenWaiterA}` },
+      payload: {
+        tableSessionId: sessionE.id,
+        amountCents: 300000,
+        paymentMethod: 'WAITER_CASH',
+        idempotencyKey: `pay-part-1-${timestamp}`,
+        participantId: participantE.id
+      }
+    });
+
+    expect(payPart1.statusCode).toBe(201);
+
+    // Verificar que el ítem NO se marcó como pagado
+    const itemAfterPart1 = await prisma.orderItem.findUnique({ where: { id: itemE.id } });
+    expect(itemAfterPart1?.isPaid).toBe(false);
+
+    // Verificar allocation en base
+    const allocPart1 = await prisma.paymentAllocation.findMany({ where: { orderItemId: itemE.id } });
+    expect(allocPart1).toHaveLength(1);
+    expect(allocPart1[0].amountCents).toBe(300000);
+
+    // 2. Segundo pago por el resto: $4.200 (420.000 centavos)
+    const payPart2 = await app.inject({
+      method: 'POST',
+      url: '/v1/staff/payments/settle',
+      headers: { Authorization: `Bearer ${tokenWaiterA}` },
+      payload: {
+        tableSessionId: sessionE.id,
+        amountCents: 420000,
+        paymentMethod: 'WAITER_CARD',
+        idempotencyKey: `pay-part-2-${timestamp}`,
+        participantId: participantE.id
+      }
+    });
+
+    expect(payPart2.statusCode).toBe(201);
+
+    // Ahora sí debe estar pagado (300000 + 420000 = 720000 >= 720000)
+    const itemAfterPart2 = await prisma.orderItem.findUnique({ where: { id: itemE.id } });
+    expect(itemAfterPart2?.isPaid).toBe(true);
+
+    const allocsTotal = await prisma.paymentAllocation.findMany({ where: { orderItemId: itemE.id } });
+    expect(allocsTotal).toHaveLength(2);
+  });
+
+  it('20. Reversión multi-pago: anular el pago 2 desmarca ítem 2 pero preserva ítem 1 como isPaid: true', async () => {
+    const timestamp = Date.now();
+    const tableF = await prisma.table.create({
+      data: {
+        restaurantId: restA.id,
+        label: `Mesa MultiPago ${timestamp}`,
+        currentState: TableFSMState.EATING
+      }
+    });
+
+    const sessionF = await prisma.tableSession.create({
+      data: {
+        tableId: tableF.id,
+        shiftId: shiftA.id,
+        token: `tok-session-multi-${timestamp}`,
+        activeKey: tableF.id,
+        expiresAt: new Date(Date.now() + 3600000)
+      }
+    });
+
+    const orderF = await prisma.order.create({
+      data: {
+        tableSessionId: sessionF.id,
+        status: OrderStatus.SERVED,
+        totalCents: 800000,
+        totalAmount: 8000,
+        currency: 'ARS'
+      }
+    });
+
+    const item1 = await prisma.orderItem.create({
+      data: {
+        orderId: orderF.id,
+        menuItemId: itemSorrentinos.id,
+        quantity: 1,
+        unitPrice: 5000,
+        unitPriceCents: 500000,
+        lineTotalCents: 500000,
+        productNameSnapshot: 'Item 1 Reversión',
+        addedByGuest: 'Tester',
+        currency: 'ARS',
+        isPaid: false
+      }
+    });
+
+    const item2 = await prisma.orderItem.create({
+      data: {
+        orderId: orderF.id,
+        menuItemId: itemEmpanadas.id,
+        quantity: 1,
+        unitPrice: 3000,
+        unitPriceCents: 300000,
+        lineTotalCents: 300000,
+        productNameSnapshot: 'Item 2 Reversión',
+        addedByGuest: 'Tester',
+        currency: 'ARS',
+        isPaid: false
+      }
+    });
+
+    // 1. Cobro del ítem 1: $5.000 (500.000 centavos)
+    const pay1 = await app.inject({
+      method: 'POST',
+      url: '/v1/staff/payments/settle',
+      headers: { Authorization: `Bearer ${tokenWaiterA}` },
+      payload: {
+        tableSessionId: sessionF.id,
+        orderItemId: item1.id,
+        amountCents: 500000,
+        paymentMethod: 'WAITER_CASH',
+        idempotencyKey: `pay-item1-${timestamp}`
+      }
+    });
+    expect(pay1.statusCode).toBe(201);
+
+    const dbItem1AfterPay1 = await prisma.orderItem.findUnique({ where: { id: item1.id } });
+    const dbItem2AfterPay1 = await prisma.orderItem.findUnique({ where: { id: item2.id } });
+    expect(dbItem1AfterPay1?.isPaid).toBe(true);
+    expect(dbItem2AfterPay1?.isPaid).toBe(false);
+
+    // 2. Cobro del ítem 2: $3.000 (300.000 centavos)
+    const pay2 = await app.inject({
+      method: 'POST',
+      url: '/v1/staff/payments/settle',
+      headers: { Authorization: `Bearer ${tokenWaiterA}` },
+      payload: {
+        tableSessionId: sessionF.id,
+        orderItemId: item2.id,
+        amountCents: 300000,
+        paymentMethod: 'WAITER_CARD',
+        idempotencyKey: `pay-item2-${timestamp}`
+      }
+    });
+    expect(pay2.statusCode).toBe(201);
+    const pay2TxId = pay2.json().transaction.id;
+
+    const dbItem1AfterPay2 = await prisma.orderItem.findUnique({ where: { id: item1.id } });
+    const dbItem2AfterPay2 = await prisma.orderItem.findUnique({ where: { id: item2.id } });
+    expect(dbItem1AfterPay2?.isPaid).toBe(true);
+    expect(dbItem2AfterPay2?.isPaid).toBe(true);
+
+    // 3. Revertir únicamente el pago 2 por MANAGER
+    const resRevert = await app.inject({
+      method: 'POST',
+      url: `/v1/staff/payments/${pay2TxId}/revert`,
+      headers: { Authorization: `Bearer ${tokenManagerA}` },
+      payload: { reason: 'Error de tipeo en tarjeta' }
+    });
+    expect(resRevert.statusCode).toBe(200);
+
+    // Ítem 1 debe seguir pagado; ítem 2 debe volver a isPaid: false
+    const finalItem1 = await prisma.orderItem.findUnique({ where: { id: item1.id } });
+    const finalItem2 = await prisma.orderItem.findUnique({ where: { id: item2.id } });
+    expect(finalItem1?.isPaid).toBe(true);
+    expect(finalItem2?.isPaid).toBe(false);
+
+    const finalBill = await BillService.calculateTableBill(sessionF.id);
+    expect(finalBill.paidCents).toBe(500000);
+    expect(finalBill.remainingCents).toBe(300000);
+  });
 });
