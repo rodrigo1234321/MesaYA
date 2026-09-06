@@ -213,7 +213,43 @@ const el = {
   btnCloseModalMenu: document.getElementById('btnCloseModalMenu'),
   btnOrderFromMenu: document.getElementById('btnOrderFromMenu'),
   customSupplyNote: document.getElementById('customSupplyNote'),
-  btnSubmitCustomSupply: document.getElementById('btnSubmitCustomSupply')
+  btnSubmitCustomSupply: document.getElementById('btnSubmitCustomSupply'),
+  btnParticipantBadge: document.getElementById('btnParticipantBadge'),
+  participantDisplayNameText: document.getElementById('participantDisplayNameText'),
+  modalParticipant: document.getElementById('modalParticipant'),
+  inputParticipantName: document.getElementById('inputParticipantName'),
+  btnSaveParticipant: document.getElementById('btnSaveParticipant'),
+  btnCloseModalParticipant: document.getElementById('btnCloseModalParticipant'),
+  dishSheetQty: document.getElementById('dishSheetQty'),
+  btnDishQtyMinus: document.getElementById('btnDishQtyMinus'),
+  btnDishQtyPlus: document.getElementById('btnDishQtyPlus'),
+  dishSheetNotes: document.getElementById('dishSheetNotes'),
+  btnAddToTanda: document.getElementById('btnAddToTanda'),
+  floatingCartBar: document.getElementById('floatingCartBar'),
+  cartItemCountBadge: document.getElementById('cartItemCountBadge'),
+  cartAuthorSubtitle: document.getElementById('cartAuthorSubtitle'),
+  cartEstimatedTotal: document.getElementById('cartEstimatedTotal'),
+  modalCartSheet: document.getElementById('modalCartSheet'),
+  btnCloseCartSheet: document.getElementById('btnCloseCartSheet'),
+  tabCartDraftBtn: document.getElementById('tabCartDraftBtn'),
+  tabTandasTrackingBtn: document.getElementById('tabTandasTrackingBtn'),
+  tabCartDraftCount: document.getElementById('tabCartDraftCount'),
+  tabTandasBadge: document.getElementById('tabTandasBadge'),
+  viewCartDraft: document.getElementById('viewCartDraft'),
+  viewTandasTracking: document.getElementById('viewTandasTracking'),
+  cartParticipantNameDisplay: document.getElementById('cartParticipantNameDisplay'),
+  btnChangeParticipantFromCart: document.getElementById('btnChangeParticipantFromCart'),
+  cartDraftItemsContainer: document.getElementById('cartDraftItemsContainer'),
+  cartDraftEmptyNotice: document.getElementById('cartDraftEmptyNotice'),
+  cartDraftFooter: document.getElementById('cartDraftFooter'),
+  inputTandaNotes: document.getElementById('inputTandaNotes'),
+  cartDraftTotalEstimate: document.getElementById('cartDraftTotalEstimate'),
+  btnSubmitTanda: document.getElementById('btnSubmitTanda'),
+  btnRefreshTandas: document.getElementById('btnRefreshTandas'),
+  tandasTrackingListContainer: document.getElementById('tandasTrackingListContainer'),
+  tandasTrackingEmptyNotice: document.getElementById('tandasTrackingEmptyNotice'),
+  btnOpenCartFromMenu: document.getElementById('btnOpenCartFromMenu'),
+  menuCartCountBadge: document.getElementById('menuCartCountBadge')
 };
 
 // Unified Table Params Extraction (supports /r/:slug/mesa/:label, /mesa/:label, and query params)
@@ -400,6 +436,9 @@ async function init(overrideToken) {
       sessionStorage.setItem('mesaya_token', data.token);
     }
 
+    initParticipantSession(data.token);
+    loadDraftCart();
+
     // Render header & details
     if (el.restaurantName) el.restaurantName.textContent = data.restaurant.name;
     if (el.tableBadge) el.tableBadge.textContent = data.table.label;
@@ -549,6 +588,10 @@ function openDishDetailSheet(item) {
     }
   }
 
+  currentDishQty = 1;
+  if (el.dishSheetQty) el.dishSheetQty.textContent = '1';
+  if (el.dishSheetNotes) el.dishSheetNotes.value = '';
+
   sheet.classList.add('active');
   document.body.classList.add('modal-open');
 }
@@ -559,7 +602,7 @@ function closeDishDetailSheet() {
   selectedDishForOrder = null;
   
   // Only remove modal-open if no other drawer or modal is active
-  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden)');
+  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden), #modalParticipant:not(.hidden)');
   if (!anyModalActive) {
     document.body.classList.remove('modal-open');
   }
@@ -1205,13 +1248,600 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// ==========================================
+// PARTICIPANTES Y TANDAS DE MESA (Etapa 05)
+// ==========================================
+let currentParticipantToken = null;
+let currentParticipantId = null;
+let currentParticipantDisplayName = null;
+let draftCart = [];
+let currentDishQty = 1;
+let isSubmittingTanda = false;
+let tandasPollTimer = null;
+
+function getParticipantStorageKey(token) {
+  return `mesaya_participant_${token || 'anon'}`;
+}
+
+function getDraftCartStorageKey(token, participantId) {
+  return `mesaya_draft_cart_${token || 'anon'}_${participantId || 'anon'}`;
+}
+
+function initParticipantSession(tableToken) {
+  if (!tableToken) return;
+  const key = getParticipantStorageKey(tableToken);
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      currentParticipantToken = parsed.token || null;
+      currentParticipantId = parsed.id || null;
+      currentParticipantDisplayName = parsed.displayName || null;
+    }
+  } catch (_) {}
+
+  updateParticipantUI();
+}
+
+function updateParticipantUI() {
+  const name = currentParticipantDisplayName;
+  if (el.participantDisplayNameText) {
+    el.participantDisplayNameText.textContent = name ? name : 'Unirme';
+  }
+  if (el.cartParticipantNameDisplay) {
+    el.cartParticipantNameDisplay.textContent = name ? name : 'Sin identificar';
+  }
+  if (el.cartAuthorSubtitle) {
+    el.cartAuthorSubtitle.textContent = name ? `Pedido de ${name}` : 'Toca para revisar y enviar';
+  }
+}
+
+function openParticipantModal() {
+  triggerHaptic();
+  closeAllModals();
+  if (el.modalParticipant) {
+    if (el.inputParticipantName) {
+      el.inputParticipantName.value = currentParticipantDisplayName || '';
+    }
+    el.modalParticipant.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    setTimeout(() => el.inputParticipantName?.focus(), 150);
+  }
+}
+
+function closeParticipantModal() {
+  if (el.modalParticipant) el.modalParticipant.classList.add('hidden');
+  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden)');
+  if (!anyModalActive) {
+    document.body.classList.remove('modal-open');
+  }
+}
+
+async function handleSaveParticipant() {
+  const input = el.inputParticipantName;
+  if (!input) return;
+  const rawName = input.value.trim();
+  if (!rawName) {
+    showToast('Por favor ingresá tu nombre o apodo.', 'warning');
+    input.focus();
+    return;
+  }
+  if (rawName.length > 40) {
+    showToast('El nombre no puede superar los 40 caracteres.', 'warning');
+    return;
+  }
+
+  const tableToken = currentToken || getToken();
+  if (!tableToken) {
+    showToast('Sesión de mesa no disponible.', 'error');
+    return;
+  }
+
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/participants/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionToken: tableToken,
+        displayName: rawName
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || data.error || 'No se pudo registrar participante');
+    }
+
+    currentParticipantToken = data.participantToken;
+    currentParticipantId = data.participantId;
+    currentParticipantDisplayName = data.displayName;
+
+    sessionStorage.setItem(getParticipantStorageKey(tableToken), JSON.stringify({
+      token: data.participantToken,
+      id: data.participantId,
+      displayName: data.displayName
+    }));
+
+    updateParticipantUI();
+    closeParticipantModal();
+    showToast(`¡Hola, ${data.displayName}! Tu lugar en la mesa está listo.`, 'success');
+
+    loadDraftCart();
+  } catch (err) {
+    console.warn('Error al registrar participante:', err);
+    showToast('Error al conectar con la mesa. Por favor reintentá.', 'error');
+  }
+}
+
+function loadDraftCart() {
+  const tableToken = currentToken || getToken();
+  const key = getDraftCartStorageKey(tableToken, currentParticipantId);
+  try {
+    const raw = sessionStorage.getItem(key);
+    draftCart = raw ? JSON.parse(raw) : [];
+  } catch (_) {
+    draftCart = [];
+  }
+  updateCartBadges();
+}
+
+function saveDraftCart() {
+  const tableToken = currentToken || getToken();
+  const key = getDraftCartStorageKey(tableToken, currentParticipantId);
+  try {
+    sessionStorage.setItem(key, JSON.stringify(draftCart));
+  } catch (_) {}
+  updateCartBadges();
+  renderCartDraft();
+}
+
+function updateCartBadges() {
+  const totalCount = draftCart.reduce((sum, item) => sum + item.quantity, 0);
+  const estimatedTotal = draftCart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+  if (el.tabCartDraftCount) {
+    el.tabCartDraftCount.textContent = String(totalCount);
+  }
+  if (el.menuCartCountBadge) {
+    el.menuCartCountBadge.textContent = String(totalCount);
+  }
+  if (el.cartItemCountBadge) {
+    el.cartItemCountBadge.textContent = `${totalCount} ${totalCount === 1 ? 'ítem' : 'ítems'}`;
+  }
+  if (el.cartEstimatedTotal) {
+    el.cartEstimatedTotal.textContent = `$${estimatedTotal.toLocaleString('es-AR')}`;
+  }
+
+  if (el.floatingCartBar) {
+    if (totalCount > 0) {
+      el.floatingCartBar.classList.remove('hidden');
+    } else {
+      el.floatingCartBar.classList.add('hidden');
+    }
+  }
+}
+
+function addToDraftCart(dishItem, quantity = 1, notes = '') {
+  if (!dishItem || !dishItem.id) return;
+  const existingIndex = draftCart.findIndex(
+    i => i.id === dishItem.id && (i.notes || '') === (notes || '')
+  );
+
+  if (existingIndex >= 0) {
+    draftCart[existingIndex].quantity += quantity;
+  } else {
+    draftCart.push({
+      id: dishItem.id,
+      name: dishItem.name,
+      price: Number(dishItem.price) || 0,
+      quantity,
+      notes: notes || ''
+    });
+  }
+
+  saveDraftCart();
+  triggerHaptic();
+  showToast(`Agregado a tu pedido (${quantity}x ${dishItem.name})`, 'success');
+}
+
+function removeFromDraftCart(index) {
+  if (index >= 0 && index < draftCart.length) {
+    draftCart.splice(index, 1);
+    saveDraftCart();
+    triggerHaptic();
+  }
+}
+
+function updateDraftCartItemQty(index, delta) {
+  if (index >= 0 && index < draftCart.length) {
+    draftCart[index].quantity += delta;
+    if (draftCart[index].quantity <= 0) {
+      draftCart.splice(index, 1);
+    }
+    saveDraftCart();
+  }
+}
+
+function openCartSheet(tab = 'draft') {
+  triggerHaptic();
+  closeAllModals();
+  const sheet = el.modalCartSheet;
+  if (!sheet) return;
+
+  sheet.classList.add('active');
+  document.body.classList.add('modal-open');
+
+  switchCartTab(tab);
+}
+
+function closeCartSheet() {
+  const sheet = el.modalCartSheet;
+  if (sheet) sheet.classList.remove('active');
+
+  stopTandasPolling();
+
+  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden), #modalParticipant:not(.hidden)');
+  if (!anyModalActive) {
+    document.body.classList.remove('modal-open');
+  }
+}
+
+function switchCartTab(tab) {
+  if (tab === 'draft') {
+    el.viewCartDraft?.classList.remove('hidden');
+    el.viewTandasTracking?.classList.add('hidden');
+
+    el.tabCartDraftBtn?.classList.add('bg-amber-500/20', 'text-amber-300', 'border', 'border-amber-500/30');
+    el.tabCartDraftBtn?.classList.remove('text-slate-400');
+
+    el.tabTandasTrackingBtn?.classList.remove('bg-amber-500/20', 'text-amber-300', 'border', 'border-amber-500/30');
+    el.tabTandasTrackingBtn?.classList.add('text-slate-400');
+
+    stopTandasPolling();
+    renderCartDraft();
+  } else {
+    el.viewCartDraft?.classList.add('hidden');
+    el.viewTandasTracking?.classList.remove('hidden');
+
+    el.tabTandasTrackingBtn?.classList.add('bg-amber-500/20', 'text-amber-300', 'border', 'border-amber-500/30');
+    el.tabTandasTrackingBtn?.classList.remove('text-slate-400');
+
+    el.tabCartDraftBtn?.classList.remove('bg-amber-500/20', 'text-amber-300', 'border', 'border-amber-500/30');
+    el.tabCartDraftBtn?.classList.add('text-slate-400');
+
+    fetchAndRenderTandas();
+    startTandasPolling();
+  }
+}
+
+function renderCartDraft() {
+  const container = el.cartDraftItemsContainer;
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (draftCart.length === 0) {
+    if (el.cartDraftEmptyNotice) el.cartDraftEmptyNotice.classList.remove('hidden');
+    if (el.cartDraftFooter) el.cartDraftFooter.classList.add('hidden');
+    return;
+  }
+
+  if (el.cartDraftEmptyNotice) el.cartDraftEmptyNotice.classList.add('hidden');
+  if (el.cartDraftFooter) el.cartDraftFooter.classList.remove('hidden');
+
+  let totalEstimate = 0;
+
+  draftCart.forEach((item, index) => {
+    const lineTotal = item.price * item.quantity;
+    totalEstimate += lineTotal;
+
+    const card = document.createElement('div');
+    card.className = 'p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3 shadow-md';
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'flex-1 min-w-0';
+
+    const nameEl = document.createElement('h5');
+    nameEl.className = 'text-xs font-extrabold text-white truncate';
+    nameEl.textContent = item.name;
+
+    const priceEl = document.createElement('p');
+    priceEl.className = 'text-[11px] font-mono text-amber-400 mt-0.5';
+    priceEl.textContent = `$${lineTotal.toLocaleString('es-AR')}`;
+
+    infoDiv.appendChild(nameEl);
+    infoDiv.appendChild(priceEl);
+
+    if (item.notes) {
+      const noteEl = document.createElement('p');
+      noteEl.className = 'text-[10px] text-slate-400 italic mt-0.5 truncate';
+      noteEl.textContent = `Aclaración: ${item.notes}`;
+      infoDiv.appendChild(noteEl);
+    }
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'flex items-center gap-1.5 shrink-0';
+
+    const btnMinus = document.createElement('button');
+    btnMinus.className = 'w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center border border-slate-700 active:scale-95';
+    btnMinus.textContent = '-';
+    btnMinus.addEventListener('click', () => updateDraftCartItemQty(index, -1));
+
+    const qtySpan = document.createElement('span');
+    qtySpan.className = 'font-mono text-xs font-extrabold text-white w-5 text-center';
+    qtySpan.textContent = String(item.quantity);
+
+    const btnPlus = document.createElement('button');
+    btnPlus.className = 'w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center border border-slate-700 active:scale-95';
+    btnPlus.textContent = '+';
+    btnPlus.addEventListener('click', () => updateDraftCartItemQty(index, 1));
+
+    const btnDelete = document.createElement('button');
+    btnDelete.className = 'w-7 h-7 rounded-lg bg-red-950/60 hover:bg-red-900/80 text-red-300 font-bold text-xs flex items-center justify-center border border-red-800/40 ml-1 active:scale-95';
+    btnDelete.textContent = '🗑️';
+    btnDelete.title = 'Eliminar ítem';
+    btnDelete.addEventListener('click', () => removeFromDraftCart(index));
+
+    actionsDiv.appendChild(btnMinus);
+    actionsDiv.appendChild(qtySpan);
+    actionsDiv.appendChild(btnPlus);
+    actionsDiv.appendChild(btnDelete);
+
+    card.appendChild(infoDiv);
+    card.appendChild(actionsDiv);
+    container.appendChild(card);
+  });
+
+  if (el.cartDraftTotalEstimate) {
+    el.cartDraftTotalEstimate.textContent = `$${totalEstimate.toLocaleString('es-AR')}`;
+  }
+
+  if (el.btnSubmitTanda) {
+    if (activeRestaurantConfig && activeRestaurantConfig.allowOrdering === false) {
+      el.btnSubmitTanda.disabled = true;
+      el.btnSubmitTanda.className = 'w-full py-3.5 px-4 rounded-2xl bg-slate-800 text-slate-400 font-extrabold text-xs flex items-center justify-center gap-2 cursor-not-allowed';
+      el.btnSubmitTanda.textContent = 'Modo Carta Informativa (Sin pedidos)';
+    } else if (activeRestaurantConfig && activeRestaurantConfig.requireWaiterValidation) {
+      el.btnSubmitTanda.disabled = false;
+      el.btnSubmitTanda.className = 'w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 font-extrabold text-xs text-slate-950 flex items-center justify-center gap-2 shadow-xl shadow-amber-500/25 active:scale-98 transition-all';
+      el.btnSubmitTanda.textContent = '📝 Solicitar Pedido al Mozo';
+    } else {
+      el.btnSubmitTanda.disabled = false;
+      el.btnSubmitTanda.className = 'w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 font-extrabold text-xs text-slate-950 flex items-center justify-center gap-2 shadow-xl shadow-amber-500/25 active:scale-98 transition-all';
+      el.btnSubmitTanda.textContent = '🚀 Enviar Pedido a Cocina';
+    }
+  }
+}
+
+async function submitCurrentTanda() {
+  if (isSubmittingTanda) return;
+  if (draftCart.length === 0) {
+    showToast('Tu borrador de pedido está vacío.', 'warning');
+    return;
+  }
+
+  const tableToken = currentToken || getToken();
+  if (!tableToken) {
+    showToast('Sesión de mesa no disponible.', 'error');
+    return;
+  }
+
+  if (!currentParticipantToken) {
+    showToast('Por favor indicá tu nombre antes de enviar el pedido.', 'info');
+    openParticipantModal();
+    return;
+  }
+
+  if (activeRestaurantConfig && activeRestaurantConfig.allowOrdering === false) {
+    showToast('Comandas digitales desactivadas en este local.', 'info');
+    return;
+  }
+
+  isSubmittingTanda = true;
+  const originalText = el.btnSubmitTanda?.textContent;
+  if (el.btnSubmitTanda) {
+    el.btnSubmitTanda.disabled = true;
+    el.btnSubmitTanda.textContent = 'Enviando comanda...';
+  }
+
+  const idempotencyKey = `tanda_${currentParticipantId || 'p'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const generalNotes = el.inputTandaNotes?.value?.trim() || undefined;
+
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/tandas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionToken: tableToken,
+        participantToken: currentParticipantToken,
+        idempotencyKey,
+        items: draftCart.map(item => ({
+          menuItemId: item.id,
+          quantity: item.quantity,
+          notes: item.notes || undefined
+        })),
+        notes: generalNotes
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (data.code === 'ITEM_UNAVAILABLE') {
+        showToast('Uno o más platos de tu pedido ya no están disponibles.', 'error');
+      } else if (data.code === 'TABLE_ALREADY_PAID') {
+        showToast('La mesa ya fue pagada. No es posible enviar más pedidos.', 'error');
+      } else if (data.code === 'ORDERING_DISABLED') {
+        showToast('Los pedidos desde el móvil están desactivados.', 'warning');
+      } else {
+        showToast(data.message || data.error || 'No se pudo enviar el pedido.', 'error');
+      }
+      return;
+    }
+
+    draftCart = [];
+    saveDraftCart();
+    if (el.inputTandaNotes) el.inputTandaNotes.value = '';
+
+    triggerHaptic();
+    showToast(`¡Tanda #${data.seq} enviada con éxito!`, 'success');
+
+    switchCartTab('tracking');
+  } catch (err) {
+    console.warn('Error al enviar tanda:', err);
+    showToast('Error de conexión al enviar el pedido. Tu borrador no se perdió, podés reintentar.', 'error');
+  } finally {
+    isSubmittingTanda = false;
+    if (el.btnSubmitTanda) {
+      el.btnSubmitTanda.disabled = false;
+      if (originalText) el.btnSubmitTanda.textContent = originalText;
+    }
+  }
+}
+
+async function fetchAndRenderTandas() {
+  const tableToken = currentToken || getToken();
+  if (!tableToken) return;
+
+  const container = el.tandasTrackingListContainer;
+  if (!container) return;
+
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/tandas`, {
+      headers: {
+        'x-session-token': tableToken
+      }
+    });
+
+    if (!res.ok) return;
+    const tandas = await res.json();
+
+    container.innerHTML = '';
+
+    if (!Array.isArray(tandas) || tandas.length === 0) {
+      if (el.tandasTrackingEmptyNotice) el.tandasTrackingEmptyNotice.classList.remove('hidden');
+      return;
+    }
+
+    if (el.tandasTrackingEmptyNotice) el.tandasTrackingEmptyNotice.classList.add('hidden');
+
+    const statusMap = {
+      DRAFT: { label: 'Borrador', class: 'bg-slate-800 text-slate-300 border-slate-700' },
+      CONFIRMED: { label: 'Esperando al Mozo ⏳', class: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+      IN_KITCHEN: { label: 'En Cocina 👨‍🍳', class: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
+      PREPARING: { label: 'En Preparación 🔥', class: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
+      READY: { label: 'Listo para Servir 🍽️', class: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
+      SERVED: { label: 'Servido en Mesa ✅', class: 'bg-slate-800 text-slate-300 border-slate-700' },
+      REJECTED: { label: 'Rechazado ❌', class: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
+      CANCELLED: { label: 'Cancelado 🚫', class: 'bg-slate-800 text-slate-400 border-slate-700' }
+    };
+
+    tandas.forEach((tanda) => {
+      const card = document.createElement('div');
+      card.className = 'p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 shadow-md';
+
+      const headerRow = document.createElement('div');
+      headerRow.className = 'flex items-center justify-between';
+
+      const titleDiv = document.createElement('div');
+      titleDiv.className = 'flex items-center gap-2';
+
+      const seqBadge = document.createElement('span');
+      seqBadge.className = 'font-mono font-extrabold text-xs text-white bg-slate-900 px-2 py-0.5 rounded-lg border border-slate-800';
+      seqBadge.textContent = `Tanda #${tanda.seq}`;
+
+      const authorSpan = document.createElement('span');
+      authorSpan.className = 'text-[11px] text-slate-400 font-medium';
+      const authorName = tanda.participant ? tanda.participant.displayName : 'Personal de mesa';
+      authorSpan.textContent = `👤 ${authorName}`;
+
+      titleDiv.appendChild(seqBadge);
+      titleDiv.appendChild(authorSpan);
+
+      const stObj = statusMap[tanda.status] || { label: tanda.status, class: 'bg-slate-800 text-slate-300 border-slate-700' };
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `text-[10px] font-bold px-2 py-0.5 rounded-full border ${stObj.class}`;
+      statusBadge.textContent = stObj.label;
+
+      headerRow.appendChild(titleDiv);
+      headerRow.appendChild(statusBadge);
+      card.appendChild(headerRow);
+
+      if (tanda.rejectionReason) {
+        const rejBox = document.createElement('div');
+        rejBox.className = 'p-2 rounded-xl bg-rose-950/40 border border-rose-800/40 text-[11px] text-rose-300 flex items-start gap-1.5';
+        const icon = document.createElement('span');
+        icon.textContent = '⚠️';
+        const msg = document.createElement('span');
+        msg.textContent = `Motivo: ${tanda.rejectionReason}`;
+        rejBox.appendChild(icon);
+        rejBox.appendChild(msg);
+        card.appendChild(rejBox);
+      }
+
+      if (tanda.notes) {
+        const noteP = document.createElement('p');
+        noteP.className = 'text-[10px] text-slate-400 italic bg-slate-900/60 p-1.5 rounded-lg';
+        noteP.textContent = `Nota: ${tanda.notes}`;
+        card.appendChild(noteP);
+      }
+
+      if (Array.isArray(tanda.items) && tanda.items.length > 0) {
+        const itemsList = document.createElement('ul');
+        itemsList.className = 'space-y-1 pt-1 border-t border-slate-900 text-xs';
+
+        tanda.items.forEach((item) => {
+          const li = document.createElement('li');
+          li.className = 'flex items-center justify-between text-slate-300';
+
+          const leftSpan = document.createElement('span');
+          leftSpan.textContent = `${item.quantity}x ${item.productNameSnapshot || 'Plato'}`;
+
+          li.appendChild(leftSpan);
+
+          if (item.notes) {
+            const noteSpan = document.createElement('span');
+            noteSpan.className = 'text-[10px] text-slate-500 italic ml-2 truncate';
+            noteSpan.textContent = `(${item.notes})`;
+            li.appendChild(noteSpan);
+          }
+
+          itemsList.appendChild(li);
+        });
+
+        card.appendChild(itemsList);
+      }
+
+      container.appendChild(card);
+    });
+  } catch (err) {
+    console.warn('Error al obtener historial de tandas:', err);
+  }
+}
+
+function startTandasPolling() {
+  stopTandasPolling();
+  tandasPollTimer = setInterval(() => {
+    fetchAndRenderTandas();
+  }, 7000);
+}
+
+function stopTandasPolling() {
+  if (tandasPollTimer) {
+    clearInterval(tandasPollTimer);
+    tandasPollTimer = null;
+  }
+}
+
 function closeAllModals() {
   if (el.modalBill) el.modalBill.classList.add('hidden');
   if (el.modalWaiter) el.modalWaiter.classList.add('hidden');
   if (el.modalSupplies) el.modalSupplies.classList.add('hidden');
   if (el.modalMenu) el.modalMenu.classList.add('hidden');
+  if (el.modalParticipant) el.modalParticipant.classList.add('hidden');
   closeDishDetailSheet();
   closeSommelierDrawer();
+  closeCartSheet();
   document.body.classList.remove('modal-open');
 }
 
@@ -1517,6 +2147,95 @@ function bindEvents() {
     sessionStorage.removeItem('mesaya_token');
     init();
   });
+
+  // Participant Identity Modals & Badges
+  if (el.btnParticipantBadge) {
+    el.btnParticipantBadge.addEventListener('click', openParticipantModal);
+  }
+  if (el.btnCloseModalParticipant) {
+    el.btnCloseModalParticipant.addEventListener('click', closeParticipantModal);
+  }
+  if (el.btnSaveParticipant) {
+    el.btnSaveParticipant.addEventListener('click', handleSaveParticipant);
+  }
+  if (el.modalParticipant) {
+    el.modalParticipant.addEventListener('click', (e) => {
+      if (e.target === el.modalParticipant) closeParticipantModal();
+    });
+  }
+  if (el.inputParticipantName) {
+    el.inputParticipantName.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSaveParticipant();
+      }
+    });
+  }
+
+  // Dish Sheet Quantity Controls & Add to Tanda
+  if (el.btnDishQtyMinus) {
+    el.btnDishQtyMinus.addEventListener('click', () => {
+      if (currentDishQty > 1) {
+        currentDishQty--;
+        if (el.dishSheetQty) el.dishSheetQty.textContent = String(currentDishQty);
+      }
+    });
+  }
+  if (el.btnDishQtyPlus) {
+    el.btnDishQtyPlus.addEventListener('click', () => {
+      if (currentDishQty < 50) {
+        currentDishQty++;
+        if (el.dishSheetQty) el.dishSheetQty.textContent = String(currentDishQty);
+      }
+    });
+  }
+  if (el.btnAddToTanda) {
+    el.btnAddToTanda.addEventListener('click', () => {
+      if (!selectedDishForOrder) return;
+      if (!currentParticipantToken) {
+        showToast('Por favor indicá tu nombre para registrar tu pedido.', 'info');
+        openParticipantModal();
+        return;
+      }
+      const notes = el.dishSheetNotes?.value?.trim() || '';
+      addToDraftCart(selectedDishForOrder, currentDishQty, notes);
+      closeDishDetailSheet();
+    });
+  }
+
+  // Floating Cart Bar & Menu Cart Button
+  if (el.floatingCartBar) {
+    el.floatingCartBar.addEventListener('click', () => openCartSheet('draft'));
+  }
+  if (el.btnOpenCartFromMenu) {
+    el.btnOpenCartFromMenu.addEventListener('click', () => {
+      closeAllModals();
+      openCartSheet('draft');
+    });
+  }
+  if (el.btnCloseCartSheet) {
+    el.btnCloseCartSheet.addEventListener('click', closeCartSheet);
+  }
+
+  // Cart Sheet Tabs & Actions
+  if (el.tabCartDraftBtn) {
+    el.tabCartDraftBtn.addEventListener('click', () => switchCartTab('draft'));
+  }
+  if (el.tabTandasTrackingBtn) {
+    el.tabTandasTrackingBtn.addEventListener('click', () => switchCartTab('tracking'));
+  }
+  if (el.btnChangeParticipantFromCart) {
+    el.btnChangeParticipantFromCart.addEventListener('click', openParticipantModal);
+  }
+  if (el.btnSubmitTanda) {
+    el.btnSubmitTanda.addEventListener('click', submitCurrentTanda);
+  }
+  if (el.btnRefreshTandas) {
+    el.btnRefreshTandas.addEventListener('click', fetchAndRenderTandas);
+  }
+
+  // Gesture engine for Cart Sheet Drawer
+  enableSheetSwipeToDismiss('modalCartSheet', closeCartSheet);
 }
 
 function openSommelierDrawer() {
@@ -1531,7 +2250,7 @@ function openSommelierDrawer() {
 function closeSommelierDrawer() {
   const drawer = document.getElementById('sommelierSheetBackdrop');
   if (drawer) drawer.classList.remove('active');
-  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden)');
+  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden), #modalParticipant:not(.hidden)');
   if (!anyModalActive) {
     document.body.classList.remove('modal-open');
   }

@@ -305,6 +305,12 @@ async function main() {
       path: 'packages/api/test/cocina-cuentas-etapa-04.test.ts',
       needsSeed: false,
       description: 'Etapa 04: Participantes, tandas, idempotencia, modos y alérgenos'
+    },
+    {
+      name: 'cocina-cuentas-etapa-05',
+      path: 'packages/api/test/cocina-cuentas-etapa-05.test.ts',
+      needsSeed: false,
+      description: 'Etapa 05: Comensal móvil: participante, borrador de carrito, comanda y seguimiento'
     }
   ];
 
