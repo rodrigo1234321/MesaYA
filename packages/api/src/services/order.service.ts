@@ -1305,4 +1305,61 @@ export class OrderService {
    *   };
    * }
    */
+
+  /**
+   * Verifica si una mesa tiene saldo pendiente de cobro o llamados de cuenta sin resolver.
+   * Usado como guard previo al cierre de mesa por parte de mozos de salón.
+   */
+  static async hasUnpaidBalance(tableId: string): Promise<{
+    hasUnpaid: boolean;
+    remainingAmount: number;
+    pendingBillCalls: number;
+    activeOrdersCount: number;
+  }> {
+    const activeSession = await prisma.tableSession.findFirst({
+      where: { tableId, closedAt: null },
+      include: {
+        orders: {
+          where: { status: { notIn: [OrderStatus.CANCELLED, OrderStatus.PAID] } },
+          include: {
+            payments: {
+              where: { status: 'APPROVED' }
+            }
+          }
+        },
+        calls: {
+          where: {
+            type: 'BILL',
+            status: { in: ['PENDING', 'IN_PROGRESS'] }
+          }
+        }
+      }
+    });
+
+    if (!activeSession) {
+      return {
+        hasUnpaid: false,
+        remainingAmount: 0,
+        pendingBillCalls: 0,
+        activeOrdersCount: 0
+      };
+    }
+
+    let remainingAmount = 0;
+    for (const order of activeSession.orders) {
+      const paidTotal = order.payments.reduce((sum, p) => sum + p.amount, 0);
+      const diff = Math.max(0, order.totalAmount - paidTotal);
+      remainingAmount += diff;
+    }
+
+    const pendingBillCalls = activeSession.calls.length;
+    const hasUnpaid = remainingAmount > 0.01 || pendingBillCalls > 0;
+
+    return {
+      hasUnpaid,
+      remainingAmount: Math.round(remainingAmount * 100) / 100,
+      pendingBillCalls,
+      activeOrdersCount: activeSession.orders.length
+    };
+  }
 }

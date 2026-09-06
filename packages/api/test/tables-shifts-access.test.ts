@@ -111,9 +111,11 @@ describe('Etapa 10 — protección de mesas y apertura/cierre de turnos', () => 
       const managerB = app.jwt.sign({ sub: 'manager-b', role: 'MANAGER', restaurantId: 'restaurant-b' });
       const managerA = app.jwt.sign({ sub: 'manager-a', role: 'MANAGER', restaurantId: 'restaurant-a' });
 
-      // Waiter rejected (403)
+      // Waiter rejected on table creation (403) and forced close (403)
       expect((await app.inject({ method: 'POST', url: '/restaurants/restaurant-a/tables', headers: { authorization: `Bearer ${waiterA}` }, payload: { label: 'Mesa 2' } })).statusCode).toBe(403);
-      expect((await app.inject({ method: 'POST', url: '/tables/t1/close-session', headers: { authorization: `Bearer ${waiterA}` } })).statusCode).toBe(403);
+      expect((await app.inject({ method: 'POST', url: '/tables/t1/close-session', headers: { authorization: `Bearer ${waiterA}` }, payload: { force: true } })).statusCode).toBe(403);
+      // Waiter accepted on regular close-session (200)
+      expect((await app.inject({ method: 'POST', url: '/tables/t1/close-session', headers: { authorization: `Bearer ${waiterA}` }, payload: {} })).statusCode).toBe(200);
 
       // Manager B rejected (404)
       expect((await app.inject({ method: 'POST', url: '/restaurants/restaurant-a/tables', headers: { authorization: `Bearer ${managerB}` }, payload: { label: 'Mesa 2' } })).statusCode).toBe(404);

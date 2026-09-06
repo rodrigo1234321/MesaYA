@@ -201,6 +201,14 @@ const el = {
   btnActionWaiter: document.getElementById('btnActionWaiter'),
   btnActionSupplies: document.getElementById('btnActionSupplies'),
   modalBill: document.getElementById('modalBill'),
+  modalBillTotal: document.getElementById('modalBillTotal'),
+  modalBillStatusText: document.getElementById('modalBillStatusText'),
+  btnToggleBillDetails: document.getElementById('btnToggleBillDetails'),
+  modalBillItemsContainer: document.getElementById('modalBillItemsContainer'),
+  modalBillItemsList: document.getElementById('modalBillItemsList'),
+  modalBillNoItems: document.getElementById('modalBillNoItems'),
+  modalBillItemCount: document.getElementById('modalBillItemCount'),
+  accordionArrow: document.getElementById('accordionArrow'),
   modalWaiter: document.getElementById('modalWaiter'),
   modalSupplies: document.getElementById('modalSupplies'),
   modalMenu: document.getElementById('modalMenu'),
@@ -1343,14 +1351,72 @@ function bindEvents() {
     }
   });
 
+async function loadBillDetails() {
+  if (!currentToken) return;
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/session/${currentToken}`);
+    if (res && res.ok) {
+      const data = await res.json();
+      const order = data.order;
+      const items = order && order.items ? order.items : [];
+      const total = order ? (order.totalAmount || 0) : 0;
+
+      if (el.modalBillTotal) {
+        el.modalBillTotal.textContent = `$${Number(total).toLocaleString('es-AR')}`;
+      }
+      if (el.modalBillStatusText) {
+        el.modalBillStatusText.textContent = items.length > 0
+          ? `${items.length} producto${items.length > 1 ? 's' : ''} registrado${items.length > 1 ? 's' : ''}`
+          : 'Consumo registrado en la mesa';
+      }
+
+      if (el.modalBillItemsList && el.modalBillNoItems) {
+        if (items.length > 0) {
+          el.modalBillItemsList.innerHTML = items.map(item => `
+            <div class="flex justify-between items-center py-1.5 text-slate-300">
+              <span class="truncate pr-2"><strong class="text-white">${item.quantity}x</strong> ${item.name}</span>
+              <span class="font-semibold text-white shrink-0">$${Number(item.unitPrice * item.quantity).toLocaleString('es-AR')}</span>
+            </div>
+          `).join('');
+          el.modalBillNoItems.classList.add('hidden');
+          if (el.modalBillItemCount) {
+            el.modalBillItemCount.textContent = `${items.length} ítem${items.length > 1 ? 's' : ''}`;
+            el.modalBillItemCount.classList.remove('hidden');
+          }
+        } else {
+          el.modalBillItemsList.innerHTML = '';
+          el.modalBillNoItems.classList.remove('hidden');
+          if (el.modalBillItemCount) el.modalBillItemCount.classList.add('hidden');
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Error al cargar comanda de la sesión:', err);
+  }
+}
+
   // Action: Pedir Cuenta
   if (el.btnActionBill) el.btnActionBill.addEventListener('click', () => {
     closeAllModals();
     if (el.modalBill) {
+      loadBillDetails();
       el.modalBill.classList.remove('hidden');
       document.body.classList.add('modal-open');
     }
   });
+
+  if (el.btnToggleBillDetails && el.modalBillItemsContainer) {
+    el.btnToggleBillDetails.addEventListener('click', () => {
+      const isHidden = el.modalBillItemsContainer.classList.contains('hidden');
+      if (isHidden) {
+        el.modalBillItemsContainer.classList.remove('hidden');
+        if (el.accordionArrow) el.accordionArrow.style.transform = 'rotate(180deg)';
+      } else {
+        el.modalBillItemsContainer.classList.add('hidden');
+        if (el.accordionArrow) el.accordionArrow.style.transform = 'rotate(0deg)';
+      }
+    });
+  }
 
   if (el.btnCloseModalBill) el.btnCloseModalBill.addEventListener('click', () => {
     if (el.modalBill) el.modalBill.classList.add('hidden');

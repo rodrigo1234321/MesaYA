@@ -60,6 +60,42 @@ export async function buildApp() {
     secret: environment.jwtSecret
   });
 
+  // Content Type Parser para application/json con allowlist explícita de endpoints de acción
+  // Evita el crash FST_ERR_CTP_EMPTY_JSON_BODY en rutas de acción sin payload obligatorio
+  // pero rechaza con 400 EMPTY_JSON_BODY cualquier otra ruta POST/PATCH que envíe cuerpo vacío.
+  const EMPTY_BODY_ALLOWLIST = [
+    '/close-session',
+    '/validate',
+    '/call'
+  ];
+
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    const bodyStr = typeof body === 'string' ? body : (body ? (body as Buffer).toString('utf-8') : '');
+    const isBlank = !bodyStr || bodyStr.trim() === '';
+    if (isBlank) {
+      const url = req.url || '';
+      const isAllowedEmpty = EMPTY_BODY_ALLOWLIST.some((path) => url.includes(path));
+      if (isAllowedEmpty) {
+        done(null, {});
+        return;
+      }
+      const err: any = new Error('El cuerpo de la petición no puede estar vacío');
+      err.statusCode = 400;
+      err.code = 'EMPTY_JSON_BODY';
+      done(err, undefined);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(bodyStr);
+      done(null, parsed);
+    } catch (syntaxErr: any) {
+      syntaxErr.statusCode = 400;
+      syntaxErr.code = 'INVALID_JSON_BODY';
+      done(syntaxErr, undefined);
+    }
+  });
+
   // Global Error Handler for standardized JSON responses
   app.setErrorHandler((error, request, reply) => {
     const statusCode = (error as any).statusCode || (error as any).status || 500;

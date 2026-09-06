@@ -6,26 +6,35 @@ export class MetricsService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const currentShift = await prisma.shift.findFirst({
+      where: { restaurantId, closedAt: null },
+      orderBy: { openedAt: 'desc' }
+    });
+
+    const shiftStart = currentShift?.openedAt ? currentShift.openedAt : today;
+
     const calls = await prisma.callRequest.findMany({
       where: {
         tableSession: {
           table: { restaurantId }
         },
-        createdAt: { gte: today }
+        createdAt: { gte: shiftStart }
       }
     });
 
-    const resolvedCalls = calls.filter(c => c.status === 'RESOLVED' && c.acknowledgedAt);
-    let totalResponseSeconds = 0;
+    const resolvedCalls = calls.filter(c => c.status === 'RESOLVED');
+    const responseTimes: number[] = [];
+
     for (const call of resolvedCalls) {
-      if (call.acknowledgedAt) {
-        const diffMs = new Date(call.acknowledgedAt).getTime() - new Date(call.createdAt).getTime();
-        totalResponseSeconds += Math.max(0, Math.floor(diffMs / 1000));
+      const attentionDate = call.acknowledgedAt ?? call.resolvedAt;
+      if (attentionDate) {
+        const diffMs = new Date(attentionDate).getTime() - new Date(call.createdAt).getTime();
+        responseTimes.push(Math.max(0, Math.floor(diffMs / 1000)));
       }
     }
 
-    const avgResponseTimeSeconds = resolvedCalls.length > 0
-      ? Math.round(totalResponseSeconds / resolvedCalls.length)
+    const avgResponseTimeSeconds = responseTimes.length > 0
+      ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length)
       : 0;
 
     const pendingCallsCount = calls.filter(c => c.status === 'PENDING' || c.status === 'IN_PROGRESS').length;

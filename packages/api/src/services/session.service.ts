@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { eventBus } from '../lib/eventBus';
-import { SessionValidationResponse, Sector, CallType, PaymentMethod, CallStatus, TableFSMState } from '@mesaya/shared';
+import { SessionValidationResponse, Sector, CallType, PaymentMethod, CallStatus, TableFSMState, SignalSource } from '@mesaya/shared';
 import { randomUUID } from 'crypto';
 
 export class SessionService {
@@ -353,34 +353,61 @@ export class SessionService {
     };
   }
 
-  static async closeTableSession(tableId: string): Promise<{ success: boolean; message: string }> {
-    const now = new Date();
-    const pendingCalls = await prisma.$transaction(async (tx) => {
-      // Revocación de sesión y resolución de llamados ocurren en el mismo commit.
-      await tx.tableSession.updateMany({
-        where: { tableId, closedAt: null },
-        data: { closedAt: now, activeKey: null }
-      });
-
-      const calls = await tx.callRequest.findMany({
-        where: {
-          tableSession: { tableId },
-          status: { in: ['PENDING', 'IN_PROGRESS'] }
-        },
-        include: { tableSession: { include: { table: true } } }
-      });
-
-      await tx.callRequest.updateMany({
-        where: {
-          tableSession: { tableId },
-          status: { in: ['PENDING', 'IN_PROGRESS'] }
-        },
-        data: { status: 'RESOLVED', resolvedAt: now }
-      });
-      return calls;
+  static async closeTableSession(
+    tableId: string,
+    options?: { force?: boolean }
+  ): Promise<{ success: boolean; message: string; alreadyClosed?: boolean }> {
+    const activeSession = await prisma.tableSession.findFirst({
+      where: { tableId, closedAt: null },
+      include: { table: true }
     });
 
-    // Broadcast resolution to all connected staff panels via SSE
+    if (!activeSession) {
+      return {
+        success: true,
+        message: 'La mesa ya se encontraba cerrada y disponible.',
+        alreadyClosed: true
+      };
+    }
+
+    if (!options?.force) {
+      const { OrderService } = await import('./order.service');
+      const unpaid = await OrderService.hasUnpaidBalance(tableId);
+      if (unpaid.hasUnpaid) {
+        const error: any = new Error(
+          `No se puede cerrar la mesa con consumos pendientes ($${unpaid.remainingAmount.toFixed(2)}) o llamados de cuenta sin resolver.`
+        );
+        error.statusCode = 409;
+        error.code = 'TABLE_HAS_UNPAID_BALANCE';
+        throw error;
+      }
+    }
+
+    const now = new Date();
+    // 1. Revocar sesiones activas e invalidar activeKey
+    await prisma.tableSession.updateMany({
+      where: { tableId, closedAt: null },
+      data: { closedAt: now, activeKey: null }
+    });
+
+    // 2. Resolución de llamados pendientes
+    const pendingCalls = await prisma.callRequest.findMany({
+      where: {
+        tableSessionId: activeSession.id,
+        status: { in: ['PENDING', 'IN_PROGRESS'] }
+      },
+      include: { tableSession: { include: { table: true } } }
+    });
+
+    await prisma.callRequest.updateMany({
+      where: {
+        tableSessionId: activeSession.id,
+        status: { in: ['PENDING', 'IN_PROGRESS'] }
+      },
+      data: { status: 'RESOLVED', resolvedAt: now }
+    });
+
+    // 3. Broadcast de resolución de llamados vía SSE
     for (const call of pendingCalls) {
       eventBus.broadcastCall({
         id: call.id,
@@ -398,7 +425,24 @@ export class SessionService {
       }, 'call.updated');
     }
 
-    return { success: true, message: 'Sesión de mesa finalizada y token invalidado exitosamente.' };
+    // 4. Transición FSM a TO_CLEAN usando fsmService con isOverride
+    try {
+      const { fsmService } = await import('./fsm.service');
+      await fsmService.attemptTransition({
+        tableId,
+        toState: TableFSMState.TO_CLEAN,
+        source: SignalSource.STAFF_TERMINAL_TAP,
+        trigger: 'STAFF_CLOSE_SESSION',
+        isOverride: true
+      });
+    } catch (err) {
+      console.warn('FSM transition to TO_CLEAN non-blocking warning on closeSession:', err);
+    }
+
+    return {
+      success: true,
+      message: 'Sesión de mesa finalizada y mesa lista para limpieza (TO_CLEAN).'
+    };
   }
 
   static async createNewSessionForTable(tableId: string): Promise<string> {

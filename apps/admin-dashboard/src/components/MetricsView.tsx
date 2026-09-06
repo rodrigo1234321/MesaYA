@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { MetricsDTO, CALL_TYPE_LABELS, PAYMENT_METHOD_LABELS, CallType, PaymentMethod } from '@mesaya/shared';
 import { AdminApi } from '../lib/api';
-import { Clock, TrendingUp, Star, Users, CreditCard, Bell } from 'lucide-react';
+import { Clock, TrendingUp, Star, Users, CreditCard, Bell, RefreshCw, AlertCircle } from 'lucide-react';
 
 interface MetricsViewProps {
   restaurantId: string;
@@ -9,23 +9,109 @@ interface MetricsViewProps {
 
 export const MetricsView: React.FC<MetricsViewProps> = ({ restaurantId }) => {
   const [metrics, setMetrics] = useState<MetricsDTO | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const isFetchingRef = useRef(false);
 
-  useEffect(() => {
-    AdminApi.getMetrics(restaurantId)
-      .then(setMetrics)
-      .catch(console.error);
+  const loadMetrics = useCallback(async (manual: boolean = false) => {
+    if (!restaurantId || isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    if (manual) setIsRefreshing(true);
+    setError(null);
+
+    try {
+      const data = await AdminApi.getMetrics(restaurantId);
+      setMetrics(data);
+      setLastUpdated(new Date());
+    } catch (err: any) {
+      console.error('Error fetching metrics:', err);
+      setError(err?.message || 'Error al actualizar métricas');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+      isFetchingRef.current = false;
+    }
   }, [restaurantId]);
 
-  if (!metrics) {
-    return <div className="p-8 text-center text-xs text-slate-400">Cargando métricas de rendimiento...</div>;
+  useEffect(() => {
+    loadMetrics(false);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadMetrics(false);
+      }
+    }, 10000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadMetrics(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadMetrics]);
+
+  if (isLoading && !metrics) {
+    return (
+      <div className="p-12 text-center flex flex-col items-center justify-center space-y-3">
+        <RefreshCw className="w-6 h-6 text-indigo-400 animate-spin" />
+        <span className="text-xs font-medium text-slate-400">Cargando métricas del turno...</span>
+      </div>
+    );
   }
 
-  const avgMinutes = Math.floor(metrics.avgResponseTimeSeconds / 60);
-  const avgSeconds = metrics.avgResponseTimeSeconds % 60;
+  const avgMinutes = metrics ? Math.floor(metrics.avgResponseTimeSeconds / 60) : 0;
+  const avgSeconds = metrics ? metrics.avgResponseTimeSeconds % 60 : 0;
   const timeFormatted = `${avgMinutes}m ${avgSeconds}s`;
 
   return (
     <div className="space-y-4">
+      {/* Header bar with refresh & last updated */}
+      <div className="flex items-center justify-between px-1">
+        <div className="text-xs text-slate-400 flex items-center gap-2">
+          <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Actualización automática (10s)</span>
+          {lastUpdated && (
+            <span className="text-slate-500 text-[11px]">
+              • Último: {lastUpdated.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => loadMetrics(true)}
+          disabled={isRefreshing}
+          className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors disabled:opacity-50"
+          title="Actualizar ahora"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-indigo-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <span>{isRefreshing ? 'Actualizando...' : 'Actualizar'}</span>
+        </button>
+      </div>
+
+      {error && (
+        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={() => loadMetrics(true)}
+            className="text-[11px] underline font-semibold hover:text-rose-200"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {metrics && (
+        <>
       {/* Top 4 KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-1.5">
@@ -115,6 +201,8 @@ export const MetricsView: React.FC<MetricsViewProps> = ({ restaurantId }) => {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };

@@ -1,5 +1,7 @@
 # Guía de Despliegue en Producción: Supabase + Vercel
 
+> **Actualización 2026-09-05:** consultar primero la [revisión cloud del commit publicado](produccion/REVISION-CLOUD-2026-09-05/README.md) y la [puesta en servicio corregida](produccion/REVISION-CLOUD-2026-09-05/02-PUESTA-EN-SERVICIO.md). Hay cambios de código pendientes en login/credenciales y dependencias. La guía corregida precisa `VITE_CLIENT_WEB_URL`, generación Prisma para bootstrap, conexión session frente a directa, región y pruebas del artefacto Vercel. Este documento se conserva como referencia previa, no como declaración de readiness.
+
 > Esta guía describe una preparación técnica; **no autoriza** un despliegue, una migración sobre datos reales, seed, cobro ni operación externa. Antes de cualquier acción de ese tipo rigen el GO/NO-GO y el bloqueo de backup/restauración de [`RUNBOOK_PILOTO.md`](RUNBOOK_PILOTO.md).
 
 Esta guía detalla paso a paso cómo conectar **MesaYA** a tu proyecto de **Supabase (PostgreSQL)** y desplegarlo en **Vercel** para tus primeros locales y clientes reales.

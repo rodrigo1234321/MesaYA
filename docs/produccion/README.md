@@ -2,13 +2,13 @@
 
 Fecha de evaluación: 2026-09-05. Proyecto evaluado: `Projects/mdpmesasvivas`.
 
-**Decisión actual: avanzar con la preparación de GitHub y staging; NO-GO para producción con clientes reales.** Las etapas 00–29 están aprobadas en el control histórico, pero esta auditoría detectó pendientes adicionales de seguridad, QR y operación.
+**Decisión actual: preparar staging; NO-GO para producción con clientes reales.** GitHub y CI ya están verificados. Quedan correcciones de login Admin, bootstrap, contrato de PIN, dependencias y verificaciones cloud.
 
-1. Leer [el diagnóstico y sus evidencias](AUDITORIA-2026-09-05.md).
-2. Ejecutar [el plan de salida, en orden](PLAN-SALIDA.md). Cada punto tiene una condición de cierre.
-3. Registrar resultados en [la bitácora de lanzamiento](BITACORA-LANZAMIENTO.md).
+1. Leer [la revisión cloud actual y su veredicto](REVISION-CLOUD-2026-09-05/README.md).
+2. Cerrar [los hallazgos y criterios de aceptación](REVISION-CLOUD-2026-09-05/01-HALLAZGOS.md).
+3. Seguir [la puesta en servicio corregida](REVISION-CLOUD-2026-09-05/02-PUESTA-EN-SERVICIO.md) y registrar [las pruebas y puertas de salida](REVISION-CLOUD-2026-09-05/03-PRUEBAS-Y-EVIDENCIA.md).
 4. Aplicar también el [runbook del piloto](../RUNBOOK_PILOTO.md) antes de atender un local real.
 
-La arquitectura propuesta conserva el producto existente: GitHub privado, una API Node/Fastify en Vercel, tres frontends Vite en Vercel y PostgreSQL en Supabase. No hace falta reconstruirlo ni completar pagos digitales para ensayar el servicio de salón.
+La arquitectura propuesta conserva el producto existente: repositorio GitHub, una API Node/Fastify en Vercel, tres frontends Vite en Vercel y PostgreSQL en Supabase. No hace falta reconstruirlo ni completar pagos digitales para ensayar el servicio de salón.
 
-Esta entrega documenta la revisión. No corrige el código, no inicializa Git, no publica, no crea cuentas ni modifica bases remotas. Los pendientes del plan no deben confundirse con trabajo ya realizado.
+La [auditoría previa](AUDITORIA-2026-09-05.md) se conserva como historial; sus observaciones sobre Git y CI quedaron superadas por la nueva evidencia. Esta entrega documenta la revisión y no modifica código de aplicación ni infraestructura remota. Los pendientes no deben confundirse con trabajo ya realizado.

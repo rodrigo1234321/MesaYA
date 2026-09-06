@@ -371,56 +371,87 @@
 
   <!-- MODAL: SELECCIÓN DE MEDIO DE PAGO (CUENTA) -->
   <div id="modalBill" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
-    <div class="w-full max-w-md bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 space-y-5 animate-in slide-in-from-bottom">
+    <div class="w-full max-w-md bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 space-y-4 animate-in slide-in-from-bottom max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="text-lg font-extrabold text-white">¿Cómo deseas pagar?</h3>
-          <p class="text-xs text-slate-400">El mozo se acercará a la mesa con la cuenta</p>
+          <h3 class="text-lg font-extrabold text-white">Pedir la Cuenta</h3>
+          <p class="text-xs text-slate-400">El mozo se acercará a la mesa para el cobro</p>
         </div>
-        <button id="btnCloseModalBill" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold">✕</button>
+        <button id="btnCloseModalBill" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-bold transition-colors">✕</button>
+      </div>
+
+      <!-- CARD TOTAL CONSUMIDO -->
+      <div class="p-4 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/80 shadow-lg text-center space-y-1">
+        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total estimado</p>
+        <div id="modalBillTotal" class="text-3xl font-black text-white tracking-tight">$0</div>
+        <p id="modalBillStatusText" class="text-[11px] text-slate-400">Consumo registrado en la mesa</p>
+      </div>
+
+      <!-- ACCORDION: DETALLE DE CONSUMOS -->
+      <div class="rounded-2xl bg-slate-950/60 border border-slate-800 overflow-hidden">
+        <button id="btnToggleBillDetails" type="button" class="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800/50 transition-all">
+          <span class="flex items-center gap-2">
+            <span>📋</span>
+            <span>Ver detalle de consumos</span>
+            <span id="modalBillItemCount" class="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] text-slate-400 font-semibold hidden">0 ítems</span>
+          </span>
+          <span id="accordionArrow" class="text-slate-400 text-xs transition-transform duration-200">▼</span>
+        </button>
+        <div id="modalBillItemsContainer" class="hidden px-4 pb-3 pt-1 space-y-2 text-xs border-t border-slate-800/60">
+          <div id="modalBillItemsList" class="space-y-1.5 divide-y divide-slate-800/40">
+            <!-- Dynamic Items -->
+          </div>
+          <div id="modalBillNoItems" class="text-center py-2 text-[11px] text-slate-500 italic">
+            Sin comandas digitales registradas en el sistema.<br>El mozo te traerá el ticket con el consumo final.
+          </div>
+        </div>
       </div>
 
       <!-- AVISO PILOTO: PAGO PRESENCIAL -->
       <div class="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start space-x-2.5">
         <span class="text-base leading-none">ℹ️</span>
         <p class="text-xs text-amber-200/90 leading-relaxed">
-          <strong class="font-semibold text-amber-300">Cobro presencial en mesa o caja:</strong> Pagos digitales directos y división de cuenta no disponibles en el piloto. El mozo se acercará con la cuenta física y el medio solicitado.
+          <strong class="font-semibold text-amber-300">Cobro presencial:</strong> El mozo se acercará con la cuenta física y la forma de cobro seleccionada.
         </p>
       </div>
 
-      <div class="grid grid-cols-1 gap-2.5">
-        <button data-method="MERCADO_PAGO" class="btn-pay-method w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-indigo-950/40 border border-slate-700 hover:border-indigo-500/50 flex items-center justify-between text-left group transition-all">
-          <div class="flex items-center space-x-3">
-            <span class="text-2xl">📱</span>
-            <div>
-              <span class="font-bold text-sm text-white block">Mercado Pago (QR Presencial)</span>
-              <span class="text-[11px] text-slate-400">El mozo trae el QR en pantalla o ticket</span>
+      <!-- BOTONES DE MEDIOS DE PAGO (Touch-friendly 52px) -->
+      <div class="space-y-2">
+        <p class="text-xs font-bold text-slate-300 uppercase tracking-wider px-1">¿Cómo vas a abonar?</p>
+        <div class="grid grid-cols-1 gap-2.5">
+          <button data-method="CASH" class="btn-pay-method min-h-[52px] w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-emerald-950/40 border border-slate-700 hover:border-emerald-500/50 flex items-center justify-between text-left group transition-all">
+            <div class="flex items-center space-x-3">
+              <span class="text-2xl">💵</span>
+              <div>
+                <span class="font-bold text-sm text-white block">Efectivo</span>
+                <span class="text-[11px] text-slate-400">Pago en mano / con vuelto</span>
+              </div>
             </div>
-          </div>
-          <span class="text-xs font-bold text-indigo-400 group-hover:translate-x-0.5 transition-transform">Elegir →</span>
-        </button>
+            <span class="text-xs font-bold text-emerald-400 group-hover:translate-x-0.5 transition-transform">Elegir →</span>
+          </button>
 
-        <button data-method="CARD" class="btn-pay-method w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-indigo-950/40 border border-slate-700 hover:border-indigo-500/50 flex items-center justify-between text-left group transition-all">
-          <div class="flex items-center space-x-3">
-            <span class="text-2xl">💳</span>
-            <div>
-              <span class="font-bold text-sm text-white block">Tarjeta Débito / Crédito</span>
-              <span class="text-[11px] text-slate-400">El mozo trae la terminal / Posnet a la mesa</span>
+          <button data-method="CARD" class="btn-pay-method min-h-[52px] w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-indigo-950/40 border border-slate-700 hover:border-indigo-500/50 flex items-center justify-between text-left group transition-all">
+            <div class="flex items-center space-x-3">
+              <span class="text-2xl">💳</span>
+              <div>
+                <span class="font-bold text-sm text-white block">Tarjeta Débito / Crédito</span>
+                <span class="text-[11px] text-slate-400">El mozo trae la terminal / Posnet a la mesa</span>
+              </div>
             </div>
-          </div>
-          <span class="text-xs font-bold text-indigo-400 group-hover:translate-x-0.5 transition-transform">Elegir →</span>
-        </button>
+            <span class="text-xs font-bold text-indigo-400 group-hover:translate-x-0.5 transition-transform">Elegir →</span>
+          </button>
 
-        <button data-method="CASH" class="btn-pay-method w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-indigo-950/40 border border-slate-700 hover:border-indigo-500/50 flex items-center justify-between text-left group transition-all">
-          <div class="flex items-center space-x-3">
-            <span class="text-2xl">💵</span>
-            <div>
-              <span class="font-bold text-sm text-white block">Efectivo</span>
-              <span class="text-[11px] text-slate-400">Pago en mano / con vuelto</span>
+          <button data-method="MERCADO_PAGO" class="btn-pay-method min-h-[52px] w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-sky-950/40 border border-slate-700 hover:border-sky-500/50 flex items-center justify-between text-left group transition-all">
+            <div class="flex items-center space-x-3">
+              <span class="text-2xl">📱</span>
+              <div>
+                <span class="font-bold text-sm text-white block">Mercado Pago (QR Presencial)</span>
+                <span class="text-[11px] text-slate-400">El mozo trae el QR en pantalla o ticket</span>
+              </div>
             </div>
-          </div>
-          <span class="text-xs font-bold text-indigo-400 group-hover:translate-x-0.5 transition-transform">Elegir →</span>
-        </button>
+            <span class="text-xs font-bold text-sky-400 group-hover:translate-x-0.5 transition-transform">Elegir →</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>

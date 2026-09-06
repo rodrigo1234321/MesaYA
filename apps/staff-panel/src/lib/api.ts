@@ -20,12 +20,16 @@ export class StaffApi {
     return null;
   }
 
-  static getAuthHeaders(): Record<string, string> {
+  static getAuthHeaders(options?: { isJson?: boolean }): Record<string, string> {
     const token = this.getAuthToken();
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    };
+    const headers: Record<string, string> = {};
+    if (options?.isJson !== false) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
   }
 
   static getSavedUser(): StaffUserDTO | null {
@@ -61,10 +65,11 @@ export class StaffApi {
 
   static async getActiveCalls(restaurantId: string, signal?: AbortSignal): Promise<CallEventData[]> {
     const res = await fetch(`${API_BASE}/calls?restaurantId=${restaurantId}`, {
-      headers: this.getAuthHeaders(),
+      headers: this.getAuthHeaders({ isJson: false }),
       signal
     });
     if (res.status === 401) {
+      this.logout();
       const error: any = new Error('Sesión de staff expirada');
       error.statusCode = 401;
       error.code = 'STAFF_UNAUTHORIZED';
@@ -91,7 +96,8 @@ export class StaffApi {
   static async closeTableSession(tableId: string): Promise<{ success: boolean; message: string }> {
     const res = await fetch(`${API_BASE}/tables/${tableId}/close-session`, {
       method: 'POST',
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({})
     });
 
     if (!res.ok) {
@@ -104,7 +110,7 @@ export class StaffApi {
   // --- FILA VIRTUAL (WAITLIST) & COMANDAS ---
   static async getWaitlist(restaurantId: string) {
     const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/waitlist`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     if (!res.ok) throw new Error('Error al cargar fila de espera');
     return res.json();
@@ -113,7 +119,8 @@ export class StaffApi {
   static async callWaitlistGuest(id: string) {
     const res = await fetch(`${API_BASE}/staff/waitlist/${id}/call`, {
       method: 'PATCH',
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({})
     });
     if (!res.ok) throw new Error('Error al llamar comensal');
     return res.json();
@@ -135,7 +142,8 @@ export class StaffApi {
   static async validateOrder(orderId: string) {
     const res = await fetch(`${API_BASE}/staff/orders/${orderId}/validate`, {
       method: 'POST',
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({})
     });
     if (!res.ok) throw new Error('Error al validar comanda');
     return res.json();
@@ -144,7 +152,7 @@ export class StaffApi {
   // --- RTMS SALÓN TABLET ---
   static async getFloorPlan(restaurantIdOrSlug: string): Promise<import('@mesaya/shared').FloorPlanResponseDTO> {
     const res = await fetch(`${API_BASE}/floor-plan/${restaurantIdOrSlug}`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     if (!res.ok) throw new Error('Error al cargar plano de salón');
     return res.json();

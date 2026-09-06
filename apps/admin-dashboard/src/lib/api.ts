@@ -46,10 +46,11 @@ export class AdminApi {
     return localStorage.getItem('mesaya_admin_token');
   }
 
-  static getAuthHeaders(): Record<string, string> {
+  static getAuthHeaders(options?: { isJson?: boolean }): Record<string, string> {
+    const isJson = options?.isJson ?? true;
     const token = this.getAuthToken();
     return {
-      'Content-Type': 'application/json',
+      ...(isJson ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     };
   }
@@ -122,7 +123,7 @@ export class AdminApi {
 
   static async getTables(restaurantId: string): Promise<TableItem[]> {
     const res = await fetch(`${API_BASE}/restaurants/${restaurantId}/tables`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     await this.requireAuthorized(res, 'Error al cargar mesas');
     return res.json();
@@ -140,7 +141,7 @@ export class AdminApi {
 
   static async getCurrentShift(restaurantId: string) {
     const res = await fetch(`${API_BASE}/shifts/current?restaurantId=${restaurantId}`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     await this.requireAuthorized(res, 'Error al consultar turno');
     return res.json();
@@ -168,7 +169,7 @@ export class AdminApi {
 
   static async getMetrics(restaurantId: string): Promise<MetricsDTO> {
     const res = await fetch(`${API_BASE}/metrics?restaurantId=${restaurantId}`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     await this.requireAuthorized(res, 'Error al cargar métricas');
     return res.json();
@@ -176,7 +177,7 @@ export class AdminApi {
 
   static async getStaff(restaurantId: string) {
     const res = await fetch(`${API_BASE}/staff?restaurantId=${restaurantId}`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     await this.requireAuthorized(res, 'Error al cargar personal');
     return res.json();
@@ -195,7 +196,7 @@ export class AdminApi {
   // --- CARTA DIGITAL & MENÚ MULTI-TENANT ---
   static async getMenu(slugOrId: string): Promise<RestaurantMenuResponse> {
     const res = await fetch(`${API_BASE}/restaurants/${slugOrId}/menu`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     if (!res.ok) throw new Error('Error al cargar menú');
     return res.json();
@@ -214,7 +215,7 @@ export class AdminApi {
   static async deleteCategory(slugOrId: string, categoryId: string): Promise<{ success: boolean }> {
     const res = await fetch(`${API_BASE}/restaurants/${slugOrId}/menu/categories/${categoryId}`, {
       method: 'DELETE',
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     if (!res.ok) throw new Error('Error al eliminar categoría');
     return res.json();
@@ -243,7 +244,7 @@ export class AdminApi {
   static async deleteMenuItem(slugOrId: string, itemId: string): Promise<{ success: boolean }> {
     const res = await fetch(`${API_BASE}/restaurants/${slugOrId}/menu/items/${itemId}`, {
       method: 'DELETE',
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     if (!res.ok) throw new Error('Error al eliminar plato');
     return res.json();
@@ -298,7 +299,7 @@ export class AdminApi {
   // --- CONFIGURACIÓN MODULAR & FEATURE FLAGS ---
   static async getModuleConfig(restaurantId: string) {
     const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/config`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     await this.requireAuthorized(res, 'Error al cargar configuración de módulos');
     return res.json();
@@ -316,7 +317,7 @@ export class AdminApi {
 
   static async getModuleConfigAudit(restaurantId: string) {
     const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/config/audit`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     await this.requireAuthorized(res, 'Error al consultar logs de auditoría');
     return res.json();
@@ -325,7 +326,7 @@ export class AdminApi {
   // --- RTMS: GESTIÓN DE PLANO Y SALÓN EN VIVO ---
   static async getFloorPlan(restaurantIdOrSlug: string, signal?: AbortSignal): Promise<import('@mesaya/shared').FloorPlanResponseDTO> {
     const res = await fetch(`${API_BASE}/floor-plan/${restaurantIdOrSlug}`, {
-      headers: this.getAuthHeaders(),
+      headers: this.getAuthHeaders({ isJson: false }),
       signal
     });
     if (res.status === 401) {
@@ -411,7 +412,7 @@ export class AdminApi {
   static async deleteZone(restaurantIdOrSlug: string, zoneId: string) {
     const res = await fetch(`${API_BASE}/floor-plan/${restaurantIdOrSlug}/zones/${zoneId}`, {
       method: 'DELETE',
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     if (!res.ok) throw new Error('Error al eliminar zona');
     return res.json();
@@ -420,7 +421,7 @@ export class AdminApi {
   static async deleteTable(restaurantIdOrSlug: string, tableId: string): Promise<{ success: boolean; message: string }> {
     const res = await fetch(`${API_BASE}/floor-plan/${restaurantIdOrSlug}/tables/${tableId}`, {
       method: 'DELETE',
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
@@ -439,7 +440,7 @@ export class AdminApi {
     if (from) params.append('from', from);
     if (to) params.append('to', to);
     const res = await fetch(`${API_BASE}/analytics/${restaurantSlug}/summary?${params.toString()}`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     await this.requireAuthorized(res, 'Error al consultar resumen de analytics');
     return res.json();
@@ -454,7 +455,7 @@ export class AdminApi {
     if (from) params.append('from', from);
     if (to) params.append('to', to);
     const res = await fetch(`${API_BASE}/analytics/${restaurantSlug}/phases?${params.toString()}`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     await this.requireAuthorized(res, 'Error al consultar métricas de fases');
     return res.json();
@@ -469,7 +470,7 @@ export class AdminApi {
     if (from) params.append('from', from);
     if (to) params.append('to', to);
     const res = await fetch(`${API_BASE}/analytics/${restaurantSlug}/heatmap?${params.toString()}`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     await this.requireAuthorized(res, 'Error al consultar mapa de calor');
     return res.json();
@@ -484,7 +485,7 @@ export class AdminApi {
     if (from) params.append('from', from);
     if (to) params.append('to', to);
     const res = await fetch(`${API_BASE}/analytics/${restaurantSlug}/table-performance?${params.toString()}`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders({ isJson: false })
     });
     await this.requireAuthorized(res, 'Error al consultar rendimiento de mesas');
     return res.json();
