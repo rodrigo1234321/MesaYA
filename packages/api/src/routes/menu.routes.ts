@@ -58,10 +58,17 @@ export async function menuRoutes(fastify: FastifyInstance) {
   fastify.get('/restaurants/:slugOrId/menu', async (request, reply) => {
     try {
       const { slugOrId } = request.params as { slugOrId: string };
-
+      const cleanSlug = slugOrId.trim().toLowerCase();
       const restaurant = await prisma.restaurant.findFirst({
         where: {
-          OR: [{ id: slugOrId }, { slug: slugOrId }]
+          OR: [
+            { id: cleanSlug },
+            { slug: cleanSlug },
+            { slug: cleanSlug.replace(/-/g, '') },
+            { slug: cleanSlug.replace(/^mesa-ya-/, 'mesaya-') },
+            { slug: cleanSlug.replace(/^mesaya-/, 'mesa-ya-') },
+            { name: { equals: cleanSlug, mode: 'insensitive' } }
+          ]
         },
         include: {
           categories: {
@@ -132,9 +139,18 @@ export async function menuRoutes(fastify: FastifyInstance) {
     try {
       const { slugOrId } = request.params as { slugOrId: string };
       const { itemId } = request.query as { itemId?: string };
-
+      const cleanSlug = slugOrId.trim().toLowerCase();
       const restaurant = await prisma.restaurant.findFirst({
-        where: { OR: [{ id: slugOrId }, { slug: slugOrId }] },
+        where: {
+          OR: [
+            { id: cleanSlug },
+            { slug: cleanSlug },
+            { slug: cleanSlug.replace(/-/g, '') },
+            { slug: cleanSlug.replace(/^mesa-ya-/, 'mesaya-') },
+            { slug: cleanSlug.replace(/^mesaya-/, 'mesa-ya-') },
+            { name: { equals: cleanSlug, mode: 'insensitive' } }
+          ]
+        },
         include: { moduleConfig: true }
       });
 

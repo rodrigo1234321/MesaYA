@@ -1,5 +1,7 @@
 # MesaYA — Guía de Hardware & NFC para la Costa Atlántica (Mar del Plata)
 
+> Para la prueba real seguir [el runbook del piloto](../../docs/PILOTO-STAGING.md). Grabar URLs permanentes del `nfc-manifest.json`, sin `token`. Durante el piloto dejar los tags regrabables.
+
 ## 1. Especificación de Tags NFC
 - **Chip Requerido**: NTAG215 (504 bytes de memoria utilizable, compatible universal con iPhone XS/11/12/13/14/15/16 y Android con NFC).
 - **Capa Anti-Metal (Ferrita Obligatoria)**: Mesas de acero inoxidable, aluminio o bases de hierro requieren lámina de ferrita aislante entre el tag y la superficie metálica. Sin ferrita, el metal absorbe el campo electromagnético y el tag no lee.
@@ -14,6 +16,6 @@
 ## 3. Programación Rápida de Tags con Celular (NFC Tools)
 1. Descargar **NFC Tools** (gratis en iOS y Android).
 2. Abrir la app → **Escribir (Write)** → **Añadir un registro (Add a record)** → **URL / URI**.
-3. Ingresar la URL de la mesa (Ej: `https://mesaya.app/mesa/1?token=UUID` o el link canónico del restaurante).
+3. Copiar el campo `url` de la mesa en `hardware/qr-generator/output/nfc-manifest.json`: `https://<dominio-comensal>/r/<slug>/mesa/Mesa%201`. Nunca grabar un token de sesión: caduca al cerrar la mesa.
 4. Tocar **Escribir (Write)** y acercar el celular al tag NTAG215.
 5. (Opcional recomendado para producción): **Bloquear tag en modo solo lectura (Lock Tag)** para evitar que comensales sobreescriban la URL.

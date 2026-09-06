@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { MetricsService } from '../services/metrics.service';
 import { verifyManagerRole } from '../middlewares/auth.middleware';
+import { prisma } from '../lib/prisma';
 
 export async function metricsRoutes(fastify: FastifyInstance) {
   fastify.get('/metrics', { preHandler: [verifyManagerRole] }, async (request, reply) => {
@@ -8,7 +9,13 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       const { restaurantId: requestedRestaurantId } = request.query as { restaurantId?: string };
       const restaurantId = request.staffUser!.restaurantId;
       if (requestedRestaurantId && requestedRestaurantId !== restaurantId) {
-        return reply.status(404).send({ error: 'NOT_FOUND', message: 'Recurso no encontrado' });
+        const rest = await prisma.restaurant.findFirst({
+          where: { id: restaurantId, slug: requestedRestaurantId },
+          select: { id: true }
+        });
+        if (!rest) {
+          return reply.status(404).send({ error: 'NOT_FOUND', message: 'Recurso no encontrado' });
+        }
       }
       const metrics = await MetricsService.getMetrics(restaurantId);
       return reply.send(metrics);

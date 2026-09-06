@@ -28,9 +28,18 @@ export async function staffRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: err.message, code: err.code || 'PIN_INVALID' });
       }
 
-      const cleanSlug = body.restaurantSlug.trim();
+      const cleanSlug = body.restaurantSlug.trim().toLowerCase();
       const restaurant = await prisma.restaurant.findFirst({
-        where: { OR: [{ id: cleanSlug }, { slug: cleanSlug }] },
+        where: {
+          OR: [
+            { id: cleanSlug },
+            { slug: cleanSlug },
+            { slug: cleanSlug.replace(/-/g, '') },
+            { slug: cleanSlug.replace(/^mesa-ya-/, 'mesaya-') },
+            { slug: cleanSlug.replace(/^mesaya-/, 'mesa-ya-') },
+            { name: { equals: cleanSlug, mode: 'insensitive' } }
+          ]
+        },
         select: { id: true, slug: true }
       });
 
@@ -78,7 +87,13 @@ export async function staffRoutes(fastify: FastifyInstance) {
       const { restaurantId: requestedRestaurantId } = request.query as { restaurantId?: string };
       const restaurantId = request.staffUser!.restaurantId;
       if (requestedRestaurantId && requestedRestaurantId !== restaurantId) {
-        return reply.status(404).send({ error: 'NOT_FOUND', message: 'Recurso no encontrado' });
+        const rest = await prisma.restaurant.findFirst({
+          where: { id: restaurantId, slug: requestedRestaurantId },
+          select: { id: true }
+        });
+        if (!rest) {
+          return reply.status(404).send({ error: 'NOT_FOUND', message: 'Recurso no encontrado' });
+        }
       }
       const staffList = await StaffService.listStaff(restaurantId);
       return reply.send(staffList);
@@ -93,7 +108,13 @@ export async function staffRoutes(fastify: FastifyInstance) {
       const { restaurantId: requestedRestaurantId, name, pin, role, assignedSector } = request.body as any;
       const restaurantId = request.staffUser!.restaurantId;
       if (requestedRestaurantId && requestedRestaurantId !== restaurantId) {
-        return reply.status(404).send({ error: 'NOT_FOUND', message: 'Recurso no encontrado' });
+        const rest = await prisma.restaurant.findFirst({
+          where: { id: restaurantId, slug: requestedRestaurantId },
+          select: { id: true }
+        });
+        if (!rest) {
+          return reply.status(404).send({ error: 'NOT_FOUND', message: 'Recurso no encontrado' });
+        }
       }
       const newStaff = await StaffService.createStaff(restaurantId, name, pin, role, assignedSector);
       return reply.status(201).send(newStaff);

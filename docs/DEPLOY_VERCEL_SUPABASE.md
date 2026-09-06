@@ -1,5 +1,7 @@
 # Guía de Despliegue en Producción: Supabase + Vercel
 
+> Piloto de prueba real (2026-09-06): seguir [PILOTO-STAGING.md](PILOTO-STAGING.md). Contiene la rama correcta, configuración de los cuatro proyectos, bootstrap y kit NFC/QR. Esta guía anterior no representa el estado actual de habilitación del piloto.
+
 > Esta guía describe una preparación técnica; **no autoriza** un despliegue, una migración sobre datos reales, seed, cobro ni operación externa. Antes de cualquier acción de ese tipo rigen el GO/NO-GO y el bloqueo de backup/restauración de [`RUNBOOK_PILOTO.md`](RUNBOOK_PILOTO.md).
 
 Esta guía detalla paso a paso cómo conectar **MesaYA** a tu proyecto de **Supabase (PostgreSQL)** y desplegarlo en **Vercel** para tus primeros locales y clientes reales.

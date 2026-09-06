@@ -258,8 +258,18 @@ export async function authRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: err.message, code: err.code || 'PIN_INVALID' });
       }
 
+      const cleanSlug = restaurantSlug.trim().toLowerCase();
       const rest = await prisma.restaurant.findFirst({
-        where: { OR: [{ id: restaurantSlug }, { slug: restaurantSlug }] },
+        where: {
+          OR: [
+            { id: cleanSlug },
+            { slug: cleanSlug },
+            { slug: cleanSlug.replace(/-/g, '') },
+            { slug: cleanSlug.replace(/^mesa-ya-/, 'mesaya-') },
+            { slug: cleanSlug.replace(/^mesaya-/, 'mesa-ya-') },
+            { name: { equals: cleanSlug, mode: 'insensitive' } }
+          ]
+        },
         include: { staffUsers: true }
       });
 

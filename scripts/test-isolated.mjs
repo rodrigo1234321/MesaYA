@@ -103,6 +103,12 @@ async function main() {
   // 2. Definir suites disponibles
   const allSuites = [
     {
+      name: 'pilot-qr',
+      path: 'packages/api/test/pilot-qr.test.ts',
+      needsSeed: false,
+      description: 'Kit físico QR/NFC del piloto'
+    },
+    {
       name: 'seed-guard',
       path: 'packages/api/test/seed-guard.test.ts',
       needsSeed: false,

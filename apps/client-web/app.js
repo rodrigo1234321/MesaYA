@@ -7,8 +7,9 @@ const API_BASE = (() => {
       return import.meta.env.VITE_API_URL.replace(/\/$/, '');
     }
   } catch (_) {}
-  const protocol = (typeof window !== 'undefined' && window.location.protocol && window.location.protocol.startsWith('http')) ? window.location.protocol : 'http:';
   const host = (typeof window !== 'undefined' && window.location.hostname) ? window.location.hostname : 'localhost';
+  if (host.endsWith('.vercel.app')) return 'https://mesa-ya-api.vercel.app/v1';
+  const protocol = (typeof window !== 'undefined' && window.location.protocol && window.location.protocol.startsWith('http')) ? window.location.protocol : 'http:';
   const isLocal = host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.') || host.startsWith('10.');
   return isLocal ? `${protocol}//${host}:3000/v1` : `${protocol}//${host}/v1`;
 })();

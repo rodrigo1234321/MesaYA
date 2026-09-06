@@ -28,6 +28,8 @@
     "deploy:supabase:push": "npm --workspace=@mesaya/api run prisma:supabase:push",
     "deploy:supabase:seed": "npm --workspace=@mesaya/api run prisma:supabase:seed",
     "qr:generate": "npm --workspace=@mesaya/qr-generator run generate",
+    "qr:pilot": "tsx hardware/qr-generator/generate.ts",
+    "staging:smoke": "node scripts/staging-smoke.mjs",
     "bootstrap:restaurant": "npx tsx scripts/bootstrap-restaurant.ts",
     "test:isolated": "node scripts/test-isolated.mjs"
   },

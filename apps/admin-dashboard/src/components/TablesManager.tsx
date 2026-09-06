@@ -35,7 +35,7 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
   };
 
   const isProduction = (import.meta as any).env?.PROD === true;
-  const rawClientBaseUrl = ((import.meta as any).env?.VITE_CLIENT_WEB_URL as string | undefined)?.trim();
+  const rawClientBaseUrl = (((import.meta as any).env?.VITE_CLIENT_WEB_URL as string | undefined)?.trim()) || (typeof window !== 'undefined' && window.location.hostname.endsWith('.vercel.app') ? 'https://mesa-ya-client.vercel.app' : undefined);
   const isHttpsPublicUrl = (v: string | undefined): v is string => {
     if (!v) return false;
     try {

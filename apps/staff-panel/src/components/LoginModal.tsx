@@ -11,7 +11,7 @@ interface LoginModalProps {
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
-  const [slug, setSlug] = useState('trattoria-del-puerto');
+  const [slug, setSlug] = useState('');
   const [restaurantsList, setRestaurantsList] = useState<{ id: string; name: string; slug: string }[]>([]);
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -24,10 +24,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
         if (Array.isArray(data) && data.length > 0) {
           setRestaurantsList(data);
           const saved = StaffApi.getSavedUser();
-          if (saved && data.some(r => r.slug === saved.restaurantId || r.id === saved.restaurantId)) {
-            const found = data.find(r => r.slug === saved.restaurantId || r.id === saved.restaurantId);
-            if (found) setSlug(found.slug);
-          }
+          const found = saved ? data.find(r => r.slug === saved.restaurantId || r.id === saved.restaurantId) : null;
+          setSlug(found ? found.slug : data[0].slug);
         }
       })
       .catch(() => {});

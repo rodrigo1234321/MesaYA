@@ -78,11 +78,23 @@ export function requireRestaurantAccess(getRestaurantId: (request: FastifyReques
     await verifyStaffToken(request, reply);
     if (reply.sent) return;
     const restaurantId = getRestaurantId(request);
-    if (!restaurantId || request.staffUser?.restaurantId !== restaurantId) {
+    if (!restaurantId) {
       return reply.status(404).send({
         error: 'NOT_FOUND',
         message: 'Recurso no encontrado.'
       });
+    }
+    if (request.staffUser?.restaurantId !== restaurantId) {
+      const rest = await prisma.restaurant.findFirst({
+        where: { id: request.staffUser?.restaurantId, slug: restaurantId },
+        select: { id: true }
+      });
+      if (!rest) {
+        return reply.status(404).send({
+          error: 'NOT_FOUND',
+          message: 'Recurso no encontrado.'
+        });
+      }
     }
   };
 }

@@ -23,8 +23,18 @@ export class SessionService {
    * - Consultar el QR NUNCA crea restaurante, mesa, turno ni sesión en la base de datos.
    */
   static async getOrCreateActiveSessionBySlugAndTable(restaurantSlug: string, tableLabel: string): Promise<SessionValidationResponse> {
+    const cleanSlug = restaurantSlug.trim().toLowerCase();
     const restaurant = await prisma.restaurant.findFirst({
-      where: { OR: [{ slug: restaurantSlug }, { id: restaurantSlug }] }
+      where: {
+        OR: [
+          { id: cleanSlug },
+          { slug: cleanSlug },
+          { slug: cleanSlug.replace(/-/g, '') },
+          { slug: cleanSlug.replace(/^mesa-ya-/, 'mesaya-') },
+          { slug: cleanSlug.replace(/^mesaya-/, 'mesa-ya-') },
+          { name: { equals: cleanSlug, mode: 'insensitive' } }
+        ]
+      }
     });
 
     if (!restaurant) {

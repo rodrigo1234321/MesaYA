@@ -448,27 +448,27 @@ export const App: React.FC = () => {
         )}
         {activeTab === 'menu' && (
           <MenuManager
-            restaurantId={selectedSlug}
+            restaurantId={activeRestaurant.id}
           />
         )}
         {activeTab === 'modules' && (
           <ModuleConfigManager
-            restaurantId={selectedSlug}
+            restaurantId={activeRestaurant.id}
           />
         )}
         {activeTab === 'staff' && (
           <StaffManager
-            restaurantId={selectedSlug}
+            restaurantId={activeRestaurant.id}
           />
         )}
         {activeTab === 'metrics' && (
           <div className="space-y-8">
-            <RTMSAnalyticsView restaurantSlug={selectedSlug} />
+            <RTMSAnalyticsView restaurantSlug={activeRestaurant.id} />
             <div className="pt-6 border-t border-slate-800">
               <h3 className="text-sm font-bold text-slate-400 mb-4 uppercase tracking-wider">
                 Métricas Clásicas de Servicio & Mozo
               </h3>
-              <MetricsView restaurantId={selectedSlug} />
+              <MetricsView restaurantId={activeRestaurant.id} />
             </div>
           </div>
         )}

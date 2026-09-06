@@ -1,0 +1,8 @@
+{
+  "api": "https://api.example.invalid",
+  "client": "https://client.example.invalid",
+  "staff": "https://staff.example.invalid",
+  "admin": "https://admin.example.invalid",
+  "slug": "mesaya-piloto",
+  "tables": ["Mesa 1", "Mesa 2", "Mesa 3"]
+}
