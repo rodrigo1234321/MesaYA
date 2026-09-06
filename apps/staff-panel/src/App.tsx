@@ -7,13 +7,16 @@ import { SectorFilter } from './components/SectorFilter';
 import { LoginModal } from './components/LoginModal';
 import { WaitlistManager } from './components/WaitlistManager';
 import { KitchenOrdersManager } from './components/KitchenOrdersManager';
+import { TableBillingModal } from './components/TableBillingModal';
 import { playChimeAlert, unlockAudio, getAudioState } from './lib/audio';
-import { Bell, Volume2, VolumeX, LogOut, CheckCheck, UtensilsCrossed, ExternalLink, Users, ChefHat } from 'lucide-react';
+import { Bell, Volume2, VolumeX, LogOut, CheckCheck, UtensilsCrossed, ExternalLink, Users, ChefHat, Receipt, RefreshCw } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<StaffUserDTO | null>(null);
   const [selectedSector, setSelectedSector] = useState<Sector | 'ALL'>('ALL');
-  const [activeTab, setActiveTab] = useState<'calls' | 'kitchen' | 'waitlist'>('calls');
+  const [activeTab, setActiveTab] = useState<'calls' | 'kitchen' | 'waitlist' | 'billing'>('calls');
+  const [billingTable, setBillingTable] = useState<{ id: string; label: string } | null>(null);
+  const [tables, setTables] = useState<Array<{ id: string; label: string; sector: Sector }>>([]);
   const [resolvedTodayCount, setResolvedTodayCount] = useState<number>(0);
   const [audioActive, setAudioActive] = useState<boolean>(false);
 
@@ -44,6 +47,14 @@ export const App: React.FC = () => {
         });
     }
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'billing' && currentUser) {
+      StaffApi.getTables(currentUser.restaurantId)
+        .then((data: any) => setTables(data || []))
+        .catch(() => {});
+    }
+  }, [activeTab, currentUser]);
 
   const { connected, calls, setCalls } = useSSE(
     currentUser?.restaurantId || null
@@ -198,7 +209,8 @@ export const App: React.FC = () => {
       </header>
 
       {/* Mode Switcher: Mesas vs Cocina/Comandas vs Fila Virtual */}
-      <div className="grid grid-cols-3 gap-2 bg-slate-900/90 border border-slate-800 p-1 rounded-2xl text-xs font-bold">
+      {/* Mode Switcher: Llamados vs Cocina vs Fila vs Caja/Cuentas */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-900/90 border border-slate-800 p-1 rounded-2xl text-xs font-bold">
         <button
           onClick={() => setActiveTab('calls')}
           className={`py-2 rounded-xl flex items-center justify-center gap-1.5 transition-all ${
@@ -234,12 +246,63 @@ export const App: React.FC = () => {
           <Users className="w-3.5 h-3.5" />
           <span>Fila Puerta</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('billing')}
+          className={`py-2 rounded-xl flex items-center justify-center gap-1.5 transition-all ${
+            activeTab === 'billing'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Receipt className="w-3.5 h-3.5" />
+          <span>Caja y Cuentas</span>
+        </button>
       </div>
 
       {activeTab === 'kitchen' ? (
         <KitchenOrdersManager restaurantId={currentUser.restaurantId} />
       ) : activeTab === 'waitlist' ? (
         <WaitlistManager restaurantId={currentUser.restaurantId} />
+      ) : activeTab === 'billing' ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-900 border border-slate-800">
+            <div>
+              <h3 className="font-bold text-sm text-white">Cuentas y Cobro en Mesas</h3>
+              <p className="text-[11px] text-slate-400">Selecciona una mesa para ver su cuenta, registrar pagos o cerrarla.</p>
+            </div>
+            <button
+              onClick={() => StaffApi.getTables(currentUser.restaurantId).then((data: any) => setTables(data || [])).catch(() => {})}
+              className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+              title="Refrescar mesas"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            {tables.length === 0 ? (
+              <div className="col-span-full py-8 text-center text-xs text-slate-400">
+                Cargando mesas del restaurante...
+              </div>
+            ) : (
+              tables.map((tbl) => (
+                <button
+                  key={tbl.id}
+                  onClick={() => setBillingTable({ id: tbl.id, label: tbl.label })}
+                  className="p-3.5 rounded-2xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/50 flex flex-col items-center justify-center gap-1.5 transition-all group active:scale-95 text-center shadow-md"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center font-black text-sm group-hover:scale-105 transition-transform">
+                    {tbl.label.replace(/[^0-9]/g, '') || 'M'}
+                  </div>
+                  <span className="font-extrabold text-xs text-white block">{tbl.label}</span>
+                  <span className="text-[10px] text-slate-400 font-semibold">{tbl.sector}</span>
+                  <span className="text-[10px] text-indigo-400 font-bold group-hover:underline">Ver Cuenta →</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
       ) : (
         <>
           {/* Live SSE Status Bar */}
@@ -301,11 +364,27 @@ export const App: React.FC = () => {
                   onAcknowledge={handleAcknowledge}
                   onResolve={handleResolve}
                   onReleaseTable={handleReleaseTable}
+                  onOpenBilling={(id, label) => setBillingTable({ id, label })}
                 />
               ))
             )}
           </main>
         </>
+      )}
+
+      {/* Table Billing Modal */}
+      {billingTable && (
+        <TableBillingModal
+          tableId={billingTable.id}
+          tableLabel={billingTable.label}
+          isOpen={!!billingTable}
+          onClose={() => setBillingTable(null)}
+          onSettled={() => {
+            StaffApi.getActiveCalls(currentUser.restaurantId)
+              .then(setCalls)
+              .catch(() => {});
+          }}
+        />
       )}
     </div>
   );

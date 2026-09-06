@@ -7,9 +7,10 @@ interface CallCardProps {
   onAcknowledge: (id: string) => void;
   onResolve: (id: string) => void;
   onReleaseTable?: (tableId: string, callId: string) => void;
+  onOpenBilling?: (tableId: string, tableLabel: string) => void;
 }
 
-export const CallCard: React.FC<CallCardProps> = ({ call, onAcknowledge, onResolve, onReleaseTable }) => {
+export const CallCard: React.FC<CallCardProps> = ({ call, onAcknowledge, onResolve, onReleaseTable, onOpenBilling }) => {
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
 
   useEffect(() => {
@@ -129,11 +130,24 @@ export const CallCard: React.FC<CallCardProps> = ({ call, onAcknowledge, onResol
         </button>
       </div>
 
+      {/* Cobro Presencial en Mesa */}
+      {onOpenBilling && (
+        <div className="pt-0.5">
+          <button
+            type="button"
+            onClick={() => onOpenBilling(call.tableId, call.tableLabel)}
+            className="w-full py-2 px-3 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
+          >
+            <span>💳 Ver Cuenta y Cobro en Mesa</span>
+          </button>
+        </div>
+      )}
+
       {/* Quick Security Action: Liberar Mesa (Invalidates Token) */}
       {onReleaseTable && (
-        <div className="pt-1 text-center">
+        <div className="pt-0.5 text-center">
           <button
-            onClick={() => onReleaseTable(call.tableId, call.id)}
+            onClick={() => onReleaseTable(call.tableId, call.tableLabel)}
             className="w-full py-1.5 px-3 rounded-lg bg-slate-900/80 hover:bg-red-950/40 border border-slate-800 hover:border-red-500/40 text-[11px] font-semibold text-slate-400 hover:text-red-300 transition-all flex items-center justify-center gap-1"
           >
             <UserX className="w-3 h-3" />

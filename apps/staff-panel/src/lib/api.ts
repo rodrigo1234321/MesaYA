@@ -237,5 +237,50 @@ export class StaffApi {
     }
     return res.json();
   }
+
+  // --- CUENTAS Y COBROS PRESENCIALES (Etapa 08) ---
+  static async getTableBill(tableId: string): Promise<import('@mesaya/shared').TableBillDTO> {
+    const res = await fetch(`${API_BASE}/staff/tables/${tableId}/bill`, {
+      headers: this.getAuthHeaders()
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Error al obtener cuenta de la mesa');
+    }
+    return res.json();
+  }
+
+  static async settlePayment(dto: {
+    tableId: string;
+    amountCents: number;
+    paymentMethod: string;
+    tipCents?: number;
+    idempotencyKey?: string;
+    participantId?: string;
+  }) {
+    const res = await fetch(`${API_BASE}/staff/payments/settle`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(dto)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Error al registrar cobro');
+    }
+    return res.json();
+  }
+
+  static async revertPayment(paymentId: string, reason?: string) {
+    const res = await fetch(`${API_BASE}/staff/payments/${paymentId}/revert`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ reason })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Error al revertir cobro');
+    }
+    return res.json();
+  }
 }
 

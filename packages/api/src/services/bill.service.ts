@@ -841,7 +841,8 @@ export class BillService {
           toState: TableFSMState.EATING,
           source: SignalSource.STAFF_TERMINAL_TAP,
           trigger: 'Cobro presencial revertido por personal autorizado',
-          staffUserId
+          staffUserId,
+          isOverride: true
         });
       }
     } catch (err) {

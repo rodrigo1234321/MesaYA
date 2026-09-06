@@ -323,6 +323,12 @@ async function main() {
       path: 'packages/api/test/cocina-cuentas-etapa-07.test.ts',
       needsSeed: false,
       description: 'Etapa 07: Cuenta dividida backend, asignaciones y cobros parciales'
+    },
+    {
+      name: 'cocina-cuentas-etapa-08',
+      path: 'packages/api/test/cocina-cuentas-etapa-08.test.ts',
+      needsSeed: false,
+      description: 'Etapa 08: UI de Mi Parte, Caja de Staff y flujo de 3 personas'
     }
   ];
 

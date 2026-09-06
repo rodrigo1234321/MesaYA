@@ -57,7 +57,8 @@ export const TRANSITION_MATRIX: Record<TableFSMState, readonly TableFSMState[]> 
   ]),
   [TableFSMState.PAID]: Object.freeze([
     TableFSMState.TO_CLEAN,
-    TableFSMState.AVAILABLE // Direct clean release
+    TableFSMState.AVAILABLE, // Direct clean release
+    TableFSMState.EATING     // Payment reversal / reopened session
   ]),
   [TableFSMState.TO_CLEAN]: Object.freeze([
     TableFSMState.AVAILABLE,

@@ -201,13 +201,33 @@ const el = {
   btnActionWaiter: document.getElementById('btnActionWaiter'),
   btnActionSupplies: document.getElementById('btnActionSupplies'),
   modalBill: document.getElementById('modalBill'),
+  btnCloseModalBill: document.getElementById('btnCloseModalBill'),
+  billTotalAmountDisplay: document.getElementById('billTotalAmountDisplay'),
+  billPaidAmountDisplay: document.getElementById('billPaidAmountDisplay'),
+  billRemainingAmountDisplay: document.getElementById('billRemainingAmountDisplay'),
+  billStatusBadge: document.getElementById('billStatusBadge'),
+  tabBillMyShareBtn: document.getElementById('tabBillMyShareBtn'),
+  tabBillEqualSplitBtn: document.getElementById('tabBillEqualSplitBtn'),
+  tabBillAllTableBtn: document.getElementById('tabBillAllTableBtn'),
+  billTabContentMyShare: document.getElementById('billTabContentMyShare'),
+  billTabContentEqualSplit: document.getElementById('billTabContentEqualSplit'),
+  billTabContentAllTable: document.getElementById('billTabContentAllTable'),
+  myShareSubtotalDisplay: document.getElementById('myShareSubtotalDisplay'),
+  billMyParticipantName: document.getElementById('billMyParticipantName'),
+  myShareItemsCount: document.getElementById('myShareItemsCount'),
+  myShareItemsList: document.getElementById('myShareItemsList'),
+  unclaimedItemsList: document.getElementById('unclaimedItemsList'),
+  equalSplitPartAmountDisplay: document.getElementById('equalSplitPartAmountDisplay'),
+  equalPartsBreakdownList: document.getElementById('equalPartsBreakdownList'),
+  allTableItemsList: document.getElementById('allTableItemsList'),
+  btnSubmitBillRequest: document.getElementById('btnSubmitBillRequest'),
+  btnSubmitBillAmountBadge: document.getElementById('btnSubmitBillAmountBadge'),
   modalWaiter: document.getElementById('modalWaiter'),
   modalSupplies: document.getElementById('modalSupplies'),
   modalMenu: document.getElementById('modalMenu'),
   menuImage: document.getElementById('menuImage'),
   heroCategoryPillsContainer: document.getElementById('heroCategoryPillsContainer'),
   dynamicMenuCategoriesContainer: document.getElementById('dynamicMenuCategoriesContainer'),
-  btnCloseModalBill: document.getElementById('btnCloseModalBill'),
   btnCloseModalWaiter: document.getElementById('btnCloseModalWaiter'),
   btnCloseModalSupplies: document.getElementById('btnCloseModalSupplies'),
   btnCloseModalMenu: document.getElementById('btnCloseModalMenu'),
@@ -1973,35 +1993,57 @@ function bindEvents() {
     }
   });
 
-  // Action: Pedir Cuenta
-  if (el.btnActionBill) el.btnActionBill.addEventListener('click', () => {
-    closeAllModals();
-    if (el.modalBill) {
-      el.modalBill.classList.remove('hidden');
-      document.body.classList.add('modal-open');
-    }
-  });
-
-  if (el.btnCloseModalBill) el.btnCloseModalBill.addEventListener('click', () => {
-    if (el.modalBill) el.modalBill.classList.add('hidden');
-    document.body.classList.remove('modal-open');
-  });
+  // Action: Pedir Cuenta (Etapa 08 — Cuenta dividida y Mi Parte)
+  if (el.btnActionBill) el.btnActionBill.addEventListener('click', openBillModal);
+  if (el.btnCloseModalBill) el.btnCloseModalBill.addEventListener('click', closeBillModal);
 
   if (el.modalBill) {
     el.modalBill.addEventListener('click', (e) => {
       if (e.target === el.modalBill) {
-        el.modalBill.classList.add('hidden');
-        document.body.classList.remove('modal-open');
+        closeBillModal();
       }
     });
   }
 
-  document.querySelectorAll('.btn-pay-method').forEach(btn => {
+  // Split bill tabs
+  if (el.tabBillMyShareBtn) el.tabBillMyShareBtn.addEventListener('click', () => switchBillTab('myshare'));
+  if (el.tabBillEqualSplitBtn) el.tabBillEqualSplitBtn.addEventListener('click', () => switchBillTab('equalsplit'));
+  if (el.tabBillAllTableBtn) el.tabBillAllTableBtn.addEventListener('click', () => switchBillTab('alltable'));
+
+  // Equal split people selector
+  document.querySelectorAll('.btn-split-people').forEach(btn => {
     btn.addEventListener('click', () => {
-      const method = btn.getAttribute('data-method');
-      sendCall('BILL', method);
+      triggerHaptic();
+      const parts = Number(btn.getAttribute('data-parts')) || 2;
+      selectedSplitPeople = parts;
+      document.querySelectorAll('.btn-split-people').forEach(b => {
+        b.className = 'btn-split-people py-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white font-bold text-xs';
+      });
+      btn.className = 'btn-split-people py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-sm';
+      if (currentTableBill) {
+        renderEqualSplitTab(currentTableBill);
+        updateSubmitBillButtonAmount();
+      }
     });
   });
+
+  // Payment method choices in bill modal
+  document.querySelectorAll('.btn-pay-method-choice').forEach(btn => {
+    btn.addEventListener('click', () => {
+      triggerHaptic();
+      const method = btn.getAttribute('data-method') || 'MERCADO_PAGO';
+      selectedBillPaymentMethod = method;
+      document.querySelectorAll('.btn-pay-method-choice').forEach(b => {
+        b.className = 'btn-pay-method-choice p-2 rounded-xl border flex flex-col items-center justify-center gap-1 text-[11px] font-bold transition-all bg-slate-900 text-slate-400 border-slate-800 hover:text-white';
+      });
+      btn.className = 'btn-pay-method-choice p-2 rounded-xl border flex flex-col items-center justify-center gap-1 text-[11px] font-bold transition-all bg-indigo-600/20 text-indigo-300 border-indigo-500/60 shadow-sm';
+    });
+  });
+
+  // Submit bill request button
+  if (el.btnSubmitBillRequest) {
+    el.btnSubmitBillRequest.addEventListener('click', handleSubmitBillRequest);
+  }
 
   // Action: Llamar Mozo
   if (el.btnActionWaiter) el.btnActionWaiter.addEventListener('click', () => {
@@ -2415,6 +2457,370 @@ async function handleSommelierQuery(queryText) {
     messagesContainer.appendChild(errorBubble);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
+}
+
+// ==========================================
+// CUENTA DIVIDIDA Y MI PARTE (Etapa 08)
+// ==========================================
+let currentTableBill = null;
+let currentBillTab = 'myshare';
+let selectedSplitPeople = 2;
+let selectedBillPaymentMethod = 'MERCADO_PAGO';
+
+function openBillModal() {
+  triggerHaptic();
+  closeAllModals();
+  if (el.modalBill) {
+    el.modalBill.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    switchBillTab('myshare');
+    fetchAndRenderBill();
+  }
+}
+
+function closeBillModal() {
+  if (el.modalBill) el.modalBill.classList.add('hidden');
+  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden), #modalParticipant:not(.hidden), #modalCartSheet.active');
+  if (!anyModalActive) {
+    document.body.classList.remove('modal-open');
+  }
+}
+
+function switchBillTab(tabName) {
+  currentBillTab = tabName;
+  const isMyShare = tabName === 'myshare';
+  const isEqual = tabName === 'equalsplit';
+  const isAll = tabName === 'alltable';
+
+  if (el.tabBillMyShareBtn) {
+    el.tabBillMyShareBtn.className = isMyShare
+      ? 'py-2 rounded-xl bg-indigo-600 text-white shadow-sm flex items-center justify-center gap-1 transition-all'
+      : 'py-2 rounded-xl text-slate-400 hover:text-white flex items-center justify-center gap-1 transition-all';
+  }
+  if (el.tabBillEqualSplitBtn) {
+    el.tabBillEqualSplitBtn.className = isEqual
+      ? 'py-2 rounded-xl bg-indigo-600 text-white shadow-sm flex items-center justify-center gap-1 transition-all'
+      : 'py-2 rounded-xl text-slate-400 hover:text-white flex items-center justify-center gap-1 transition-all';
+  }
+  if (el.tabBillAllTableBtn) {
+    el.tabBillAllTableBtn.className = isAll
+      ? 'py-2 rounded-xl bg-indigo-600 text-white shadow-sm flex items-center justify-center gap-1 transition-all'
+      : 'py-2 rounded-xl text-slate-400 hover:text-white flex items-center justify-center gap-1 transition-all';
+  }
+
+  if (el.billTabContentMyShare) el.billTabContentMyShare.classList.toggle('hidden', !isMyShare);
+  if (el.billTabContentEqualSplit) el.billTabContentEqualSplit.classList.toggle('hidden', !isEqual);
+  if (el.billTabContentAllTable) el.billTabContentAllTable.classList.toggle('hidden', !isAll);
+
+  updateSubmitBillButtonAmount();
+}
+
+function updateSubmitBillButtonAmount() {
+  if (!el.btnSubmitBillAmountBadge || !currentTableBill) return;
+  let targetCents = currentTableBill.remainingCents;
+
+  if (currentBillTab === 'myshare') {
+    targetCents = calculateMyShareCents();
+  } else if (currentBillTab === 'equalsplit') {
+    const ep = (currentTableBill.equalParts || []).find(p => p.totalParts === selectedSplitPeople);
+    targetCents = ep ? ep.amountCents : Math.round(currentTableBill.totalCents / selectedSplitPeople);
+  }
+
+  el.btnSubmitBillAmountBadge.textContent = `$${(targetCents / 100).toFixed(2)}`;
+}
+
+function calculateMyShareCents() {
+  if (!currentTableBill || !currentTableBill.items) return 0;
+  let sum = 0;
+  for (const it of currentTableBill.items) {
+    const isMine = (currentParticipantId && it.participantId === currentParticipantId) ||
+                   (currentParticipantId && it.claimedByParticipantId === currentParticipantId);
+    if (isMine) {
+      sum += it.lineTotalCents || 0;
+    }
+  }
+  return sum;
+}
+
+async function fetchAndRenderBill() {
+  const token = currentToken || getToken();
+  if (!token) return;
+
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/bills/session/${encodeURIComponent(token)}`);
+    if (!res.ok) throw new Error('Error al consultar cuenta');
+    const data = await res.json();
+    currentTableBill = data;
+    renderBillUI(data);
+  } catch (err) {
+    console.warn('Error al cargar la cuenta:', err);
+  }
+}
+
+function renderBillUI(bill) {
+  if (!bill) return;
+
+  // 1. Balance
+  if (el.billTotalAmountDisplay) {
+    el.billTotalAmountDisplay.textContent = `$${(bill.totalCents / 100).toFixed(2)}`;
+  }
+  if (el.billPaidAmountDisplay) {
+    el.billPaidAmountDisplay.textContent = `$${(bill.paidCents / 100).toFixed(2)}`;
+  }
+  if (el.billRemainingAmountDisplay) {
+    el.billRemainingAmountDisplay.textContent = `$${(bill.remainingCents / 100).toFixed(2)}`;
+  }
+  if (el.billStatusBadge) {
+    if (bill.status === 'PAID' || bill.remainingCents === 0) {
+      el.billStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+      el.billStatusBadge.textContent = 'SALDADA ✓';
+    } else {
+      el.billStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30';
+      el.billStatusBadge.textContent = 'PENDIENTE';
+    }
+  }
+
+  // Participant name in share
+  if (el.billMyParticipantName) {
+    el.billMyParticipantName.textContent = currentParticipantDisplayName || 'Comensal';
+  }
+
+  // 2. Render Tab 1: Mi Parte
+  renderMyShareTab(bill);
+
+  // 3. Render Tab 2: Partes Iguales
+  renderEqualSplitTab(bill);
+
+  // 4. Render Tab 3: Toda la Mesa
+  renderAllTableTab(bill);
+
+  // 5. Update Submit button badge
+  updateSubmitBillButtonAmount();
+}
+
+function renderMyShareTab(bill) {
+  if (!el.myShareItemsList || !el.unclaimedItemsList) return;
+  el.myShareItemsList.innerHTML = '';
+  el.unclaimedItemsList.innerHTML = '';
+
+  const myItems = [];
+  const otherUnclaimedItems = [];
+
+  for (const item of (bill.items || [])) {
+    const isMine = (currentParticipantId && item.participantId === currentParticipantId) ||
+                   (currentParticipantId && item.claimedByParticipantId === currentParticipantId);
+    if (isMine) {
+      myItems.push(item);
+    } else if (!item.claimedByParticipantId) {
+      otherUnclaimedItems.push(item);
+    }
+  }
+
+  const myShareCents = myItems.reduce((acc, it) => acc + (it.lineTotalCents || 0), 0);
+  if (el.myShareSubtotalDisplay) {
+    el.myShareSubtotalDisplay.textContent = `$${(myShareCents / 100).toFixed(2)}`;
+  }
+  if (el.myShareItemsCount) {
+    el.myShareItemsCount.textContent = `${myItems.length} ítem${myItems.length === 1 ? '' : 's'}`;
+  }
+
+  if (myItems.length === 0) {
+    const emptyNotice = document.createElement('div');
+    emptyNotice.className = 'p-3 rounded-xl bg-slate-900 border border-slate-800 text-center text-slate-400 text-xs';
+    emptyNotice.textContent = 'Aún no tienes platos asignados a tu parte. Puedes asignar platos de la lista inferior.';
+    el.myShareItemsList.appendChild(emptyNotice);
+  } else {
+    myItems.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'p-2.5 rounded-xl bg-slate-950/80 border border-indigo-500/30 flex items-center justify-between gap-2';
+
+      const left = document.createElement('div');
+      left.className = 'min-w-0';
+      const nameP = document.createElement('p');
+      nameP.className = 'font-bold text-white truncate text-xs';
+      nameP.textContent = `${item.productName} ×${item.quantity}`;
+      left.appendChild(nameP);
+
+      const priceSpan = document.createElement('span');
+      priceSpan.className = 'text-[11px] font-mono text-indigo-300 font-bold';
+      priceSpan.textContent = `$${(item.lineTotalCents / 100).toFixed(2)}`;
+      left.appendChild(priceSpan);
+      row.appendChild(left);
+
+      // Unclaim button
+      const unclaimBtn = document.createElement('button');
+      unclaimBtn.type = 'button';
+      unclaimBtn.className = 'px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold shrink-0 border border-slate-700';
+      unclaimBtn.textContent = 'Liberar';
+      unclaimBtn.addEventListener('click', () => handleClaimToggle(item.id, null, item.claimVersion));
+      row.appendChild(unclaimBtn);
+
+      el.myShareItemsList.appendChild(row);
+    });
+  }
+
+  // Unclaimed items section
+  if (otherUnclaimedItems.length === 0) {
+    const noUnclaimed = document.createElement('div');
+    noUnclaimed.className = 'p-2 text-center text-[11px] text-slate-500 italic';
+    noUnclaimed.textContent = 'No hay otros platos sin asignar en la mesa.';
+    el.unclaimedItemsList.appendChild(noUnclaimed);
+  } else {
+    otherUnclaimedItems.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'p-2 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between gap-2';
+
+      const left = document.createElement('div');
+      left.className = 'min-w-0';
+      const nameP = document.createElement('p');
+      nameP.className = 'text-xs text-slate-300 truncate';
+      nameP.textContent = `${item.productName} ×${item.quantity} ($${(item.lineTotalCents / 100).toFixed(2)})`;
+      left.appendChild(nameP);
+      row.appendChild(left);
+
+      const claimBtn = document.createElement('button');
+      claimBtn.type = 'button';
+      claimBtn.className = 'px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-[10px] font-bold shrink-0';
+      claimBtn.textContent = '+ Consumí esto';
+      claimBtn.addEventListener('click', () => {
+        if (!currentParticipantId) {
+          showToast('Primero identifícate en la mesa.', 'info');
+          openParticipantModal();
+          return;
+        }
+        handleClaimToggle(item.id, currentParticipantId, item.claimVersion);
+      });
+      row.appendChild(claimBtn);
+
+      el.unclaimedItemsList.appendChild(row);
+    });
+  }
+}
+
+function renderEqualSplitTab(bill) {
+  if (!el.equalPartsBreakdownList) return;
+  el.equalPartsBreakdownList.innerHTML = '';
+
+  const ep = (bill.equalParts || []).filter(p => p.totalParts === selectedSplitPeople);
+  if (ep.length > 0) {
+    if (el.equalSplitPartAmountDisplay) {
+      el.equalSplitPartAmountDisplay.textContent = `$${(ep[0].amountCents / 100).toFixed(2)}`;
+    }
+
+    ep.forEach((part) => {
+      const pRow = document.createElement('div');
+      pRow.className = 'flex items-center justify-between py-1 border-b border-slate-900 last:border-0';
+      const pLabel = document.createElement('span');
+      pLabel.className = 'text-slate-400 font-semibold';
+      pLabel.textContent = `Persona ${part.part} de ${part.totalParts}:`;
+      const pVal = document.createElement('span');
+      pVal.className = 'font-mono font-bold text-white';
+      pVal.textContent = `$${(part.amountCents / 100).toFixed(2)}`;
+      pRow.appendChild(pLabel);
+      pRow.appendChild(pVal);
+      el.equalPartsBreakdownList.appendChild(pRow);
+    });
+  }
+}
+
+function renderAllTableTab(bill) {
+  if (!el.allTableItemsList) return;
+  el.allTableItemsList.innerHTML = '';
+
+  if (!bill.items || bill.items.length === 0) {
+    const emptyNotice = document.createElement('div');
+    emptyNotice.className = 'p-4 rounded-xl bg-slate-900 text-center text-xs text-slate-400';
+    emptyNotice.textContent = 'No hay consumos confirmados en la mesa todavía.';
+    el.allTableItemsList.appendChild(emptyNotice);
+    return;
+  }
+
+  bill.items.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-2';
+
+    const left = document.createElement('div');
+    left.className = 'min-w-0';
+    const nameP = document.createElement('p');
+    nameP.className = 'font-bold text-white truncate text-xs';
+    nameP.textContent = `${item.productName} ×${item.quantity}`;
+    left.appendChild(nameP);
+
+    const authorSpan = document.createElement('span');
+    authorSpan.className = 'text-[10px] text-slate-400 block mt-0.5';
+    const authorName = item.participantName || (item.participantId ? 'Comensal' : 'Mesa');
+    authorSpan.textContent = `Pedido por: ${authorName}`;
+    left.appendChild(authorSpan);
+    row.appendChild(left);
+
+    const priceSpan = document.createElement('span');
+    priceSpan.className = 'text-xs font-mono font-bold text-slate-200 shrink-0';
+    priceSpan.textContent = `$${(item.lineTotalCents / 100).toFixed(2)}`;
+    row.appendChild(priceSpan);
+
+    el.allTableItemsList.appendChild(row);
+  });
+}
+
+async function handleClaimToggle(orderItemId, targetParticipantId, claimVersion) {
+  const token = currentToken || getToken();
+  if (!token) return;
+
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/bills/claim-item`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionToken: token,
+        orderItemId,
+        participantId: targetParticipantId,
+        expectedVersion: claimVersion
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 409) {
+        showToast('Conflicto: otro comensal actualizó la asignación del plato.', 'warning');
+      } else {
+        throw new Error(data.message || data.error || 'No se pudo actualizar plato');
+      }
+    } else {
+      triggerHaptic();
+    }
+    await fetchAndRenderBill();
+  } catch (err) {
+    showToast(err.message || 'Error al actualizar asignación', 'error');
+  }
+}
+
+async function handleSubmitBillRequest() {
+  if (!currentTableBill) return;
+  let targetCents = currentTableBill.remainingCents;
+  let desc = 'Saldo Total de Mesa';
+
+  if (currentBillTab === 'myshare') {
+    targetCents = calculateMyShareCents();
+    desc = `Mi Parte (${currentParticipantDisplayName || 'Comensal'})`;
+  } else if (currentBillTab === 'equalsplit') {
+    const ep = (currentTableBill.equalParts || []).find(p => p.totalParts === selectedSplitPeople);
+    targetCents = ep ? ep.amountCents : Math.round(currentTableBill.totalCents / selectedSplitPeople);
+    desc = `1 Cuota de ${selectedSplitPeople} personas`;
+  }
+
+  const formattedAmount = `$${(targetCents / 100).toFixed(2)}`;
+  const methodLabel = selectedBillPaymentMethod === 'MERCADO_PAGO'
+    ? 'Mercado Pago (QR)'
+    : selectedBillPaymentMethod === 'CARD'
+    ? 'Tarjeta'
+    : 'Efectivo';
+
+  const note = `Cobro Solicitado: ${formattedAmount} [${desc}] • Medio: ${methodLabel}`;
+
+  triggerHaptic();
+  sendCall('BILL', selectedBillPaymentMethod, note);
+  closeBillModal();
+  showToast(`¡Pedido de cuenta enviado! El mozo se acercará para cobrar ${formattedAmount} con ${methodLabel}.`, 'success');
 }
 
 let activeRestaurantConfig = null;

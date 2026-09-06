@@ -514,8 +514,65 @@ export interface SplitBillSessionDTO {
 export interface ClaimItemDTO {
   sessionToken: string;
   orderItemId: string;
-  guestSessionId: string;
+  guestSessionId?: string;
+  participantId?: string;
   expectedVersion: number;
+}
+
+export interface BillItemDTO {
+  id: string;
+  orderId: string;
+  menuItemId: string;
+  productName: string;
+  quantity: number;
+  unitPriceCents: number;
+  modifiersPriceCents: number;
+  lineTotalCents: number;
+  participantId?: string | null;
+  participantName?: string | null;
+  claimedByParticipantId?: string | null;
+  claimVersion: number;
+  orderStatus: string;
+}
+
+export interface EqualPartSplitDTO {
+  part: number;
+  totalParts: number;
+  amountCents: number;
+}
+
+export interface SettledPaymentDTO {
+  id: string;
+  amountCents: number;
+  tipCents: number;
+  paymentMethod: string;
+  status: string;
+  createdAt: string;
+  idempotencyKey: string;
+}
+
+export interface TableBillDTO {
+  tableId: string;
+  sessionId: string;
+  currency: 'ARS';
+  totalCents: number;
+  paidCents: number;
+  remainingCents: number;
+  status: 'OPEN' | 'PAID';
+  ordersCount: number;
+  itemsCount: number;
+  items: BillItemDTO[];
+  settledPayments: SettledPaymentDTO[];
+  equalParts: EqualPartSplitDTO[];
+}
+
+export interface ManualPaymentRequestDTO {
+  tableId: string;
+  amountCents: number;
+  paymentMethod: 'WAITER_CASH' | 'WAITER_CARD' | 'WAITER_MP_QR' | string;
+  tipCents?: number;
+  idempotencyKey?: string;
+  participantId?: string;
 }
 
 export interface PaymentTransactionDTO {
