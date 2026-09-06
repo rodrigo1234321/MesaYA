@@ -291,6 +291,7 @@ export interface SubmitTandaItemDTO {
   quantity: number;
   notes?: string;
   modifiersSnapshot?: any;
+  participantId?: string;
 }
 
 export interface SubmitTandaDTO {

@@ -40,12 +40,14 @@ export class FSMService {
   /**
    * Attempts an atomic state transition on a given table.
    * Employs optimistic concurrency locking and full audit logging.
+   * Supports an optional Prisma transaction client (tx) for atomic multi-table operations.
    */
-  async attemptTransition(params: TransitionParams): Promise<TransitionResult> {
+  async attemptTransition(params: TransitionParams, tx?: any): Promise<TransitionResult> {
     const { tableId, toState, source, trigger, staffUserId, metadata, isOverride, expectedCurrentState } = params;
+    const db = tx || prisma;
 
     // 1. Fetch current table state
-    const table = await prisma.table.findUnique({
+    const table = await db.table.findUnique({
       where: { id: tableId },
       include: {
         floorZone: true,
@@ -105,7 +107,7 @@ export class FSMService {
     // 3. Optimistic atomic update using table's current state
     const now = new Date();
     const conditionState = expectedCurrentState ?? fromState;
-    const updateResult = await prisma.table.updateMany({
+    const updateResult = await db.table.updateMany({
       where: {
         id: tableId,
         currentState: conditionState
@@ -118,7 +120,7 @@ export class FSMService {
 
     if (updateResult.count === 0) {
       // Concurrency conflict: another staff or automated process updated the state simultaneously
-      const freshTable = await prisma.table.findUnique({ where: { id: tableId } });
+      const freshTable = await db.table.findUnique({ where: { id: tableId } });
       const error: any = new Error(
         `Conflicto de concurrencia: la mesa ${table.label} cambió a ${freshTable?.currentState} simultáneamente`
       );
@@ -134,7 +136,7 @@ export class FSMService {
     }
 
     // 4. Record immutable audit event
-    const stateEvent = await prisma.tableStateEvent.create({
+    const stateEvent = await db.tableStateEvent.create({
       data: {
         tableId,
         fromState,
@@ -148,33 +150,33 @@ export class FSMService {
     });
 
     // 5. Manage OccupancySession lifecycle
-    await this.handleOccupancySessionLifecycle(table, fromState, toState, now);
+    await this.handleOccupancySessionLifecycle(table, fromState, toState, now, db);
 
     // Auto-resolve any pending or in-progress calls when table is cleared or reset
     if (toState === TableFSMState.TO_CLEAN || toState === TableFSMState.AVAILABLE) {
-      const openSessions = await prisma.tableSession.findMany({
+      const openSessions = await db.tableSession.findMany({
         where: { tableId: table.id },
         select: { id: true }
       });
 
       if (openSessions.length > 0) {
-        const sessionIds = openSessions.map((s) => s.id);
-        await prisma.visitParticipant.updateMany({
+        const sessionIds = openSessions.map((s: any) => s.id);
+        await db.visitParticipant.updateMany({
           where: {
             tableSessionId: { in: sessionIds },
             status: 'ACTIVE'
           },
           data: { status: 'REVOKED', revokedAt: now }
         });
-        const pendingCalls = await prisma.callRequest.findMany({
+        const pendingCalls = await db.callRequest.findMany({
           where: {
             tableSessionId: { in: sessionIds },
             status: { in: ['PENDING', 'IN_PROGRESS'] }
           }
         });
         if (pendingCalls.length > 0) {
-          await prisma.callRequest.updateMany({
-            where: { id: { in: pendingCalls.map((c) => c.id) } },
+          await db.callRequest.updateMany({
+            where: { id: { in: pendingCalls.map((c: any) => c.id) } },
             data: { status: 'RESOLVED', resolvedAt: now }
           });
           for (const c of pendingCalls) {
@@ -202,7 +204,7 @@ export class FSMService {
 
     // Revoke all active guest sessions when table transitions to TO_CLEAN or AVAILABLE (idempotent)
     if (toState === TableFSMState.TO_CLEAN || toState === TableFSMState.AVAILABLE) {
-      await prisma.tableSession.updateMany({
+      await db.tableSession.updateMany({
         where: { tableId: table.id, closedAt: null },
         data: { closedAt: now }
       });
@@ -211,7 +213,7 @@ export class FSMService {
     // 6. Calculate occupancy minutes from start of dining session
     let occupancyMinutes: number | null = null;
     if (toState !== TableFSMState.AVAILABLE && toState !== TableFSMState.RESERVED) {
-      const activeOccSession = await prisma.occupancySession.findFirst({
+      const activeOccSession = await db.occupancySession.findFirst({
         where: { tableId: table.id, cleanedAt: null },
         select: { seatedAt: true }
       });
@@ -225,7 +227,7 @@ export class FSMService {
     // 7. Resolve staff name for broadcast
     let staffName: string | null = null;
     if (staffUserId) {
-      const staff = await prisma.staffUser.findUnique({ where: { id: staffUserId } });
+      const staff = await db.staffUser.findUnique({ where: { id: staffUserId } });
       if (staff) staffName = staff.name;
     }
 
@@ -347,17 +349,18 @@ export class FSMService {
     table: { id: string; label: string; restaurantId: string; shiftId?: string | null },
     fromState: TableFSMState,
     toState: TableFSMState,
-    timestamp: Date
+    timestamp: Date,
+    db: any = prisma
   ): Promise<void> {
     try {
       // 1. Starting a new occupancy cycle (AVAILABLE -> OCCUPIED_NO_ORDER or RESERVED -> OCCUPIED_NO_ORDER)
       if (toState === TableFSMState.OCCUPIED_NO_ORDER) {
-        const existingOpen = await prisma.occupancySession.findFirst({
+        const existingOpen = await db.occupancySession.findFirst({
           where: { tableId: table.id, cleanedAt: null }
         });
 
         if (!existingOpen) {
-          await prisma.occupancySession.create({
+          await db.occupancySession.create({
             data: {
               tableId: table.id,
               restaurantId: table.restaurantId,
@@ -367,11 +370,11 @@ export class FSMService {
         }
 
         // Ensure fresh TableSession for diners if an active shift is open
-        const activeShift = await prisma.shift.findFirst({
+        const activeShift = await db.shift.findFirst({
           where: { restaurantId: table.restaurantId, closedAt: null }
         });
         if (activeShift) {
-          const activeTableSession = await prisma.tableSession.findFirst({
+          const activeTableSession = await db.tableSession.findFirst({
             where: {
               tableId: table.id,
               shiftId: activeShift.id,
@@ -381,7 +384,7 @@ export class FSMService {
           });
           if (!activeTableSession) {
             const expiresAt = new Date(timestamp.getTime() + 4 * 60 * 60 * 1000);
-            await prisma.tableSession.create({
+            await db.tableSession.create({
               data: {
                 tableId: table.id,
                 shiftId: activeShift.id,
@@ -395,7 +398,7 @@ export class FSMService {
       }
 
       // 2. Mid-cycle timestamp updates
-      const openSession = await prisma.occupancySession.findFirst({
+      const openSession = await db.occupancySession.findFirst({
         where: { tableId: table.id, cleanedAt: null },
         orderBy: { seatedAt: 'desc' }
       });
@@ -447,7 +450,7 @@ export class FSMService {
           }
 
           // Broadcast occupancy completed event for analytics
-          const updatedSession = await prisma.occupancySession.update({
+          const updatedSession = await db.occupancySession.update({
             where: { id: openSession.id },
             data: updates
           });

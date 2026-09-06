@@ -187,6 +187,8 @@ model TableSession {
   closedAt      DateTime?
   // Contador atómico por visita para numerar tandas sin carreras MAX(seq)+1.
   nextTandaSeq  Int          @default(1)
+  // Contador atómico por visita para serializar cobros concurrentes y prevenir sobrepagos.
+  paymentSeq    Int          @default(1)
   createdAt     DateTime     @default(now())
 
   calls         CallRequest[]
@@ -324,6 +326,12 @@ model PaymentTransaction {
   mpPaymentId    String?  // ID devuelto por MP para reconciliación
   status         String   @default("PENDING") // PENDING | APPROVED | REJECTED | REFUNDED
   idempotencyKey String   @unique
+  // Etapa 09: asociación con participante que realiza el pago y trazabilidad de anulación
+  participantId   String?
+  participant     VisitParticipant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  reversalReason  String?
+  reversalStaffId String?
+  reversalAt      DateTime?
   createdAt      DateTime @default(now())
   resolvedAt     DateTime?
 }
@@ -527,6 +535,7 @@ model VisitParticipant {
 
   authoredTandas OrderTanda[] @relation("TandaAuthor")
   orderItems     OrderItem[]
+  payments       PaymentTransaction[]
 
   @@index([tableSessionId, status])
 }

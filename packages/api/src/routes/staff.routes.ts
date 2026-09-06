@@ -271,7 +271,10 @@ export async function staffRoutes(fastify: FastifyInstance) {
    * POST /v1/staff/payments/:id/revert
    * Reversión autorizada de cobro presencial (WAITER/MANAGER) con restauración de saldo.
    */
-  fastify.post<{ Params: { id: string } }>(
+  fastify.post<{
+    Params: { id: string };
+    Body: { reason?: string };
+  }>(
     '/staff/payments/:id/revert',
     { preHandler: [verifyStaffToken] },
     async (request, reply) => {
@@ -283,7 +286,15 @@ export async function staffRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({ error: 'Token de staff inválido', code: 'UNAUTHORIZED' });
       }
 
+      if (staffRole !== 'MANAGER') {
+        return reply.status(403).send({
+          error: 'Solo el personal con rol MANAGER puede autorizar la reversión de cobros',
+          code: 'FORBIDDEN_ROLE'
+        });
+      }
+
       const { id } = request.params;
+      const { reason } = request.body || ({} as any);
 
       try {
         const { BillService } = await import('../services/bill.service');
@@ -291,7 +302,8 @@ export async function staffRoutes(fastify: FastifyInstance) {
           staffRestaurantId,
           staffUserId,
           staffRole,
-          paymentTransactionId: id
+          paymentTransactionId: id,
+          reason
         });
         return reply.send(result);
       } catch (err: any) {

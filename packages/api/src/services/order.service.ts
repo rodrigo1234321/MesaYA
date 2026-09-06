@@ -16,7 +16,8 @@ import {
   SubmitTandaDTO,
   SubmitTandaItemDTO,
   OrderTandaDTO,
-  VisitParticipantDTO
+  VisitParticipantDTO,
+  containsAllergenMention
 } from '@mesaya/shared';
 import {
   assertValidIdempotencyKey,
@@ -373,9 +374,8 @@ export class OrderService {
       throw err;
     }
 
-    // Detección de alérgenos en notas de la tanda o ítems
-    const ALLERGY_REGEX = /(alerg|celiac|tacc|mani|maní|marisc|intoleran|gluten|sin tacc)/i;
-    let hasAllergy = Boolean(tandaNotes && ALLERGY_REGEX.test(tandaNotes));
+    // Detección centralizada de alérgenos en notas de la tanda o ítems
+    let hasAllergy = containsAllergenMention(tandaNotes);
 
     // Resolución de platos en el servidor (precios inmutables + snapshots)
     const preparedItems: Array<{
@@ -388,6 +388,8 @@ export class OrderService {
       notes: string | null;
       modifiersSnapshotStr: string | null;
       priceVersion: number;
+      participantId: string;
+      addedByGuest: string;
     }> = [];
 
     for (const it of input.items) {
@@ -427,7 +429,7 @@ export class OrderService {
       }
 
       const itemNotes = normalizeKitchenNote(it.notes, 'items.notes');
-      if (itemNotes && ALLERGY_REGEX.test(itemNotes)) {
+      if (containsAllergenMention(itemNotes)) {
         hasAllergy = true;
       }
 
@@ -445,6 +447,18 @@ export class OrderService {
       assertValidCents(itemUnitPriceCents, 'itemUnitPriceCents');
       const itemLineTotalCents = lineTotalCents(itemUnitPriceCents, it.quantity);
 
+      let itemParticipantId = participant.id;
+      let itemAddedByGuest = participant.displayName || participant.id;
+      if (it.participantId && typeof it.participantId === 'string') {
+        const p = await prisma.visitParticipant.findFirst({
+          where: { id: it.participantId, tableSessionId: session.id }
+        });
+        if (p) {
+          itemParticipantId = p.id;
+          itemAddedByGuest = p.displayName || p.id;
+        }
+      }
+
       preparedItems.push({
         menuItemId: menuItem.id,
         productNameSnapshot: menuItem.name,
@@ -454,7 +468,9 @@ export class OrderService {
         unitPriceFloat: itemUnitPriceCents / 100,
         notes: itemNotes,
         modifiersSnapshotStr: modSnapshotStr,
-        priceVersion: menuItem.priceVersion
+        priceVersion: menuItem.priceVersion,
+        participantId: itemParticipantId,
+        addedByGuest: itemAddedByGuest
       });
     }
 
@@ -519,7 +535,7 @@ export class OrderService {
           data: {
             orderId: order.id,
             tandaId: tanda.id,
-            participantId: participant.id,
+            participantId: pit.participantId,
             menuItemId: pit.menuItemId,
             quantity: pit.quantity,
             unitPrice: pit.unitPriceFloat,
@@ -530,7 +546,7 @@ export class OrderService {
             modifiersSnapshot: pit.modifiersSnapshotStr,
             currency: 'ARS',
             notes: pit.notes,
-            addedByGuest: participant.displayName || participant.id
+            addedByGuest: pit.addedByGuest
           }
         });
       }

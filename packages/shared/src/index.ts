@@ -532,6 +532,9 @@ export interface BillItemDTO {
   participantId?: string | null;
   participantName?: string | null;
   claimedByParticipantId?: string | null;
+  claimedByGuest?: string | null;
+  addedByGuest?: string | null;
+  isPaid?: boolean;
   claimVersion: number;
   orderStatus: string;
 }
@@ -550,6 +553,11 @@ export interface SettledPaymentDTO {
   status: string;
   createdAt: string;
   idempotencyKey: string;
+  participantId?: string | null;
+  participantName?: string | null;
+  reversalReason?: string | null;
+  reversalStaffId?: string | null;
+  reversalAt?: string | null;
 }
 
 export interface TableBillDTO {
@@ -748,3 +756,8 @@ export * from './security';
 // VALIDACIÓN Y LIMITES DE IA (Etapa 20)
 // ==========================================
 export * from './ai-schemas';
+
+// ==========================================
+// DETECCIÓN CENTRALIZADA DE ALÉRGENOS (Etapa 09)
+// ==========================================
+export * from './allergens';

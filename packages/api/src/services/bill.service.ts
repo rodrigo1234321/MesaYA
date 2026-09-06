@@ -48,6 +48,11 @@ export interface BillPaymentDTO {
   status: string;
   idempotencyKey: string;
   staffUserId: string;
+  participantId?: string | null;
+  participantName?: string | null;
+  reversalReason?: string | null;
+  reversalStaffId?: string | null;
+  reversalAt?: string | null;
   resolvedAt: string | null;
 }
 
@@ -80,6 +85,7 @@ export interface TableBillDTO {
   items: BillItemDTO[];
   participants: BillParticipantDTO[];
   payments: BillPaymentDTO[];
+  settledPayments?: any[];
   splitEqualOptions: EqualSplitOptionDTO[];
 }
 
@@ -194,11 +200,13 @@ export class BillService {
       }
     }
 
-    // Consultar todos los pagos presenciales confirmados (MANUAL_SETTLED / APPROVED)
+    // Consultar todos los pagos presenciales de la visita (para auditoría e historial en UI)
     const paymentRecords = await prisma.paymentTransaction.findMany({
       where: {
-        tableSessionId: session.id,
-        status: { in: ['MANUAL_SETTLED', 'APPROVED'] }
+        tableSessionId: session.id
+      },
+      include: {
+        participant: true
       },
       orderBy: { createdAt: 'asc' }
     });
@@ -217,14 +225,20 @@ export class BillService {
         status: p.status,
         idempotencyKey: p.idempotencyKey,
         staffUserId: p.guestSessionId,
+        participantId: p.participantId,
+        participantName: p.participant?.displayName || null,
+        reversalReason: p.reversalReason,
+        reversalStaffId: p.reversalStaffId,
+        reversalAt: p.reversalAt?.toISOString() || null,
         resolvedAt: p.resolvedAt?.toISOString() || null
       };
     });
 
-    // Sumas enteras en centavos
+    // Sumas enteras en centavos (solo pagos MANUAL_SETTLED y APPROVED suman al saldo pagado)
     const totalCents = sumCents(validItems.map((i) => i.lineTotalCents), 'totalCents');
-    const paidCents = sumCents(payments.map((p) => p.amountCents), 'paidCents');
-    const tipTotalCents = sumCents(payments.map((p) => p.tipCents), 'tipTotalCents');
+    const activePayments = payments.filter((p) => p.status === 'MANUAL_SETTLED' || p.status === 'APPROVED');
+    const paidCents = sumCents(activePayments.map((p) => p.amountCents), 'paidCents');
+    const tipTotalCents = sumCents(activePayments.map((p) => p.tipCents), 'tipTotalCents');
     const remainingCents = Math.max(0, totalCents - paidCents);
 
     const isFullyPaid = totalCents > 0 && remainingCents === 0;
@@ -281,6 +295,7 @@ export class BillService {
       items: validItems,
       participants,
       payments,
+      settledPayments: payments,
       splitEqualOptions
     };
   }
@@ -459,7 +474,7 @@ export class BillService {
       tipCents = 0,
       paymentMethod,
       idempotencyKey,
-      participantId: _participantId,
+      participantId,
       orderItemId
     } = params;
 
@@ -476,30 +491,9 @@ export class BillService {
 
     const normalizedMethod = this.normalizePaymentMethod(paymentMethod);
 
-    // Ejecución transaccional atómica con aislamiento
+    // Ejecución transaccional atómica con aislamiento y serialización por visita
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Verificación de idempotencia
-      const existingTx = await tx.paymentTransaction.findUnique({
-        where: { idempotencyKey }
-      });
-
-      if (existingTx) {
-        const existingAmountCents = existingTx.amountCents ?? toCentsFromFloatPrice(existingTx.amount);
-        const existingTipCents = existingTx.tipCents ?? (existingTx.tipAmount ? toCentsFromFloatPrice(existingTx.tipAmount) : 0);
-
-        if (existingAmountCents !== amountCents || existingTipCents !== tipCents) {
-          const err: any = new Error(
-            `Conflicto de idempotencia: la clave ya fue utilizada con importes distintos (existente: $${existingAmountCents / 100}, solicitado: $${amountCents / 100})`
-          );
-          err.statusCode = 409;
-          err.code = 'IDEMPOTENCY_CONFLICT';
-          throw err;
-        }
-
-        return { existing: existingTx };
-      }
-
-      // 2. Localización de la sesión de mesa
+      // 1. Localización de la sesión de mesa primero para contextualizar la idempotencia
       let targetSessionId = params.tableSessionId;
 
       if (!targetSessionId && params.orderId) {
@@ -546,7 +540,55 @@ export class BillService {
         throw err;
       }
 
-      // 3. Cálculo de balance dentro de la transacción para evitar carreras de cobro simultáneo
+      // 2. Verificación estricta de idempotencia: valida restaurante, sesión, método y payload
+      const existingTx = await tx.paymentTransaction.findUnique({
+        where: { idempotencyKey },
+        include: {
+          participant: true,
+          order: {
+            include: {
+              tableSession: {
+                include: { table: true }
+              }
+            }
+          }
+        }
+      });
+
+      if (existingTx) {
+        const existingAmountCents = existingTx.amountCents ?? toCentsFromFloatPrice(existingTx.amount);
+        const existingTipCents = existingTx.tipCents ?? (existingTx.tipAmount ? toCentsFromFloatPrice(existingTx.tipAmount) : 0);
+        const txSessionId = existingTx.tableSessionId || existingTx.order?.tableSessionId;
+        const txRestaurantId = existingTx.order?.tableSession?.table?.restaurantId;
+
+        if (
+          txSessionId !== targetSessionId ||
+          (txRestaurantId && txRestaurantId !== staffRestaurantId) ||
+          existingTx.method !== normalizedMethod ||
+          existingAmountCents !== amountCents ||
+          existingTipCents !== tipCents ||
+          (participantId && existingTx.participantId && existingTx.participantId !== participantId)
+        ) {
+          const err: any = new Error(
+            `Conflicto de idempotencia: la clave ya fue utilizada con diferente sesión, restaurante, método o importes`
+          );
+          err.statusCode = 409;
+          err.code = 'IDEMPOTENCY_CONFLICT';
+          throw err;
+        }
+
+        return { existing: existingTx, session };
+      }
+
+      // 3. Serializar cobros concurrentes sobre la sesión para evitar lecturas de saldo desfasadas.
+      // En PostgreSQL esto adquiere un bloqueo exclusivo de fila (row-level lock);
+      // en SQLite se ejecuta de forma serializada dentro de la transacción.
+      await tx.tableSession.update({
+        where: { id: targetSessionId },
+        data: { paymentSeq: { increment: 1 } }
+      });
+
+      // 4. Cálculo de balance dentro de la transacción serializada
       const nonCancelledOrders = await tx.order.findMany({
         where: {
           tableSessionId: session.id,
@@ -602,7 +644,7 @@ export class BillService {
         throw err;
       }
 
-      // 4. Seleccionar la orden activa para relacionar la transacción
+      // 5. Seleccionar la orden activa para relacionar la transacción
       let primaryOrder = nonCancelledOrders.find(
         (o) => o.status !== OrderStatus.PAID && o.status !== OrderStatus.CANCELLED
       );
@@ -619,13 +661,14 @@ export class BillService {
 
       const now = new Date();
 
-      // 5. Crear registro de pago presencial
+      // 6. Crear registro de pago presencial con trazabilidad de participante
       const createdTx = await tx.paymentTransaction.create({
         data: {
           idempotencyKey,
           orderId: primaryOrder.id,
           tableSessionId: session.id,
           guestSessionId: staffUserId,
+          participantId: participantId || null,
           method: normalizedMethod,
           amount: amountCents / 100,
           amountCents,
@@ -634,18 +677,32 @@ export class BillService {
           currency: CENTS_CURRENCY,
           status: 'MANUAL_SETTLED',
           resolvedAt: now
+        },
+        include: {
+          participant: true
         }
       });
 
-      // 6. Si se pagó un ítem específico, marcarlo como pagado
+      // 7. Si se pagó un ítem específico o un participante, marcar ítems como pagados
       if (orderItemId) {
         await tx.orderItem.updateMany({
           where: { id: orderItemId, order: { tableSessionId: session.id } },
           data: { isPaid: true }
         });
+      } else if (participantId) {
+        await tx.orderItem.updateMany({
+          where: {
+            order: { tableSessionId: session.id },
+            OR: [
+              { claimedByGuest: participantId },
+              { participantId }
+            ]
+          },
+          data: { isPaid: true }
+        });
       }
 
-      // 7. Si el saldo llegó a 0 con este pago, liquidar órdenes y mesa
+      // 8. Si el saldo llegó a 0 con este pago, liquidar órdenes y mesa ATÓMICAMENTE
       const isBalanceCleared = amountCents === currentRemainingCents;
       if (isBalanceCleared) {
         await tx.order.updateMany({
@@ -662,6 +719,22 @@ export class BillService {
           },
           data: { isPaid: true }
         });
+
+        // Transición atómica de mesa a PAID dentro de la misma transacción
+        const freshTable = await tx.table.findUnique({ where: { id: session.tableId } });
+        if (freshTable && freshTable.currentState !== TableFSMState.PAID) {
+          await fsmService.attemptTransition(
+            {
+              tableId: session.tableId,
+              toState: TableFSMState.PAID,
+              source: SignalSource.STAFF_TERMINAL_TAP,
+              trigger: 'Cuenta saldada en su totalidad por personal presencial',
+              staffUserId,
+              isOverride: true
+            },
+            tx
+          );
+        }
       }
 
       return {
@@ -688,6 +761,8 @@ export class BillService {
           status: result.existing.status,
           idempotencyKey: result.existing.idempotencyKey,
           staffUserId: result.existing.guestSessionId,
+          participantId: result.existing.participantId,
+          participantName: result.existing.participant?.displayName || null,
           resolvedAt: result.existing.resolvedAt?.toISOString() || null
         },
         bill,
@@ -695,31 +770,7 @@ export class BillService {
       };
     }
 
-    const { created, session, isBalanceCleared } = result;
-
-    // Transición de mesa a PAID sólo si la cuenta se saldó completamente
-    if (isBalanceCleared) {
-      try {
-        const freshTable = await prisma.table.findUnique({ where: { id: session.tableId } });
-        if (
-          freshTable &&
-          (freshTable.currentState === TableFSMState.EATING ||
-            freshTable.currentState === TableFSMState.BILL_REQUESTED ||
-            freshTable.currentState === TableFSMState.ORDER_IN_KITCHEN)
-        ) {
-          await fsmService.attemptTransition({
-            tableId: session.tableId,
-            toState: TableFSMState.PAID,
-            source: SignalSource.STAFF_TERMINAL_TAP,
-            trigger: 'Cuenta saldada en su totalidad por personal presencial',
-            staffUserId
-          });
-        }
-      } catch (err) {
-        console.warn('[settleManualPayment] FSM state transition warning:', err);
-      }
-    }
-
+    const { created, session } = result;
     const bill = await this.calculateTableBill(session.id);
 
     eventBus.broadcast(session.table.restaurantId, 'payment.settled', {
@@ -753,6 +804,8 @@ export class BillService {
         status: created.status,
         idempotencyKey: created.idempotencyKey,
         staffUserId: created.guestSessionId,
+        participantId: created.participantId,
+        participantName: created.participant?.displayName || null,
         resolvedAt: created.resolvedAt?.toISOString() || null
       },
       bill
@@ -761,15 +814,23 @@ export class BillService {
 
   /**
    * Reversión autorizada de un cobro presencial con registro de auditoría.
-   * Reabre el saldo deudor de la mesa y restaura el estado operativo si corresponde.
+   * Restringida a rol MANAGER. Reabre el saldo deudor de la mesa y restaura el estado operativo atómicamente.
    */
   static async revertManualPayment(params: {
     staffRestaurantId: string;
     staffUserId: string;
     staffRole: string;
     paymentTransactionId: string;
+    reason?: string;
   }): Promise<{ success: boolean; bill: TableBillDTO }> {
-    const { staffRestaurantId, staffUserId, paymentTransactionId } = params;
+    const { staffRestaurantId, staffUserId, staffRole, paymentTransactionId } = params;
+
+    if (staffRole !== 'MANAGER') {
+      const err: any = new Error('Solo un usuario con rol MANAGER puede autorizar la reversión de cobros presenciales');
+      err.statusCode = 403;
+      err.code = 'FORBIDDEN_ROLE';
+      throw err;
+    }
 
     const tx = await prisma.paymentTransaction.findUnique({
       where: { id: paymentTransactionId },
@@ -808,10 +869,18 @@ export class BillService {
       throw err;
     }
 
+    const normalizedReason = (params.reason || 'Reversión autorizada por MANAGER').trim().slice(0, 500);
+
+    // Reversión contable y restauración de FSM ATÓMICA en una sola transacción
     await prisma.$transaction(async (prismaTx) => {
       await prismaTx.paymentTransaction.update({
         where: { id: tx.id },
-        data: { status: 'REFUNDED' }
+        data: {
+          status: 'REFUNDED',
+          reversalReason: normalizedReason,
+          reversalStaffId: staffUserId,
+          reversalAt: new Date()
+        }
       });
 
       // Si la comanda estaba en PAID, se reabre a SERVED para reflejar el saldo pendiente
@@ -823,31 +892,43 @@ export class BillService {
         data: { status: OrderStatus.SERVED }
       });
 
-      // Marcar ítems de la orden como pendientes de pago
-      await prismaTx.orderItem.updateMany({
-        where: {
-          order: { tableSessionId: tx.tableSessionId }
-        },
-        data: { isPaid: false }
-      });
-    });
-
-    // Reabrir estado de la mesa en FSM si estaba en PAID
-    try {
-      const freshTable = await prisma.table.findUnique({ where: { id: tableId } });
-      if (freshTable && freshTable.currentState === TableFSMState.PAID) {
-        await fsmService.attemptTransition({
-          tableId,
-          toState: TableFSMState.EATING,
-          source: SignalSource.STAFF_TERMINAL_TAP,
-          trigger: 'Cobro presencial revertido por personal autorizado',
-          staffUserId,
-          isOverride: true
+      // Restaurar ítems como no pagados
+      if (tx.participantId) {
+        await prismaTx.orderItem.updateMany({
+          where: {
+            order: { tableSessionId: tx.tableSessionId },
+            OR: [
+              { claimedByGuest: tx.participantId },
+              { participantId: tx.participantId }
+            ]
+          },
+          data: { isPaid: false }
+        });
+      } else {
+        await prismaTx.orderItem.updateMany({
+          where: {
+            order: { tableSessionId: tx.tableSessionId }
+          },
+          data: { isPaid: false }
         });
       }
-    } catch (err) {
-      console.warn('[revertManualPayment] FSM state rollback warning:', err);
-    }
+
+      // Reabrir estado de la mesa en FSM si estaba en PAID ATÓMICAMENTE dentro de la transacción
+      const freshTable = await prismaTx.table.findUnique({ where: { id: tableId } });
+      if (freshTable && freshTable.currentState === TableFSMState.PAID) {
+        await fsmService.attemptTransition(
+          {
+            tableId,
+            toState: TableFSMState.EATING,
+            source: SignalSource.STAFF_TERMINAL_TAP,
+            trigger: `Cobro presencial revertido por MANAGER: ${normalizedReason}`,
+            staffUserId,
+            isOverride: true
+          },
+          prismaTx
+        );
+      }
+    });
 
     const bill = await this.calculateTableBill(tx.tableSessionId);
 
@@ -855,6 +936,7 @@ export class BillService {
       tableId,
       transactionId: tx.id,
       revertedBy: staffUserId,
+      reason: normalizedReason,
       remainingCents: bill.remainingCents
     });
 

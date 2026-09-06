@@ -45,7 +45,7 @@ interface KitchenOrdersManagerProps {
   restaurantId: string;
 }
 
-const ALLERGY_REGEX = /(alerg|celiac|tacc|mani|maní|marisc|intoleran|gluten|sin tacc)/i;
+import { containsAllergenMention } from '@mesaya/shared';
 
 export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ restaurantId }) => {
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
@@ -324,7 +324,7 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
             badgeBg = 'bg-red-500/30 text-red-200 border border-red-500/50';
           }
 
-          const hasAllergy = order.items.some((it) => it.notes && ALLERGY_REGEX.test(it.notes));
+          const hasAllergy = order.items.some((it) => containsAllergenMention(it.notes));
 
           return (
             <div key={order.id} className={`rounded-2xl border p-4 space-y-3 shadow-lg ${urgencyBorder}`}>
@@ -377,7 +377,7 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
                         )}
                       </div>
                       {item.notes && (
-                        <p className={`text-[11px] italic pl-4 mt-0.5 ${ALLERGY_REGEX.test(item.notes) ? 'text-red-300 font-semibold' : 'text-slate-400'}`}>
+                        <p className={`text-[11px] italic pl-4 mt-0.5 ${containsAllergenMention(item.notes) ? 'text-red-300 font-semibold' : 'text-slate-400'}`}>
                           "{item.notes}"
                         </p>
                       )}

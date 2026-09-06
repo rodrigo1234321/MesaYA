@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TableBillDTO } from '@mesaya/shared';
 import { StaffApi } from '../lib/api';
 import {
@@ -40,7 +40,11 @@ export const TableBillingModal: React.FC<TableBillingModalProps> = ({
   const [method, setMethod] = useState<'WAITER_CASH' | 'WAITER_CARD' | 'WAITER_MP_QR'>('WAITER_CASH');
   const [amountPesos, setAmountPesos] = useState<string>('');
   const [tipPesos, setTipPesos] = useState<string>('0');
+  const [selectedParticipantId, setSelectedParticipantId] = useState<string>('');
   const [revertingId, setRevertingId] = useState<string | null>(null);
+
+  // Idempotencia persistente en reintentos para no duplicar cobros ante fallos de red
+  const pendingPaymentRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
 
   const fetchBill = useCallback(async () => {
     if (!tableId) return;
@@ -63,8 +67,26 @@ export const TableBillingModal: React.FC<TableBillingModalProps> = ({
     if (isOpen) {
       fetchBill();
       setSuccessMsg(null);
+      pendingPaymentRef.current = null;
     }
   }, [isOpen, fetchBill]);
+
+  const participants = React.useMemo(() => {
+    if (!bill?.items) return [];
+    const map = new Map<string, { id: string; name: string; unpaidCents: number }>();
+    for (const it of bill.items) {
+      const pId = it.claimedByGuest || it.participantId;
+      const pName = it.participantName || it.addedByGuest;
+      if (pId) {
+        const entry = map.get(pId) || { id: pId, name: pName || 'Comensal', unpaidCents: 0 };
+        if (!it.isPaid) {
+          entry.unpaidCents += it.lineTotalCents;
+        }
+        map.set(pId, entry);
+      }
+    }
+    return Array.from(map.values());
+  }, [bill]);
 
   if (!isOpen) return null;
 
@@ -85,20 +107,32 @@ export const TableBillingModal: React.FC<TableBillingModalProps> = ({
     const parsedTip = parseFloat(tipPesos.replace(',', '.')) || 0;
     const tipCents = Math.max(0, Math.round(parsedTip * 100));
 
+    // Si es un reintento con los mismos parámetros, reutiliza la misma clave de idempotencia
+    const fingerprint = `${tableId}_${amountCents}_${method}_${tipCents}_${selectedParticipantId || 'all'}`;
+    let idempotencyKey: string;
+    if (pendingPaymentRef.current && pendingPaymentRef.current.fingerprint === fingerprint) {
+      idempotencyKey = pendingPaymentRef.current.idempotencyKey;
+    } else {
+      idempotencyKey = `pay_${tableId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      pendingPaymentRef.current = { fingerprint, idempotencyKey };
+    }
+
     try {
       setSettling(true);
       setError(null);
       setSuccessMsg(null);
-      const idempotencyKey = `pay-${tableId}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
       await StaffApi.settlePayment({
         tableId,
         amountCents,
         paymentMethod: method,
         tipCents,
-        idempotencyKey
+        idempotencyKey,
+        participantId: selectedParticipantId || undefined
       });
 
+      // Cobro exitoso: limpiar la clave pendiente
+      pendingPaymentRef.current = null;
       setSuccessMsg('Cobro registrado exitosamente.');
       await fetchBill();
       onSettled?.();
@@ -301,6 +335,52 @@ export const TableBillingModal: React.FC<TableBillingModalProps> = ({
                       <span>QR Salón</span>
                     </button>
                   </div>
+
+                  {/* Participant Filter / Selector */}
+                  {participants.length > 0 && (
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-400 block">Cobrar a Comensal:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedParticipantId('');
+                            setAmountPesos(remainingPesos.toFixed(2));
+                          }}
+                          className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${
+                            !selectedParticipantId
+                              ? 'bg-indigo-600/30 text-indigo-200 border-indigo-500/50'
+                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                          }`}
+                        >
+                          Toda la Mesa
+                        </button>
+                        {participants.map((p) => {
+                          const isSel = selectedParticipantId === p.id;
+                          const pUnpaidPesos = (p.unpaidCents / 100).toFixed(2);
+                          return (
+                            <button
+                              key={`part-select-${p.id}`}
+                              type="button"
+                              onClick={() => {
+                                setSelectedParticipantId(p.id);
+                                if (p.unpaidCents > 0) {
+                                  setAmountPesos(pUnpaidPesos);
+                                }
+                              }}
+                              className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${
+                                isSel
+                                  ? 'bg-indigo-600/30 text-indigo-200 border-indigo-500/50'
+                                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                              }`}
+                            >
+                              👤 {p.name} (${pUnpaidPesos})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Quick Preset Buttons */}
                   <div className="space-y-1.5">

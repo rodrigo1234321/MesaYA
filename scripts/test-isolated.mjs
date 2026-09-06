@@ -329,6 +329,12 @@ async function main() {
       path: 'packages/api/test/cocina-cuentas-etapa-08.test.ts',
       needsSeed: false,
       description: 'Etapa 08: UI de Mi Parte, Caja de Staff y flujo de 3 personas'
+    },
+    {
+      name: 'cocina-cuentas-etapa-09',
+      path: 'packages/api/test/cocina-cuentas-etapa-09.test.ts',
+      needsSeed: false,
+      description: 'Etapa 09: E2E integral, ciclo completo de vida de comanda, KDS y caja'
     }
   ];
 
