@@ -10,6 +10,7 @@ interface ShiftManagerProps {
 
 export const ShiftManager: React.FC<ShiftManagerProps> = ({ currentShift, restaurantId, onRefresh }) => {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const isShiftActive = Boolean(currentShift && !currentShift.closedAt && currentShift.id);
 
@@ -18,11 +19,13 @@ export const ShiftManager: React.FC<ShiftManagerProps> = ({ currentShift, restau
       return;
     }
     setLoading(true);
+    setError(null);
     try {
       await AdminApi.openShift(restaurantId);
       onRefresh();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError(err.message || 'No se pudo abrir el turno');
     } finally {
       setLoading(false);
     }
@@ -33,11 +36,13 @@ export const ShiftManager: React.FC<ShiftManagerProps> = ({ currentShift, restau
       return;
     }
     setLoading(true);
+    setError(null);
     try {
       await AdminApi.closeShift(currentShift.id, restaurantId);
       onRefresh();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError(err.message || 'No se pudo cerrar el turno');
     } finally {
       setLoading(false);
     }
@@ -106,6 +111,12 @@ export const ShiftManager: React.FC<ShiftManagerProps> = ({ currentShift, restau
           )}
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-xl bg-rose-500/15 border border-rose-500/30 px-3 py-2 text-xs font-semibold text-rose-200">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs border-t border-slate-800/80">
         <div className="flex items-center space-x-2 text-slate-400">

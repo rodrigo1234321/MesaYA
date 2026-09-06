@@ -14,13 +14,17 @@ export const App: React.FC = () => {
   const [restaurants, setRestaurants] = useState<RestaurantItem[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string>(() => {
     const saved = AdminApi.getSavedRestaurant();
-    return saved?.slug || 'trattoria-del-puerto';
+    return saved?.slug || '';
   });
 
   const [activeTab, setActiveTab] = useState<'floorplan' | 'tables' | 'menu' | 'staff' | 'modules' | 'metrics'>('floorplan');
   const [tables, setTables] = useState<TableItem[]>([]);
   const [currentShift, setCurrentShift] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [authRequired, setAuthRequired] = useState(!AdminApi.getAuthToken());
+  const [loginPin, setLoginPin] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
 
   // New Restaurant Onboarding Modal State
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -35,35 +39,43 @@ export const App: React.FC = () => {
   const activeRestaurant = restaurants.find(r => r.slug === selectedSlug || r.id === selectedSlug) || {
     id: selectedSlug,
     slug: selectedSlug,
-    name: selectedSlug === 'trattoria-del-puerto' ? 'Trattoria del Puerto' : selectedSlug,
+    name: selectedSlug || 'MesaYA Admin',
     templateId: 'GOURMET_OBSIDIAN',
     themeColor: '#f59e0b',
     createdAt: ''
   };
 
-  const loadRestaurants = async () => {
-    try {
-      const list = await AdminApi.getRestaurants();
-      setRestaurants(list);
-      if (list.length > 0 && !list.some(r => r.slug === selectedSlug || r.id === selectedSlug)) {
-        setSelectedSlug(list[0].slug);
-      }
-    } catch (_) {}
-  };
-
   const loadData = async () => {
     setLoading(true);
     try {
-      if (!AdminApi.getAuthToken()) {
-        await AdminApi.loginAdmin(selectedSlug, '9999').catch(() => {});
+      const list = await AdminApi.getRestaurants();
+      setRestaurants(list);
+      const targetSlug = list.some(r => r.slug === selectedSlug || r.id === selectedSlug)
+        ? selectedSlug
+        : (list[0]?.slug || '');
+      if (targetSlug !== selectedSlug) setSelectedSlug(targetSlug);
+
+      if (!targetSlug || !AdminApi.getAuthToken()) {
+        setTables([]);
+        setCurrentShift(null);
+        setAuthRequired(true);
+        return;
       }
-      await loadRestaurants();
-      const tablesData = await AdminApi.getTables(selectedSlug).catch(() => []);
+
+      const [tablesData, shiftData] = await Promise.all([
+        AdminApi.getTables(targetSlug),
+        AdminApi.getCurrentShift(targetSlug)
+      ]);
       setTables(tablesData);
-      const shiftData = await AdminApi.getCurrentShift(selectedSlug).catch(() => null);
       setCurrentShift(shiftData);
-    } catch (err) {
+      setAuthRequired(false);
+    } catch (err: any) {
       console.error(err);
+      if (!AdminApi.getAuthToken()) {
+        setAuthRequired(true);
+        setTables([]);
+        setCurrentShift(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -72,6 +84,23 @@ export const App: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [selectedSlug]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSlug || !loginPin.trim()) return;
+    setLoginSubmitting(true);
+    setLoginError(null);
+    try {
+      await AdminApi.loginAdmin(selectedSlug, loginPin.trim());
+      setLoginPin('');
+      setAuthRequired(false);
+      await loadData();
+    } catch (err: any) {
+      setLoginError(err.message || 'No se pudo iniciar sesión');
+    } finally {
+      setLoginSubmitting(false);
+    }
+  };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +120,7 @@ export const App: React.FC = () => {
       setShowRegisterModal(false);
       setRegName('');
       setRegSlug('');
-      await loadRestaurants();
+      setRestaurants(await AdminApi.getRestaurants());
       setSelectedSlug(res.restaurant.slug);
     } catch (err: any) {
       setRegError(err.message || 'Error al registrar restaurante');
@@ -132,6 +161,12 @@ export const App: React.FC = () => {
                 value={selectedSlug}
                 onChange={(e) => {
                   const val = e.target.value;
+                  if (val !== selectedSlug) {
+                    AdminApi.logout();
+                    setAuthRequired(true);
+                    setTables([]);
+                    setCurrentShift(null);
+                  }
                   setSelectedSlug(val);
                   const found = restaurants.find(r => r.slug === val);
                   if (found) AdminApi.setSavedRestaurant(found);
@@ -290,6 +325,44 @@ export const App: React.FC = () => {
         )}
       </main>
 
+      {authRequired && restaurants.length > 0 && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <form onSubmit={handleLogin} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl">
+            <div>
+              <h2 className="text-lg font-extrabold text-white">Ingresar a Administración</h2>
+              <p className="text-xs text-slate-400 mt-1">
+                {activeRestaurant.name} · Usá el PIN de encargado.
+              </p>
+            </div>
+            {loginError && (
+              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs font-semibold">
+                {loginError}
+              </div>
+            )}
+            <label className="block text-xs font-semibold text-slate-300">
+              PIN de encargado
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="current-password"
+                value={loginPin}
+                onChange={(e) => setLoginPin(e.target.value)}
+                placeholder="Ingresá tu PIN"
+                autoFocus
+                className="mt-2 w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white text-base tracking-widest focus:outline-none focus:border-indigo-500"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={loginSubmitting || !loginPin.trim()}
+              className="w-full px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold"
+            >
+              {loginSubmitting ? 'Ingresando…' : 'Ingresar'}
+            </button>
+          </form>
+        </div>
+      )}
+
       {/* SaaS Register New Restaurant Modal */}
       {showRegisterModal && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -407,4 +480,3 @@ export const App: React.FC = () => {
     </div>
   );
 };
-
