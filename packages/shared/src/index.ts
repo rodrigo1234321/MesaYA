@@ -390,6 +390,50 @@ export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = {
   [PaymentMode.HYBRID]: 'Híbrido (Comensal elige Celular o Mozo)'
 };
 
+export enum CapabilityState {
+  AVAILABLE = 'AVAILABLE',
+  PILOT_ONLY = 'PILOT_ONLY',
+  COMING_SOON = 'COMING_SOON',
+  MISCONFIGURED = 'MISCONFIGURED'
+}
+
+export const CAPABILITY_STATE_LABELS: Record<CapabilityState, string> = {
+  [CapabilityState.AVAILABLE]: 'Disponible',
+  [CapabilityState.PILOT_ONLY]: 'Sólo Piloto',
+  [CapabilityState.COMING_SOON]: 'Próximamente',
+  [CapabilityState.MISCONFIGURED]: 'Requiere Configuración'
+};
+
+export type CapabilityKey =
+  | 'ordering'
+  | 'waiter_validation'
+  | 'manual_payment'
+  | 'digital_payment'
+  | 'split_bill'
+  | 'waitlist'
+  | 'waitlist_preorder'
+  | 'rewards'
+  | 'upsell'
+  | 'smart_tips'
+  | 'reviews';
+
+export interface CapabilityEntry {
+  key: CapabilityKey;
+  label?: string;
+  state: CapabilityState;
+  configuredEnabled: boolean;
+  effectiveEnabled: boolean;
+  /** Código estable para decisiones de interfaz y soporte. */
+  reasonCode: string;
+  /** Explicación breve para el panel administrativo. */
+  message: string;
+}
+
+export interface RestaurantCapabilitiesDTO {
+  restaurantId: string;
+  capabilities: Record<CapabilityKey, CapabilityEntry>;
+}
+
 export interface RestaurantModuleConfigDTO {
   id: string;
   restaurantId: string;
@@ -407,6 +451,8 @@ export interface RestaurantModuleConfigDTO {
   enableWaitlistPreOrder: boolean;
   enableRewards: boolean;
   pointsPerHundredPesos: number;
+  /** Estado funcional calculado; no contiene credenciales ni secretos. */
+  capabilities?: Record<CapabilityKey, CapabilityEntry>;
 }
 
 export interface UpdateModuleConfigDTO {
