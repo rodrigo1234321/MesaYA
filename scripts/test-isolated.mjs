@@ -317,6 +317,12 @@ async function main() {
       path: 'packages/api/test/cocina-cuentas-etapa-06.test.ts',
       needsSeed: false,
       description: 'Etapa 06: Admin modos, KDS operativo, sincronización de tandas y gestión de agotados'
+    },
+    {
+      name: 'cocina-cuentas-etapa-07',
+      path: 'packages/api/test/cocina-cuentas-etapa-07.test.ts',
+      needsSeed: false,
+      description: 'Etapa 07: Cuenta dividida backend, asignaciones y cobros parciales'
     }
   ];
 

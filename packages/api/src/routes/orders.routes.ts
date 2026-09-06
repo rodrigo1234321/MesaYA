@@ -409,5 +409,79 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
   );
+
+  /**
+   * GET /v1/orders/bills/session/:token
+   * Consulta de cuenta consolidada y desglose de reparto para comensales de la mesa.
+   */
+  fastify.get<{ Params: { token: string } }>(
+    '/orders/bills/session/:token',
+    async (request, reply) => {
+      const { token } = request.params;
+      try {
+        const session = await OrderService.validateActiveGuestSession(token);
+        const { BillService } = await import('../services/bill.service');
+        const bill = await BillService.calculateTableBill(session.id);
+        return reply.send(bill);
+      } catch (err: any) {
+        const status = err.statusCode || 500;
+        return reply.status(status).send({ error: err.message, code: err.code });
+      }
+    }
+  );
+
+  /**
+   * POST /v1/orders/bills/claim-item
+   * Reclamo individual optimista de un plato por comensal (para reparto por consumo).
+   */
+  fastify.post<{
+    Body: {
+      sessionToken?: string;
+      participantToken?: string;
+      guestSessionId?: string;
+      orderItemId: string;
+      expectedVersion: number;
+      unclaim?: boolean;
+    };
+  }>(
+    '/orders/bills/claim-item',
+    async (request, reply) => {
+      const body = request.body || ({} as any);
+      const sessionToken =
+        body.sessionToken ||
+        (request.headers['x-session-token'] as string) ||
+        (request.query as any)?.sessionToken;
+
+      if (!sessionToken) {
+        return reply.status(401).send({ error: 'Token de sesión requerido', code: 'SESSION_TOKEN_REQUIRED' });
+      }
+
+      if (!body.orderItemId) {
+        return reply.status(400).send({ error: 'orderItemId es requerido', code: 'ITEM_REQUIRED' });
+      }
+
+      const participantToken =
+        body.participantToken ||
+        (request.headers['x-participant-token'] as string) ||
+        (request.query as any)?.participantToken;
+
+      try {
+        const { BillService } = await import('../services/bill.service');
+        const result = await BillService.claimItemByParticipant({
+          sessionToken,
+          participantToken,
+          guestSessionId: body.guestSessionId,
+          orderItemId: body.orderItemId,
+          expectedVersion: body.expectedVersion ?? 0,
+          unclaim: Boolean(body.unclaim)
+        });
+        return reply.send(result);
+      } catch (err: any) {
+        const status = err.statusCode || 400;
+        return reply.status(status).send({ error: err.message, code: err.code });
+      }
+    }
+  );
 };
+
 

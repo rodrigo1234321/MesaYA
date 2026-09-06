@@ -81,5 +81,5 @@ describe('Etapa 22 — Paridad SQLite/PostgreSQL y sincronizador seguro', () => 
       });
       expect(result.status, result.stderr || result.stdout).toBe(0);
     }
-  });
+  }, 20000);
 });

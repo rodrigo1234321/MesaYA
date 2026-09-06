@@ -353,7 +353,20 @@ export class SessionService {
     };
   }
 
-  static async closeTableSession(tableId: string): Promise<{ success: boolean; message: string }> {
+  static async closeTableSession(tableId: string, options?: { force?: boolean }): Promise<{ success: boolean; message: string }> {
+    if (!options?.force) {
+      const { BillService } = await import('./bill.service');
+      const unpaid = await BillService.hasUnpaidBalance(tableId);
+      if (unpaid.hasUnpaid) {
+        const error: any = new Error(
+          `No se puede cerrar la sesión de mesa con saldo pendiente de pago ($${(unpaid.remainingCents / 100).toFixed(2)}). Cobre o anule la cuenta antes de cerrar la mesa.`
+        );
+        error.statusCode = 409;
+        error.code = 'UNPAID_BALANCE_EXISTS';
+        throw error;
+      }
+    }
+
     const now = new Date();
     const pendingCalls = await prisma.$transaction(async (tx) => {
       // Revocación de sesión y resolución de llamados ocurren en el mismo commit.

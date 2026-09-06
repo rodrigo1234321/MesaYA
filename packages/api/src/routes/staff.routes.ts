@@ -152,4 +152,152 @@ export async function staffRoutes(fastify: FastifyInstance) {
       });
     }
   );
+
+  /**
+   * GET /v1/staff/tables/:tableId/bill
+   * Consulta de cuenta consolidada de mesa para personal de salón / caja.
+   */
+  fastify.get<{ Params: { tableId: string } }>(
+    '/staff/tables/:tableId/bill',
+    { preHandler: [verifyStaffToken] },
+    async (request, reply) => {
+      const { tableId } = request.params;
+      const staffRestaurantId = request.staffUser?.restaurantId;
+
+      const table = await prisma.table.findUnique({
+        where: { id: tableId }
+      });
+
+      if (!table) {
+        return reply.status(404).send({ error: 'Mesa no encontrada', code: 'TABLE_NOT_FOUND' });
+      }
+
+      if (staffRestaurantId && table.restaurantId !== staffRestaurantId) {
+        return reply.status(403).send({
+          error: 'No autorizado para consultar la cuenta de otro restaurante',
+          code: 'STAFF_TENANT_MISMATCH'
+        });
+      }
+
+      const session = await prisma.tableSession.findFirst({
+        where: { tableId, closedAt: null },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (!session) {
+        return reply.status(404).send({
+          error: 'La mesa no tiene una sesión activa abierta',
+          code: 'NO_ACTIVE_SESSION'
+        });
+      }
+
+      const { BillService } = await import('../services/bill.service');
+      const bill = await BillService.calculateTableBill(session.id);
+      return reply.send(bill);
+    }
+  );
+
+  /**
+   * POST /v1/staff/payments/settle
+   * Registro presencial de cobro total o parcial confirmado por personal (Caja/Salón).
+   */
+  fastify.post<{
+    Body: {
+      tableSessionId?: string;
+      tableId?: string;
+      orderId?: string;
+      amountCents: number;
+      tipCents?: number;
+      paymentMethod: string;
+      idempotencyKey: string;
+      participantId?: string;
+      orderItemId?: string;
+    };
+  }>(
+    '/staff/payments/settle',
+    { preHandler: [verifyStaffToken] },
+    async (request, reply) => {
+      const staffRestaurantId = request.staffUser?.restaurantId;
+      const staffUserId = request.staffUser?.sub;
+      const staffRole = request.staffUser?.role || 'WAITER';
+
+      if (!staffRestaurantId || !staffUserId) {
+        return reply.status(401).send({ error: 'Token de staff inválido', code: 'UNAUTHORIZED' });
+      }
+
+      const body = request.body || ({} as any);
+
+      if (!body.idempotencyKey || typeof body.idempotencyKey !== 'string') {
+        return reply.status(400).send({
+          error: 'idempotencyKey requerido (8..128 caracteres)',
+          code: 'IDEMPOTENCY_KEY_INVALID'
+        });
+      }
+
+      if (typeof body.amountCents !== 'number' || !Number.isInteger(body.amountCents) || body.amountCents <= 0) {
+        return reply.status(400).send({
+          error: 'amountCents debe ser un entero positivo en centavos',
+          code: 'MONEY_INVALID'
+        });
+      }
+
+      try {
+        const { BillService } = await import('../services/bill.service');
+        const result = await BillService.settleManualPayment({
+          staffRestaurantId,
+          staffUserId,
+          staffRole,
+          tableSessionId: body.tableSessionId,
+          tableId: body.tableId,
+          orderId: body.orderId,
+          amountCents: body.amountCents,
+          tipCents: body.tipCents,
+          paymentMethod: body.paymentMethod,
+          idempotencyKey: body.idempotencyKey,
+          participantId: body.participantId,
+          orderItemId: body.orderItemId
+        });
+
+        const status = result.duplicate ? 200 : 201;
+        return reply.status(status).send(result);
+      } catch (err: any) {
+        const status = err.statusCode || 400;
+        return reply.status(status).send({ error: err.message, code: err.code });
+      }
+    }
+  );
+
+  /**
+   * POST /v1/staff/payments/:id/revert
+   * Reversión autorizada de cobro presencial (WAITER/MANAGER) con restauración de saldo.
+   */
+  fastify.post<{ Params: { id: string } }>(
+    '/staff/payments/:id/revert',
+    { preHandler: [verifyStaffToken] },
+    async (request, reply) => {
+      const staffRestaurantId = request.staffUser?.restaurantId;
+      const staffUserId = request.staffUser?.sub;
+      const staffRole = request.staffUser?.role || 'WAITER';
+
+      if (!staffRestaurantId || !staffUserId) {
+        return reply.status(401).send({ error: 'Token de staff inválido', code: 'UNAUTHORIZED' });
+      }
+
+      const { id } = request.params;
+
+      try {
+        const { BillService } = await import('../services/bill.service');
+        const result = await BillService.revertManualPayment({
+          staffRestaurantId,
+          staffUserId,
+          staffRole,
+          paymentTransactionId: id
+        });
+        return reply.send(result);
+      } catch (err: any) {
+        const status = err.statusCode || 400;
+        return reply.status(status).send({ error: err.message, code: err.code });
+      }
+    }
+  );
 }
