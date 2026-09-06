@@ -35,7 +35,7 @@ function assertProductionSecret(name: string, value: string | undefined): assert
 function parseCorsOrigins(value: string | undefined, isProduction: boolean): string[] {
   const origins = (value || '')
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean);
 
   if (!isProduction && origins.length === 0) {

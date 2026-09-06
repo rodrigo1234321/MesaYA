@@ -225,7 +225,7 @@ export class ConfigService {
         const newValStr = JSON.stringify(dto[key]);
         if (oldValStr !== newValStr) {
           auditEntries.push({
-            changedField: key,
+            changedField: String(key),
             oldValue: oldValStr,
             newValue: newValStr
           });

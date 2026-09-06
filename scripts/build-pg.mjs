@@ -55,11 +55,22 @@ run(generateScript, ['postgres']);
 
 console.log('Compilando @mesaya/shared...');
 run(tsc, [], path.join(projectRoot, 'packages', 'shared'));
+mustExist('@mesaya/shared dist', path.join(projectRoot, 'packages', 'shared', 'dist', 'index.js'));
+
+// Garantizar copia física en node_modules/@mesaya/shared para compilación y empaquetado serverless en Vercel
+const nmSharedDir = path.join(projectRoot, 'node_modules', '@mesaya', 'shared');
+try {
+  fs.rmSync(nmSharedDir, { recursive: true, force: true });
+} catch (_) {}
+fs.mkdirSync(path.join(nmSharedDir, 'dist'), { recursive: true });
+fs.mkdirSync(path.join(nmSharedDir, 'src'), { recursive: true });
+fs.copyFileSync(path.join(projectRoot, 'packages', 'shared', 'package.json'), path.join(nmSharedDir, 'package.json'));
+fs.cpSync(path.join(projectRoot, 'packages', 'shared', 'dist'), path.join(nmSharedDir, 'dist'), { recursive: true });
+fs.cpSync(path.join(projectRoot, 'packages', 'shared', 'src'), path.join(nmSharedDir, 'src'), { recursive: true });
+console.log('node_modules/@mesaya/shared sincronizado físicamente (dist + src + package.json).');
 
 console.log('Compilando @mesaya/api contra el cliente PG...');
 run(tsc, [], path.join(projectRoot, 'packages', 'api'));
-
-mustExist('@mesaya/shared dist', path.join(projectRoot, 'packages', 'shared', 'dist', 'index.js'));
 mustExist('@mesaya/api dist', path.join(projectRoot, 'packages', 'api', 'dist', 'index.js'));
 
 console.log('Build productivo PG exitoso. La correctitud del cliente contra');

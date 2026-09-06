@@ -1,5 +1,10 @@
 {
   "version": 2,
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "packages/shared/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/v1/:match*",
