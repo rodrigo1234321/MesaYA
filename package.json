@@ -31,6 +31,9 @@
     "bootstrap:restaurant": "npx tsx scripts/bootstrap-restaurant.ts",
     "test:isolated": "node scripts/test-isolated.mjs"
   },
+  "dependencies": {
+    "fastify": "^4.27.0"
+  },
   "devDependencies": {
     "typescript": "^5.4.5"
   }
