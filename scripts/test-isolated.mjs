@@ -311,6 +311,12 @@ async function main() {
       path: 'packages/api/test/cocina-cuentas-etapa-05.test.ts',
       needsSeed: false,
       description: 'Etapa 05: Comensal móvil: participante, borrador de carrito, comanda y seguimiento'
+    },
+    {
+      name: 'cocina-cuentas-etapa-06',
+      path: 'packages/api/test/cocina-cuentas-etapa-06.test.ts',
+      needsSeed: false,
+      description: 'Etapa 06: Admin modos, KDS operativo, sincronización de tandas y gestión de agotados'
     }
   ];
 

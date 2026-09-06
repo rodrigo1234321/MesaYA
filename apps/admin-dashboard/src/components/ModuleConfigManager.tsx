@@ -183,8 +183,96 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
       )}
 
       {activeSubTab === 'modules' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* MÓDULO 1: Cobro y Cierre de Mesa */}
+        <div className="space-y-6">
+          {/* SELECTOR DE LOS 3 MODOS OPERATIVOS */}
+          <div className="bg-slate-900/95 border border-slate-800 rounded-3xl p-5 space-y-4">
+            <div>
+              <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                <span className="text-lg">🎯</span>
+                <span>Modo Operativo del Salón (3 Modos Canónicos)</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Seleccioná el modelo de atención de tu restaurante con 1 clic:
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+              {/* MODO 1: CARTA INFORMATIVA */}
+              <button
+                type="button"
+                onClick={() => setConfig({ ...config, allowOrdering: false, requireWaiterValidation: true })}
+                className={`p-4 rounded-2xl border text-left transition-all ${
+                  !config.allowOrdering
+                    ? 'bg-gradient-to-br from-indigo-950/50 to-slate-900 border-indigo-500 shadow-md shadow-indigo-500/10 ring-1 ring-indigo-500/30'
+                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 opacity-75'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xl">📖</span>
+                  {!config.allowOrdering && (
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-[10px] font-black">
+                      ACTIVO
+                    </span>
+                  )}
+                </div>
+                <h4 className="font-extrabold text-xs text-white">1. Carta Informativa</h4>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Food-first y llamados al mozo. Comensal sólo lee carta y llama al personal; sin pedidos móviles.
+                </p>
+              </button>
+
+              {/* MODO 2: PEDIDO CON VALIDACIÓN */}
+              <button
+                type="button"
+                onClick={() => setConfig({ ...config, allowOrdering: true, requireWaiterValidation: true })}
+                className={`p-4 rounded-2xl border text-left transition-all ${
+                  config.allowOrdering && config.requireWaiterValidation
+                    ? 'bg-gradient-to-br from-amber-950/50 to-slate-900 border-amber-500 shadow-md shadow-amber-500/10 ring-1 ring-amber-500/30'
+                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 opacity-75'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xl">🧑‍🍳</span>
+                  {config.allowOrdering && config.requireWaiterValidation && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-black">
+                      ACTIVO
+                    </span>
+                  )}
+                </div>
+                <h4 className="font-extrabold text-xs text-white">2. Pedido con Validación</h4>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  El comensal pide desde la mesa. El mozo revisa y confirma en salón antes de que entre a cocina.
+                </p>
+              </button>
+
+              {/* MODO 3: COCINA DIRECTA */}
+              <button
+                type="button"
+                onClick={() => setConfig({ ...config, allowOrdering: true, requireWaiterValidation: false })}
+                className={`p-4 rounded-2xl border text-left transition-all ${
+                  config.allowOrdering && !config.requireWaiterValidation
+                    ? 'bg-gradient-to-br from-emerald-950/50 to-slate-900 border-emerald-500 shadow-md shadow-emerald-500/10 ring-1 ring-emerald-500/30'
+                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 opacity-75'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xl">⚡</span>
+                  {config.allowOrdering && !config.requireWaiterValidation && (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-black">
+                      ACTIVO
+                    </span>
+                  )}
+                </div>
+                <h4 className="font-extrabold text-xs text-white">3. Cocina Directa</h4>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Comanda directa al KDS de cocina al confirmar. Pedidos con alérgenos/celíacos se retienen para control humano.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* MÓDULO 1: Cobro y Cierre de Mesa */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 space-y-4 hover:border-slate-700 transition-colors">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
@@ -481,6 +569,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
             </div>
           </div>
         </div>
+      </div>
       ) : (
         /* TAB DE AUDITORÍA */
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 space-y-4">

@@ -224,5 +224,18 @@ export class StaffApi {
     if (!res.ok) throw new Error('Error al cargar mesas');
     return res.json();
   }
+
+  static async updateMenuItemAvailability(restaurantId: string, itemId: string, isAvailable: boolean) {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/menu/items/${itemId}/availability`, {
+      method: 'PATCH',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ isAvailable })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Error al actualizar disponibilidad del plato');
+    }
+    return res.json();
+  }
 }
 

@@ -4,7 +4,7 @@ import { StaffLoginDTO } from '@mesaya/shared';
 import { STAFF_JWT_EXPIRES_IN } from '../lib/environment';
 import { assertValidPin } from '../lib/pin-policy';
 import { getRateLimitIp } from '../lib/rate-limit-ip';
-import { verifyManagerRole } from '../middlewares/auth.middleware';
+import { verifyManagerRole, verifyStaffToken } from '../middlewares/auth.middleware';
 import { prisma } from '../lib/prisma';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
 
@@ -102,4 +102,54 @@ export async function staffRoutes(fastify: FastifyInstance) {
       return reply.status(code).send({ error: err.message });
     }
   });
+
+  /**
+   * PATCH /v1/staff/restaurants/:id/menu/items/:itemId/availability
+   * Staff de cocina o salón actualiza la disponibilidad de un plato (Gestión de Agotados).
+   */
+  fastify.patch<{
+    Params: { id: string; itemId: string };
+    Body: { isAvailable: boolean };
+  }>(
+    '/staff/restaurants/:id/menu/items/:itemId/availability',
+    { preHandler: [verifyStaffToken] },
+    async (request, reply) => {
+      const { id, itemId } = request.params;
+      const { isAvailable } = (request.body || {}) as { isAvailable?: boolean };
+
+      if (typeof isAvailable !== 'boolean') {
+        return reply.status(400).send({ error: 'isAvailable booleano requerido', code: 'INVALID_PAYLOAD' });
+      }
+
+      const staffRestaurantId = request.staffUser?.restaurantId;
+      if (staffRestaurantId && id !== staffRestaurantId) {
+        return reply.status(403).send({
+          error: 'No autorizado para modificar ítems de otro restaurante',
+          code: 'STAFF_TENANT_MISMATCH'
+        });
+      }
+
+      const item = await prisma.menuItem.findFirst({
+        where: { id: itemId, category: { restaurantId: id } }
+      });
+
+      if (!item) {
+        return reply.status(404).send({
+          error: 'Plato no encontrado en este restaurante',
+          code: 'ITEM_NOT_FOUND'
+        });
+      }
+
+      const updated = await prisma.menuItem.update({
+        where: { id: itemId },
+        data: { isAvailable }
+      });
+
+      return reply.send({
+        id: updated.id,
+        name: updated.name,
+        isAvailable: updated.isAvailable
+      });
+    }
+  );
 }

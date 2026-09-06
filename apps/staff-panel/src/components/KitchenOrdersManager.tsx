@@ -1,6 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StaffApi } from '../lib/api';
-import { UtensilsCrossed, Clock, CheckCircle2, AlertCircle, Plus, ChevronRight, X } from 'lucide-react';
+import { playChimeAlert, unlockAudio } from '../lib/audio';
+import {
+  UtensilsCrossed,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Plus,
+  ChevronRight,
+  X,
+  Volume2,
+  VolumeX,
+  AlertTriangle,
+  XCircle,
+  PackageX,
+  RefreshCw
+} from 'lucide-react';
 
 interface KitchenItem {
   id: string;
@@ -9,6 +24,8 @@ interface KitchenItem {
   notes?: string | null;
   unitPrice: number;
   addedByGuest?: string | null;
+  participantName?: string | null;
+  tandaSeq?: number | null;
 }
 
 interface KitchenOrder {
@@ -28,10 +45,16 @@ interface KitchenOrdersManagerProps {
   restaurantId: string;
 }
 
+const ALLERGY_REGEX = /(alerg|celiac|tacc|mani|maní|marisc|intoleran|gluten|sin tacc)/i;
+
 export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ restaurantId }) => {
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Audio chimes & deduplicación autoritativa
+  const [isAudioEnabled, setIsAudioEnabled] = useState<boolean>(false);
+  const knownOrderIdsRef = useRef<Set<string> | null>(null);
 
   // Modal para que el mozo cargue una comanda a mano
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -41,11 +64,38 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
   const [selectedItems, setSelectedItems] = useState<{ menuItemId: string; name: string; quantity: number; notes: string }[]>([]);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
+  // Modal para gestión de platos agotados (stock 86)
+  const [isStockModalOpen, setIsStockModalOpen] = useState<boolean>(false);
+  const [stockMenu, setStockMenu] = useState<any>(null);
+  const [stockLoading, setStockLoading] = useState<boolean>(false);
+  const [togglingItemId, setTogglingItemId] = useState<string | null>(null);
+
+  // Modal para rechazar / cancelar comanda con motivo
+  const [rejectingOrderId, setRejectingOrderId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>('');
+  const [rejectSubmitting, setRejectSubmitting] = useState<boolean>(false);
+
   const fetchOrders = async () => {
     try {
       const data = await StaffApi.getKitchenOrders(restaurantId);
-      setOrders(data.orders || []);
+      const incomingOrders: KitchenOrder[] = data.orders || [];
+      setOrders(incomingOrders);
       setError(null);
+
+      // Deduplicación autoritativa de sonido:
+      // Primer fetch: sembramos los IDs sin alertar al operador
+      if (knownOrderIdsRef.current === null) {
+        knownOrderIdsRef.current = new Set(incomingOrders.map((o) => o.id));
+      } else {
+        // Fetches subsiguientes: sólo alertamos si aparecen IDs genuinamente nuevos
+        const newOrders = incomingOrders.filter((o) => !knownOrderIdsRef.current!.has(o.id));
+        if (newOrders.length > 0) {
+          if (isAudioEnabled) {
+            playChimeAlert();
+          }
+          newOrders.forEach((o) => knownOrderIdsRef.current!.add(o.id));
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Error al cargar comandas');
     } finally {
@@ -57,7 +107,17 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
     fetchOrders();
     const interval = setInterval(fetchOrders, 4000);
     return () => clearInterval(interval);
-  }, [restaurantId]);
+  }, [restaurantId, isAudioEnabled]);
+
+  const toggleAudio = () => {
+    if (!isAudioEnabled) {
+      unlockAudio();
+      setIsAudioEnabled(true);
+      playChimeAlert();
+    } else {
+      setIsAudioEnabled(false);
+    }
+  };
 
   const openNewOrderModal = async () => {
     setIsModalOpen(true);
@@ -77,18 +137,52 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
     }
   };
 
+  const openStockModal = async () => {
+    setIsStockModalOpen(true);
+    setStockLoading(true);
+    try {
+      const menuData = await StaffApi.getMenu(restaurantId);
+      setStockMenu(menuData || null);
+    } catch (err) {
+      console.error('Error al cargar carta para agotados:', err);
+    } finally {
+      setStockLoading(false);
+    }
+  };
+
+  const handleToggleItemAvailability = async (itemId: string, currentAvailability: boolean) => {
+    setTogglingItemId(itemId);
+    try {
+      const newAvailability = !currentAvailability;
+      await StaffApi.updateMenuItemAvailability(restaurantId, itemId, newAvailability);
+      if (stockMenu && stockMenu.categories) {
+        const updatedCategories = stockMenu.categories.map((cat: any) => ({
+          ...cat,
+          items: cat.items.map((it: any) =>
+            it.id === itemId ? { ...it, isAvailable: newAvailability } : it
+          )
+        }));
+        setStockMenu({ ...stockMenu, categories: updatedCategories });
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error al actualizar disponibilidad');
+    } finally {
+      setTogglingItemId(null);
+    }
+  };
+
   const handleAddItemToForm = (item: any) => {
-    setSelectedItems(prev => {
-      const existing = prev.find(i => i.menuItemId === item.id);
+    setSelectedItems((prev) => {
+      const existing = prev.find((i) => i.menuItemId === item.id);
       if (existing) {
-        return prev.map(i => i.menuItemId === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+        return prev.map((i) => (i.menuItemId === item.id ? { ...i, quantity: i.quantity + 1 } : i));
       }
       return [...prev, { menuItemId: item.id, name: item.name, quantity: 1, notes: '' }];
     });
   };
 
   const handleRemoveItemFromForm = (menuItemId: string) => {
-    setSelectedItems(prev => prev.filter(i => i.menuItemId !== menuItemId));
+    setSelectedItems((prev) => prev.filter((i) => i.menuItemId !== menuItemId));
   };
 
   const handleSubmitOrder = async () => {
@@ -114,13 +208,39 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
       await fetchOrders();
     } catch (err: any) {
       console.error('Error al actualizar estado:', err);
+      alert(err.message || 'Error al actualizar estado');
+    }
+  };
+
+  const handleValidateOrder = async (orderId: string) => {
+    try {
+      await StaffApi.validateOrder(orderId);
+      await fetchOrders();
+    } catch (err: any) {
+      console.error('Error al validar comanda:', err);
+      alert(err.message || 'Error al validar comanda');
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectingOrderId) return;
+    setRejectSubmitting(true);
+    try {
+      await StaffApi.updateOrderStatus(rejectingOrderId, 'CANCELLED');
+      setRejectingOrderId(null);
+      setRejectReason('');
+      await fetchOrders();
+    } catch (err: any) {
+      alert(err.message || 'Error al rechazar comanda');
+    } finally {
+      setRejectSubmitting(false);
     }
   };
 
   return (
     <div className="space-y-4">
-      {/* Header with Call to Action */}
-      <div className="flex items-center justify-between bg-slate-900/90 border border-slate-800 p-4 rounded-2xl">
+      {/* Header with Call to Action & Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 p-4 rounded-2xl">
         <div>
           <h2 className="font-extrabold text-base text-white flex items-center gap-2">
             <UtensilsCrossed className="w-5 h-5 text-amber-400" />
@@ -131,13 +251,39 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
           </p>
         </div>
 
-        <button
-          onClick={openNewOrderModal}
-          className="flex items-center gap-1.5 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>+ Cargar Comanda</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Audio Chime Button */}
+          <button
+            onClick={toggleAudio}
+            title="Activar/Desactivar avisos de audio para comandas nuevas"
+            className={`flex items-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+              isAudioEnabled
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 shadow-sm shadow-emerald-500/20'
+                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+            }`}
+          >
+            {isAudioEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+            <span>{isAudioEnabled ? 'Audio KDS ON' : 'Activar Audio'}</span>
+          </button>
+
+          {/* Out of stock management button */}
+          <button
+            onClick={openStockModal}
+            className="flex items-center gap-1.5 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 font-bold text-xs active:scale-95 transition-all"
+          >
+            <PackageX className="w-4 h-4 text-amber-400" />
+            <span>Agotados (Stock)</span>
+          </button>
+
+          {/* Manual order button */}
+          <button
+            onClick={openNewOrderModal}
+            className="flex items-center gap-1.5 py-2 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Cargar Comanda</span>
+          </button>
+        </div>
       </div>
 
       {loading && (
@@ -178,6 +324,8 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
             badgeBg = 'bg-red-500/30 text-red-200 border border-red-500/50';
           }
 
+          const hasAllergy = order.items.some((it) => it.notes && ALLERGY_REGEX.test(it.notes));
+
           return (
             <div key={order.id} className={`rounded-2xl border p-4 space-y-3 shadow-lg ${urgencyBorder}`}>
               {/* Order Header */}
@@ -197,30 +345,49 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
                     <Clock className="w-2.5 h-2.5" />
                     <span>hace {order.elapsedMinutes} min</span>
                   </span>
-                  <span className="text-[10px] font-mono text-slate-400">
+                  <span className="text-[10px] font-mono font-semibold text-slate-300">
                     {order.status === 'PENDING_VALIDATION' && '🟡 Por Validar'}
+                    {order.status === 'CONFIRMED' && '🟡 Por Validar (Mozo/Alérgenos)'}
                     {order.status === 'IN_KITCHEN' && '🔥 En Cocina'}
                     {order.status === 'READY_TO_SERVE' && '🔔 Listo para Servir'}
                   </span>
                 </div>
               </div>
 
+              {/* Allergen Warning Banner */}
+              {hasAllergy && (
+                <div className="p-2.5 rounded-xl bg-red-950/80 border border-red-500/60 text-red-200 text-[11px] font-bold flex items-center gap-2 animate-pulse">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>⚠️ ALERTA ALÉRGENOS / CELÍACO — Confirmar antes de preparar</span>
+                </div>
+              )}
+
               {/* Items List */}
               <div className="space-y-1.5 py-1">
                 {order.items.map((item) => (
-                  <div key={item.id} className="flex items-start justify-between bg-slate-950/60 p-2 rounded-xl border border-slate-850">
-                    <div>
-                      <div className="flex items-center gap-1.5">
+                  <div key={item.id} className="flex items-start justify-between bg-slate-950/60 p-2.5 rounded-xl border border-slate-850">
+                    <div className="min-w-0 pr-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-black text-amber-400 text-xs">{item.quantity}x</span>
                         <span className="font-bold text-xs text-white">{item.name}</span>
+                        {item.tandaSeq && (
+                          <span className="text-[9px] bg-slate-800 text-slate-300 font-mono px-1 rounded">
+                            Tanda #{item.tandaSeq}
+                          </span>
+                        )}
                       </div>
                       {item.notes && (
-                        <p className="text-[11px] text-slate-400 italic pl-4 mt-0.5">
+                        <p className={`text-[11px] italic pl-4 mt-0.5 ${ALLERGY_REGEX.test(item.notes) ? 'text-red-300 font-semibold' : 'text-slate-400'}`}>
                           "{item.notes}"
                         </p>
                       )}
+                      {(item.participantName || item.addedByGuest) && (
+                        <span className="text-[10px] text-slate-400 block pl-4 mt-0.5">
+                          👤 {item.participantName || item.addedByGuest}
+                        </span>
+                      )}
                     </div>
-                    <span className="text-[10px] font-mono text-slate-400">
+                    <span className="text-[10px] font-mono text-slate-400 shrink-0">
                       ${(item.unitPrice * item.quantity).toLocaleString('es-AR')}
                     </span>
                   </div>
@@ -248,14 +415,24 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
                   </button>
                 )}
 
-                {order.status === 'PENDING_VALIDATION' && (
+                {(order.status === 'PENDING_VALIDATION' || order.status === 'CONFIRMED') && (
                   <button
-                    onClick={() => handleUpdateStatus(order.id, 'IN_KITCHEN')}
-                    className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                    onClick={() => handleValidateOrder(order.id)}
+                    className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-md shadow-indigo-600/20"
                   >
                     <span>Validar y enviar a cocina</span>
                   </button>
                 )}
+
+                {/* Reject / Cancel button */}
+                <button
+                  onClick={() => setRejectingOrderId(order.id)}
+                  title="Rechazar o cancelar comanda"
+                  className="py-2 px-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold text-xs flex items-center justify-center gap-1 active:scale-95 transition-all"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Rechazar</span>
+                </button>
               </div>
             </div>
           );
@@ -372,6 +549,155 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
                 className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
               >
                 {submitting ? 'Enviando...' : 'Enviar a Cocina 🍳'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: GESTIÓN DE AGOTADOS (STOCK) */}
+      {isStockModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-xl p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="font-extrabold text-base text-white flex items-center gap-2">
+                  <PackageX className="w-5 h-5 text-amber-400" />
+                  <span>Control de Platos Agotados (Stock)</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Desactiva platos que se quedaron sin insumos para impedir que comensales los pidan
+                </p>
+              </div>
+              <button
+                onClick={() => setIsStockModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {stockLoading ? (
+              <div className="py-12 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                <span>Cargando platos del local...</span>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                {stockMenu?.categories?.map((cat: any) => (
+                  <div key={cat.id} className="space-y-2">
+                    <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider">
+                      {cat.name} ({cat.items?.length || 0})
+                    </h4>
+                    <div className="space-y-1.5">
+                      {cat.items?.map((item: any) => {
+                        const isAvailable = item.isAvailable !== false;
+                        const isToggling = togglingItemId === item.id;
+
+                        return (
+                          <div
+                            key={item.id}
+                            className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors ${
+                              isAvailable
+                                ? 'bg-slate-950/60 border-slate-800'
+                                : 'bg-red-950/30 border-red-500/40'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <span className={`font-bold text-xs block truncate ${isAvailable ? 'text-white' : 'text-slate-400 line-through'}`}>
+                                {item.name}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                ${item.price.toLocaleString('es-AR')}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={isToggling}
+                              onClick={() => handleToggleItemAvailability(item.id, isAvailable)}
+                              className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all disabled:opacity-50 active:scale-95 flex items-center gap-1.5 ${
+                                isAvailable
+                                  ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                                  : 'bg-red-600 hover:bg-red-500 text-white shadow-md shadow-red-600/30'
+                              }`}
+                            >
+                              {isToggling ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : isAvailable ? (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <AlertCircle className="w-3.5 h-3.5" />
+                              )}
+                              <span>{isAvailable ? 'Disponible' : 'Agotado (86)'}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-slate-800 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsStockModalOpen(false)}
+                className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RECHAZAR COMANDA CON MOTIVO */}
+      {rejectingOrderId && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-md p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="font-extrabold text-base text-red-400 flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5" />
+                  <span>Rechazar Comanda</span>
+                </h3>
+                <p className="text-xs text-slate-400">Esta acción cancelará la comanda en cocina</p>
+              </div>
+              <button
+                onClick={() => setRejectingOrderId(null)}
+                className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-300">Motivo del rechazo (opcional):</label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Ej: Insumos agotados, mesa canceló verbalmente, etc."
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500 h-24"
+              />
+            </div>
+
+            <div className="pt-2 border-t border-slate-800 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectingOrderId(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs"
+              >
+                Volver
+              </button>
+              <button
+                type="button"
+                disabled={rejectSubmitting}
+                onClick={handleConfirmReject}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-black text-xs shadow-lg shadow-red-600/30 active:scale-95 transition-all"
+              >
+                {rejectSubmitting ? 'Cancelando...' : 'Confirmar Rechazo ✕'}
               </button>
             </div>
           </div>

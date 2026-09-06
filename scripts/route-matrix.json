@@ -62,6 +62,7 @@
   { "method": "PATCH", "path": "/v1/staff/orders/:id/status", "auth": "STAFF", "note": "Transiciones de cocina/mesero por rol (etapa 15)." },
   { "method": "POST", "path": "/v1/staff/orders/:id/validate", "auth": "STAFF", "note": "Doble control en salón (etapa 15)." },
   { "method": "GET", "path": "/v1/staff/restaurants/:id/kitchen-orders", "auth": "STAFF", "note": "KDS del tenant (etapa 15)." },
+  { "method": "PATCH", "path": "/v1/staff/restaurants/:id/menu/items/:itemId/availability", "auth": "STAFF", "note": "Staff actualiza disponibilidad de plato (agotados) (etapa 06)." },
   { "method": "GET", "path": "/v1/staff/restaurants/:id/waitlist", "auth": "STAFF", "note": "Cola del tenant sin PII expuesta (etapa 16)." },
   { "method": "POST", "path": "/v1/staff/tables/:tableId/orders/items", "auth": "STAFF", "note": "Carga directa por mozo del tenant (etapa 15)." },
   { "method": "PATCH", "path": "/v1/staff/waitlist/:id/call", "auth": "STAFF", "note": "Aviso del tenant (etapa 16)." },

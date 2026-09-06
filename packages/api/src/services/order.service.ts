@@ -1163,6 +1163,15 @@ export class OrderService {
       data: { status: OrderStatus.IN_KITCHEN }
     });
 
+    // Sincronizar tandas asociadas a la sesión de mesa que estén en CONFIRMED o DRAFT
+    await prisma.orderTanda.updateMany({
+      where: {
+        tableSessionId: order.tableSessionId,
+        status: { in: ['DRAFT', 'CONFIRMED'] }
+      },
+      data: { status: 'IN_KITCHEN' }
+    });
+
     const fullOrder = await this.getOrderById(order.id);
     if (!fullOrder) throw new Error('Error al recargar orden');
 
@@ -1485,6 +1494,33 @@ export class OrderService {
       data: { status: newStatus }
     });
 
+    // Sincronización coherente de tandas de la sesión según el nuevo estado de la comanda
+    if (newStatus === OrderStatus.IN_KITCHEN) {
+      await prisma.orderTanda.updateMany({
+        where: {
+          tableSessionId: order.tableSessionId,
+          status: { in: ['DRAFT', 'CONFIRMED'] }
+        },
+        data: { status: 'IN_KITCHEN' }
+      });
+    } else if (newStatus === OrderStatus.SERVED) {
+      await prisma.orderTanda.updateMany({
+        where: {
+          tableSessionId: order.tableSessionId,
+          status: 'IN_KITCHEN'
+        },
+        data: { status: 'SERVED' }
+      });
+    } else if (newStatus === OrderStatus.CANCELLED) {
+      await prisma.orderTanda.updateMany({
+        where: {
+          tableSessionId: order.tableSessionId,
+          status: { in: ['DRAFT', 'CONFIRMED', 'IN_KITCHEN'] }
+        },
+        data: { status: 'CANCELLED' }
+      });
+    }
+
     const restaurantId = order.tableSession.table.restaurantId;
 
     // Actualización de estado en FSM de la mesa
@@ -1608,7 +1644,7 @@ export class OrderService {
     const orders = await prisma.order.findMany({
       where: {
         tableSession: { table: { restaurantId: restaurant.id } },
-        status: { in: [OrderStatus.PENDING_VALIDATION, OrderStatus.IN_KITCHEN, OrderStatus.READY_TO_SERVE] }
+        status: { in: [OrderStatus.PENDING_VALIDATION, OrderStatus.CONFIRMED, OrderStatus.IN_KITCHEN, OrderStatus.READY_TO_SERVE] }
       },
       include: {
         tableSession: {
@@ -1618,7 +1654,9 @@ export class OrderService {
         },
         items: {
           include: {
-            menuItem: { select: { name: true } }
+            menuItem: { select: { name: true } },
+            participant: { select: { displayName: true } },
+            tanda: { select: { seq: true, status: true } }
           },
           orderBy: { createdAt: 'asc' }
         }
@@ -1642,11 +1680,18 @@ export class OrderService {
         urgency: elapsedMinutes >= 25 ? 'CRITICAL' : elapsedMinutes >= 15 ? 'WARNING' : 'NORMAL',
         items: o.items.map((it) => ({
           id: it.id,
-          name: it.menuItem.name,
+          name: it.productNameSnapshot || it.menuItem?.name || '',
           quantity: it.quantity,
           notes: it.notes,
           unitPrice: it.unitPrice,
-          addedByGuest: it.addedByGuest
+          addedByGuest: it.addedByGuest,
+          participantName: it.participant?.displayName || it.addedByGuest,
+          tandaSeq: it.tanda?.seq ?? null,
+          modifiersSnapshot: it.modifiersSnapshot
+            ? typeof it.modifiersSnapshot === 'string'
+              ? JSON.parse(it.modifiersSnapshot)
+              : it.modifiersSnapshot
+            : null
         }))
       };
     });
