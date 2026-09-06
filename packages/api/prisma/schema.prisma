@@ -330,12 +330,17 @@ model PaymentTransaction {
   // Etapa 09: asociación con participante que realiza el pago y trazabilidad de anulación
   participantId   String?
   participant     VisitParticipant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  // Etapa 09 fix: objetivo dirigido solicitado (ítem) para comparación simétrica de idempotencia.
+  // Nullable para pagos generales y filas previas; sin FK para no bloquear borrados de ítems.
+  requestedOrderItemId String?
   reversalReason  String?
   reversalStaffId String?
   reversalAt      DateTime?
   allocations    PaymentAllocation[]
   createdAt      DateTime @default(now())
   resolvedAt     DateTime?
+
+  @@index([requestedOrderItemId])
 }
 
 model PaymentAllocation {

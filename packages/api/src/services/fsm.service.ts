@@ -46,6 +46,10 @@ export class FSMService {
   async attemptTransition(params: TransitionParams, tx?: any): Promise<TransitionResult> {
     const { tableId, toState, source, trigger, staffUserId, metadata, isOverride, expectedCurrentState } = params;
     const db = tx || prisma;
+    const inTransaction = Boolean(tx);
+    // Broadcasts diferidos hasta post-commit cuando se opera dentro de una
+    // transacción explícita. Fuera de transacción se emiten de inmediato.
+    const pendingBroadcasts: Array<() => void> = [];
 
     // 1. Fetch current table state
     const table = await db.table.findUnique({
@@ -150,8 +154,11 @@ export class FSMService {
       }
     });
 
-    // 5. Manage OccupancySession lifecycle
-    await this.handleOccupancySessionLifecycle(table, fromState, toState, now, db);
+    // 5. Manage OccupancySession lifecycle (puede aportar un broadcast diferido)
+    const occupancyBroadcast = await this.handleOccupancySessionLifecycle(table, fromState, toState, now, db, inTransaction);
+    if (occupancyBroadcast) {
+      pendingBroadcasts.push(occupancyBroadcast);
+    }
 
     // Auto-resolve any pending or in-progress calls when table is cleared or reset
     if (toState === TableFSMState.TO_CLEAN || toState === TableFSMState.AVAILABLE) {
@@ -201,7 +208,12 @@ export class FSMService {
               );
             }
           };
-          if (!tx) {
+          // Dentro de una transacción el broadcast se difiere hasta post-commit
+          // (el llamador ejecuta result.broadcast()); fuera de ella se emite
+          // de inmediato (comportamiento histórico).
+          if (inTransaction) {
+            pendingBroadcasts.push(broadcastCalls);
+          } else {
             broadcastCalls();
           }
         }
@@ -267,12 +279,17 @@ export class FSMService {
     };
 
     const broadcastCallback = () => {
+      for (const fn of pendingBroadcasts) {
+        try {
+          fn();
+        } catch (_) {}
+      }
       eventBus.broadcastTableState(sseEvent);
     };
 
     // Si se opera dentro de una transacción explícita (tx), NO emitir en tiempo real antes
     // de que la transacción externa confirme. El llamador ejecutará broadcast() tras el commit.
-    if (!tx) {
+    if (!inTransaction) {
       broadcastCallback();
     }
 
@@ -358,15 +375,21 @@ export class FSMService {
   }
 
   /**
-   * Manages OccupancySession creation, phase timestamps, and final turn-time calculation
+   * Manages OccupancySession creation, phase timestamps, and final turn-time calculation.
+   * Usa SIEMPRE el cliente db (tx dentro de una transacción) y NUNCA emite broadcasts
+   * antes del commit: el evento occupancy.completed se devuelve como callback diferido
+   * para que attemptTransition lo ejecute post-commit. Los errores se propagan cuando
+   * se opera dentro de una transacción (rollback del llamador); fuera de ella se
+   * registran sin voltear la transición principal (comportamiento histórico).
    */
   private async handleOccupancySessionLifecycle(
     table: { id: string; label: string; restaurantId: string; shiftId?: string | null },
     fromState: TableFSMState,
     toState: TableFSMState,
     timestamp: Date,
-    db: any = prisma
-  ): Promise<void> {
+    db: any = prisma,
+    inTransaction = false
+  ): Promise<(() => void) | null> {
     try {
       // 1. Starting a new occupancy cycle (AVAILABLE -> OCCUPIED_NO_ORDER or RESERVED -> OCCUPIED_NO_ORDER)
       if (toState === TableFSMState.OCCUPIED_NO_ORDER) {
@@ -496,19 +519,27 @@ export class FSMService {
             timestamp: timestamp.toISOString()
           };
 
-          eventBus.broadcastOccupancyCompleted(completedEvent);
-          return;
+          // Diferido: el llamador lo ejecuta post-commit vía pendingBroadcasts.
+          return () => {
+            eventBus.broadcastOccupancyCompleted(completedEvent);
+          };
         }
 
         if (Object.keys(updates).length > 0) {
-          await prisma.occupancySession.update({
+          await db.occupancySession.update({
             where: { id: openSession.id },
             data: updates
           });
         }
       }
+      return null;
     } catch (err) {
+      if (inTransaction) {
+        // Dentro de una transacción el error debe voltear el commit del llamador.
+        throw err;
+      }
       console.error('Error actualizando OccupancySession en FSM:', err);
+      return null;
     }
   }
 }

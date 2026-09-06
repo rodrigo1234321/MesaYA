@@ -19,7 +19,7 @@ Criterios de Aceptación: `docs/implementacion/COCINA-CUENTAS-ACEPTACION.md`
 | **06** | Admin modos, KDS cocina directo, detección de alérgenos y toggle de agotados | **APPROVED** | `355c89d` (rev `07074c5`) | [ENTREGA-06.md](ENTREGA-06.md) |
 | **07** | Cuenta dividida backend, asignaciones optimistas, centavos y cobros parciales | **APPROVED** | `2230896` | [ENTREGA-07.md](ENTREGA-07.md) |
 | **08** | UI de Mi Parte en comensal, caja y cobros parciales en staff-panel (flujo 3 personas) | **APPROVED** | `12f319a` | [ENTREGA-08.md](ENTREGA-08.md) |
-| **09** | E2E integral (20 tests), blindaje concurrente de caja, contabilidad granular PaymentAllocation, manager auth, FSM atómica, contrato Mercado Pago y Runbook | **APPROVED** | `187fb69` | [ENTREGA-09.md](ENTREGA-09.md) |
+| **09** | E2E integral (27 tests), blindaje concurrente de caja, asignación contable íntegra, idempotencia por ítem, manager auth, FSM atómica, contrato Mercado Pago y Runbook | **APPROVED** | `6060057` + corrección residual | [ENTREGA-09.md](ENTREGA-09.md) |
 
 ---
 
@@ -29,8 +29,8 @@ Criterios de Aceptación: `docs/implementacion/COCINA-CUENTAS-ACEPTACION.md`
 2. **Rutas y API Drift (`Check.ps1 -Check routes`)**: PASS (85 rutas clasificadas, 0 drift, Exit code 0).
 3. **Compilación de Workspaces (`Check.ps1 -Check build`)**: PASS (6/6 paquetes compilados, Exit code 0).
 4. **Compilación PostgreSQL (`Check.ps1 -Check build-pg`)**: PASS (Target PostgreSQL/Supabase verificado, Exit code 0).
-5. **Suite E2E Integral (`Check.ps1 -Check suite -Suite cocina-cuentas-etapa-09`)**: PASS (20/20 pruebas exitosas, Exit code 0).
-6. **Batería Global Aislada (`Check.ps1 -Check suite`)**: PASS (39/39 suites aprobadas sin regresiones, Exit code 0).
+5. **Suites E2E de Etapa 09 (`Check.ps1 -Check suite -Suite cocina-cuentas-etapa-09`)**: PASS (2 suites, 27/27 pruebas exitosas, Exit code 0).
+6. **Batería Global Aislada (`Check.ps1 -Check suite`)**: PASS (40/40 suites aprobadas sin regresiones, Exit code 0).
 
 ---
 

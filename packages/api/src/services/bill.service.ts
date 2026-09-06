@@ -574,6 +574,8 @@ export class BillService {
 
           const reqParticipant = participantId || null;
           const txParticipant = existingTx.participantId || null;
+          const reqItem = orderItemId || null;
+          const txItem = (existingTx as any).requestedOrderItemId || null;
 
           if (
             txSessionId !== targetSessionId ||
@@ -581,10 +583,11 @@ export class BillService {
             existingTx.method !== normalizedMethod ||
             existingAmountCents !== amountCents ||
             existingTipCents !== tipCents ||
-            reqParticipant !== txParticipant
+            reqParticipant !== txParticipant ||
+            reqItem !== txItem
           ) {
             const err: any = new Error(
-              `Conflicto de idempotencia: la clave ya fue utilizada con diferente sesión, restaurante, método o importes`
+              `Conflicto de idempotencia: la clave ya fue utilizada con diferente sesión, restaurante, método, importes u objetivo dirigido`
             );
             err.statusCode = 409;
             err.code = 'IDEMPOTENCY_CONFLICT';
@@ -594,7 +597,10 @@ export class BillService {
           return { existing: existingTx, session };
         }
 
-        // 3. Validación de pertenencia a la sesión (participante e ítem)
+        // 3. Validación de pertenencia a la sesión (participante e ítem).
+        // Se valida el objetivo ANTES que el estado de la sesión para devolver
+        // el error más específico (p. ej. participante ajeno) incluso si la
+        // sesión ya se cerró; el reintento idempotente exacto ya se resolvió arriba.
         if (participantId) {
           const participant = await tx.visitParticipant.findFirst({
             where: { id: participantId, tableSessionId: session.id }
@@ -603,6 +609,14 @@ export class BillService {
             const err: any = new Error('El participante especificado no pertenece a la sesión de la mesa');
             err.statusCode = 400;
             err.code = 'PARTICIPANT_NOT_IN_SESSION';
+            throw err;
+          }
+          if (participant.status !== 'ACTIVE') {
+            const err: any = new Error(
+              `El participante especificado no está activo (estado actual: ${participant.status})`
+            );
+            err.statusCode = 409;
+            err.code = 'PARTICIPANT_NOT_ACTIVE';
             throw err;
           }
         }
@@ -619,7 +633,24 @@ export class BillService {
           }
         }
 
-        // 4. Cálculo de balance dentro de la transacción serializada
+        // 4. La sesión objetivo debe seguir abierta: ni cerrada ni vencida.
+        // Se valida DESPUÉS del chequeo idempotente (paso 2) para que el reintento
+        // exacto de una transacción ya válida siga devolviendo el duplicado.
+        if (session.closedAt !== null) {
+          const err: any = new Error('La sesión de mesa ya fue cerrada; no se aceptan pagos nuevos');
+          err.statusCode = 409;
+          err.code = 'SESSION_CLOSED';
+          throw err;
+        }
+
+        if (session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) {
+          const err: any = new Error('La sesión de mesa expiró; no se aceptan pagos nuevos');
+          err.statusCode = 409;
+          err.code = 'SESSION_EXPIRED';
+          throw err;
+        }
+
+        // 5. Cálculo de balance dentro de la transacción serializada
         const nonCancelledOrders = await tx.order.findMany({
           where: {
             tableSessionId: session.id,
@@ -675,7 +706,7 @@ export class BillService {
           throw err;
         }
 
-        // 5. Seleccionar la orden activa para relacionar la transacción
+        // 6. Seleccionar la orden activa para relacionar la transacción
         let primaryOrder = nonCancelledOrders.find(
           (o) => o.status !== OrderStatus.PAID && o.status !== OrderStatus.CANCELLED
         );
@@ -692,7 +723,7 @@ export class BillService {
 
         const now = new Date();
 
-        // 6. Crear registro de pago presencial con trazabilidad de participante
+        // 7. Crear registro de pago presencial con trazabilidad de participante y objetivo dirigido
         const createdTx = await tx.paymentTransaction.create({
           data: {
             idempotencyKey,
@@ -700,6 +731,7 @@ export class BillService {
             tableSessionId: session.id,
             guestSessionId: staffUserId,
             participantId: participantId || null,
+            requestedOrderItemId: orderItemId || null,
             method: normalizedMethod,
             amount: amountCents / 100,
             amountCents,
@@ -714,7 +746,7 @@ export class BillService {
           }
         });
 
-        // 7. Asignación contable granular (PaymentAllocation)
+        // 8. Asignación contable granular (PaymentAllocation)
         let itemsToAllocate: typeof nonCancelledOrders[0]['items'] = [];
 
         if (orderItemId) {
@@ -774,7 +806,21 @@ export class BillService {
           }
         }
 
-        // 8. Si el saldo llegó a 0 con este pago, liquidar órdenes y mesa ATÓMICAMENTE
+        // 8b. Rechazo atómico de remanente no asignado: si el pago es dirigido
+        // (participantId u orderItemId) y el importe supera el saldo todavía asignable
+        // a ese objetivo, o si un pago general no logró asignar toda su suma, se aborta
+        // la transacción completa (sin persistir PaymentTransaction ni allocations).
+        if (remainingPaymentCents > 0) {
+          const err: any = new Error(
+            `Remanente sin asignar no permitido: ${remainingPaymentCents} centavos del cobro no corresponden a saldo asignable del objetivo dirigido`
+          );
+          err.statusCode = 409;
+          err.code = 'UNALLOCATED_PAYMENT_REMAINDER';
+          err.details = { remainingPaymentCents, amountCents, participantId: participantId || null, orderItemId: orderItemId || null };
+          throw err;
+        }
+
+        // 9. Si el saldo llegó a 0 con este pago, liquidar órdenes y mesa ATÓMICAMENTE
         const isBalanceCleared = amountCents === currentRemainingCents;
         if (isBalanceCleared) {
           await tx.order.updateMany({
@@ -847,6 +893,8 @@ export class BillService {
 
           const reqParticipant = participantId || null;
           const txParticipant = fallbackTx.participantId || null;
+          const reqItem = orderItemId || null;
+          const txItem = (fallbackTx as any).requestedOrderItemId || null;
 
           if (
             txSessionId !== targetSessionId ||
@@ -854,10 +902,11 @@ export class BillService {
             fallbackTx.method !== normalizedMethod ||
             fallbackAmountCents !== amountCents ||
             fallbackTipCents !== tipCents ||
-            reqParticipant !== txParticipant
+            reqParticipant !== txParticipant ||
+            reqItem !== txItem
           ) {
             const conflictErr: any = new Error(
-              `Conflicto de idempotencia: la clave ya fue utilizada con diferente sesión, restaurante, método o importes`
+              `Conflicto de idempotencia: la clave ya fue utilizada con diferente sesión, restaurante, método, importes u objetivo dirigido`
             );
             conflictErr.statusCode = 409;
             conflictErr.code = 'IDEMPOTENCY_CONFLICT';

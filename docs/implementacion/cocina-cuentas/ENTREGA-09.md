@@ -4,7 +4,7 @@ Estado: VERIFIED_PASS
 Fecha: 2026-09-06  
 Plan: docs/implementacion/COCINA-CUENTAS-2026-09-05.md (etapa 09) + docs/implementacion/cocina-cuentas/REVIEW-03-06.md  
 Base: commit `07074c5` integrado limpiamente (`a288b64`), etapa 08 aprobada (`12f319a`).  
-Alcance: Integración exhaustiva de las correcciones de concurrencia y atomicidad de las etapas 04–06, blindaje integral de la idempotencia en cobros de caja de staff (`TableBillingModal.tsx` y `bill.service.ts`), serialización de transacciones financieras concurrentes mediante bloqueo de fila `paymentSeq`, modelo de contabilidad granular (`PaymentAllocation`), restricción de reversión de cobros exclusivamente a personal con rol `MANAGER` con auditoría inmutable, atomicidad estricta entre operaciones financieras y transiciones de estado de mesa (`fsmService.attemptTransition(..., tx)`), unificación del detector de alérgenos en `@mesaya/shared`, contrato canónico para Mercado Pago (`CONTRATO-MERCADOPAGO.md`), runbook operativo (`RUNBOOK-OPERATIVO.md`) y suite aislada integral de 20 pruebas que valida el ciclo completo de comanda, cocina, caja y concurrencia.
+Alcance: Integración exhaustiva de las correcciones de concurrencia y atomicidad de las etapas 04–06, blindaje integral de la idempotencia en cobros de caja de staff (`TableBillingModal.tsx` y `bill.service.ts`), serialización de transacciones financieras concurrentes mediante bloqueo de fila `paymentSeq`, modelo de contabilidad granular (`PaymentAllocation`), restricción de reversión de cobros exclusivamente a personal con rol `MANAGER` con auditoría inmutable, atomicidad estricta entre operaciones financieras y transiciones de estado de mesa (`fsmService.attemptTransition(..., tx)`), unificación del detector de alérgenos en `@mesaya/shared`, contrato canónico para Mercado Pago (`CONTRATO-MERCADOPAGO.md`), runbook operativo (`RUNBOOK-OPERATIVO.md`) y 27 pruebas de Etapa 09 que validan el ciclo completo y sus invariantes residuales.
 
 ---
 
@@ -75,11 +75,19 @@ Alcance: Integración exhaustiva de las correcciones de concurrencia y atomicida
 - **Compilación de Workspaces**: `Check.ps1 -Check build` -> 6/6 workspaces compilados exitosamente (Exit code 0).
 - **Compilación PostgreSQL**: `Check.ps1 -Check build-pg` -> Compilación exitosa contra target PostgreSQL / Supabase (Exit code 0).
 - **Regeneración Prisma**: Cliente SQLite regenerado y alineado.
-- **Suites E2E Etapa 09**: `Check.ps1 -Check suite -Suite cocina-cuentas-etapa-09` -> 20/20 pruebas aprobadas (Exit code 0).
-- **Suites Aisladas Globales**: `Check.ps1 -Check suite` -> **39/39 suites ejecutadas y aprobadas (100% PASS, Exit code 0)**.
+- **Suites E2E Etapa 09**: `Check.ps1 -Check suite -Suite cocina-cuentas-etapa-09` -> 2 suites, 27/27 pruebas aprobadas (Exit code 0).
+- **Suites Aisladas Globales**: `Check.ps1 -Check suite` -> **40/40 suites ejecutadas y aprobadas (100% PASS, Exit code 0)**.
 
 ---
 
-## 3. Conclusión
+## 3. Corrección residual posterior a la revisión
+
+- Cada centavo cobrado debe quedar respaldado por `PaymentAllocation`. Un importe que exceda el saldo asignable al participante o ítem solicitado aborta toda la transacción con `409 UNALLOCATED_PAYMENT_REMAINDER`.
+- `PaymentTransaction.requestedOrderItemId` incorpora el ítem objetivo al contrato de idempotencia. Se agregó la migración aditiva `20260906020000_stage09_requested_item_target`; la migración previa no se reescribió.
+- Los pagos nuevos se rechazan para participantes revocados y sesiones cerradas o vencidas. Los reintentos exactos de transacciones ya confirmadas conservan la respuesta idempotente.
+- Los cambios de `OccupancySession` usan el cliente transaccional y propagan errores para producir rollback. Los eventos `call.updated`, `occupancy.completed` y `table.state_changed` se difieren hasta después del commit.
+- `cocina-cuentas-etapa-09-residual.test.ts` agrega 7 regresiones y forma parte del runner global.
+
+## 4. Conclusión
 
 La Etapa 09 finaliza el ciclo integral de comanda, cocina, cuentas compartidas y caja presencial de MesaYA RTMS. El sistema cuenta con resiliencia de datos probada ante concurrencia real, autoridad estricta en centavos ARS enteros, seguridad de roles con auditoría inmutable y documentación canónica completa para operar en salón y habilitar pagos digitales en el futuro.

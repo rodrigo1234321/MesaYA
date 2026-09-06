@@ -335,6 +335,12 @@ async function main() {
       path: 'packages/api/test/cocina-cuentas-etapa-09.test.ts',
       needsSeed: false,
       description: 'Etapa 09: E2E integral, ciclo completo de vida de comanda, KDS y caja'
+    },
+    {
+      name: 'cocina-cuentas-etapa-09-residual',
+      path: 'packages/api/test/cocina-cuentas-etapa-09-residual.test.ts',
+      needsSeed: false,
+      description: 'Etapa 09: invariantes residuales de asignación, idempotencia por ítem y FSM transaccional'
     }
   ];
 
