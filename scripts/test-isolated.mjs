@@ -281,6 +281,30 @@ async function main() {
       path: 'packages/api/test/full-system-e2e.test.ts',
       needsSeed: true,
       description: 'End-to-End completo del sistema (llamados, staff, admin)'
+    },
+    {
+      name: 'cocina-cuentas-etapa-01',
+      path: 'packages/api/test/cocina-cuentas-etapa-01.test.ts',
+      needsSeed: false,
+      description: 'Etapa 01: Login, PIN, bootstrap, rate limits y QR'
+    },
+    {
+      name: 'cocina-cuentas-etapa-02',
+      path: 'packages/api/test/cocina-cuentas-etapa-02.test.ts',
+      needsSeed: false,
+      description: 'Etapa 02: Handler HTTP y hardening documentado'
+    },
+    {
+      name: 'cocina-cuentas-etapa-03',
+      path: 'packages/api/test/cocina-cuentas-etapa-03.test.ts',
+      needsSeed: false,
+      description: 'Etapa 03: Contratos y datos aditivos cocina y cuentas'
+    },
+    {
+      name: 'cocina-cuentas-etapa-04',
+      path: 'packages/api/test/cocina-cuentas-etapa-04.test.ts',
+      needsSeed: false,
+      description: 'Etapa 04: Participantes, tandas, idempotencia, modos y alérgenos'
     }
   ];
 

@@ -362,6 +362,11 @@ export class SessionService {
         data: { closedAt: now, activeKey: null }
       });
 
+      await tx.visitParticipant.updateMany({
+        where: { tableSession: { tableId }, status: 'ACTIVE' },
+        data: { status: 'REVOKED', revokedAt: now }
+      });
+
       const calls = await tx.callRequest.findMany({
         where: {
           tableSession: { tableId },
@@ -427,6 +432,11 @@ export class SessionService {
           await tx.tableSession.updateMany({
             where: { tableId, closedAt: null },
             data: { closedAt: now, activeKey: null }
+          });
+
+          await tx.visitParticipant.updateMany({
+            where: { tableSession: { tableId }, status: 'ACTIVE' },
+            data: { status: 'REVOKED', revokedAt: now }
           });
 
           return tx.tableSession.create({

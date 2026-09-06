@@ -159,6 +159,13 @@ export class FSMService {
 
       if (openSessions.length > 0) {
         const sessionIds = openSessions.map((s) => s.id);
+        await prisma.visitParticipant.updateMany({
+          where: {
+            tableSessionId: { in: sessionIds },
+            status: 'ACTIVE'
+          },
+          data: { status: 'REVOKED', revokedAt: now }
+        });
         const pendingCalls = await prisma.callRequest.findMany({
           where: {
             tableSessionId: { in: sessionIds },

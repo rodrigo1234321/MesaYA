@@ -77,6 +77,11 @@ export class ShiftService {
         where: { shiftId, closedAt: null },
         data: { closedAt: now, activeKey: null }
       });
+
+      await tx.visitParticipant.updateMany({
+        where: { tableSession: { shiftId }, status: 'ACTIVE' },
+        data: { status: 'REVOKED', revokedAt: now }
+      });
       return closed;
     });
 

@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash, randomBytes } from 'crypto';
 import { prisma } from '../lib/prisma';
 import { eventBus } from '../lib/eventBus';
 import { fsmService } from './fsm.service';
@@ -10,8 +10,29 @@ import {
   SplitMode,
   SplitBillSessionDTO,
   TableFSMState,
-  SignalSource
+  SignalSource,
+  JoinParticipantDTO,
+  JoinParticipantResponseDTO,
+  SubmitTandaDTO,
+  SubmitTandaItemDTO,
+  OrderTandaDTO,
+  VisitParticipantDTO
 } from '@mesaya/shared';
+import {
+  assertValidIdempotencyKey,
+  assertParticipantDisplayName,
+  validateModifierSnapshot,
+  sumModifierDeltas,
+  buildReadableModifierLabel,
+  TANDA_TRANSITIONS,
+  canTransitionTanda
+} from '../lib/order-contracts';
+import {
+  toCentsFromFloatPrice,
+  lineTotalCents,
+  sumCents,
+  assertValidCents
+} from '../lib/money';
 
 export class DigitalPaymentsUnavailableError extends Error {
   readonly statusCode: number = 503;
@@ -106,6 +127,488 @@ export class OrderService {
     if (!order) return null;
     return this.formatOrderDTO(order);
   }
+
+  /**
+   * Helper para formatear cualquier registro de tanda a OrderTandaDTO.
+   */
+  static formatOrderTandaDTO(tanda: any): OrderTandaDTO {
+    return {
+      id: tanda.id,
+      tableSessionId: tanda.tableSessionId,
+      seq: tanda.seq,
+      status: tanda.status,
+      idempotencyKey: tanda.idempotencyKey,
+      createdByParticipantId: tanda.createdByParticipantId,
+      createdByParticipant: tanda.createdByParticipant
+        ? {
+            id: tanda.createdByParticipant.id,
+            displayName: tanda.createdByParticipant.displayName
+          }
+        : null,
+      confirmedAt:
+        tanda.confirmedAt instanceof Date ? tanda.confirmedAt.toISOString() : tanda.confirmedAt || null,
+      createdAt:
+        tanda.createdAt instanceof Date ? tanda.createdAt.toISOString() : tanda.createdAt,
+      items: (tanda.orderItems || []).map((item: any) => ({
+        id: item.id,
+        menuItemId: item.menuItemId,
+        name: item.productNameSnapshot || item.menuItem?.name || item.name || '',
+        quantity: item.quantity,
+        unitPriceCents:
+          item.unitPriceCents ??
+          (item.unitPrice !== undefined && item.unitPrice !== null
+            ? toCentsFromFloatPrice(item.unitPrice)
+            : null),
+        lineTotalCents: item.lineTotalCents ?? null,
+        currency: item.currency || 'ARS',
+        notes: item.notes,
+        modifiersSnapshot: item.modifiersSnapshot
+          ? typeof item.modifiersSnapshot === 'string'
+            ? JSON.parse(item.modifiersSnapshot)
+            : item.modifiersSnapshot
+          : undefined,
+        addedByGuest: item.addedByGuest
+      }))
+    };
+  }
+
+  /**
+   * Genera el hash SHA-256 de un token de participante.
+   */
+  static hashParticipantToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  /**
+   * Une a un comensal a la visita de mesa activa con identidad verificada por el servidor.
+   * Genera un token opaco y persiste únicamente su hash SHA-256 en la base de datos.
+   */
+  static async joinParticipant(
+    sessionToken: string,
+    rawDisplayName?: string
+  ): Promise<JoinParticipantResponseDTO> {
+    const session = await this.validateActiveGuestSession(sessionToken);
+    const displayName = assertParticipantDisplayName(rawDisplayName);
+    const participantToken = randomBytes(24).toString('base64url');
+    const tokenHash = this.hashParticipantToken(participantToken);
+
+    const participant = await prisma.visitParticipant.create({
+      data: {
+        tableSessionId: session.id,
+        displayName,
+        tokenHash,
+        status: 'ACTIVE'
+      }
+    });
+
+    return {
+      participantId: participant.id,
+      participantToken,
+      displayName: participant.displayName
+    };
+  }
+
+  /**
+   * Valida que un comensal pertenezca a la visita activa y que su participación esté en estado ACTIVE.
+   */
+  static async validateParticipant(sessionToken: string, participantToken: string) {
+    if (!participantToken || typeof participantToken !== 'string' || participantToken.trim().length === 0) {
+      const error: any = new Error('Token de participante requerido');
+      error.statusCode = 401;
+      error.code = 'PARTICIPANT_TOKEN_REQUIRED';
+      throw error;
+    }
+
+    const session = await this.validateActiveGuestSession(sessionToken);
+    const tokenHash = this.hashParticipantToken(participantToken.trim());
+
+    const participant = await prisma.visitParticipant.findUnique({
+      where: { tokenHash },
+      include: { tableSession: true }
+    });
+
+    if (!participant || participant.tableSessionId !== session.id || participant.status !== 'ACTIVE') {
+      const error: any = new Error('Participante no válido o revocado');
+      error.statusCode = 401;
+      error.code = 'PARTICIPANT_INVALID';
+      throw error;
+    }
+
+    return { session, participant };
+  }
+
+  /**
+   * Obtiene todas las tandas de una sesión de mesa.
+   */
+  static async getTandasForSession(sessionToken: string): Promise<OrderTandaDTO[]> {
+    const session = await this.validateActiveGuestSession(sessionToken);
+    const tandas = await prisma.orderTanda.findMany({
+      where: { tableSessionId: session.id },
+      include: {
+        orderItems: {
+          include: { menuItem: true },
+          orderBy: { createdAt: 'asc' }
+        },
+        createdByParticipant: true
+      },
+      orderBy: { seq: 'asc' }
+    });
+
+    return tandas.map((t) => this.formatOrderTandaDTO(t));
+  }
+
+  /**
+   * Envía y confirma una tanda de pedido con autoría ligada al participante de visita,
+   * idempotencia estricta, cálculo de precios y modificadores en el servidor,
+   * y arbitraje de modo de cocina (DIRECT_KITCHEN vs WAITER_VALIDATED).
+   */
+  static async submitTanda(input: SubmitTandaDTO): Promise<OrderTandaDTO> {
+    if (!input || typeof input !== 'object') {
+      const err: any = new Error('Datos de tanda requeridos');
+      err.statusCode = 400;
+      err.code = 'INVALID_PAYLOAD';
+      throw err;
+    }
+
+    assertValidIdempotencyKey(input.idempotencyKey);
+    const { session, participant } = await this.validateParticipant(input.sessionToken, input.participantToken);
+
+    // Si la mesa ya fue pagada, no se permiten nuevas tandas (no regresar mesa pagada a cocina)
+    if (session.table.currentState === TableFSMState.PAID) {
+      const err: any = new Error('La mesa ya se encuentra pagada. Solicite asistencia al personal para iniciar una nueva atención.');
+      err.statusCode = 409;
+      err.code = 'TABLE_ALREADY_PAID';
+      throw err;
+    }
+
+    // Flag en servidor: comandas digitales activadas/desactivadas por restaurante
+    if (session.table.restaurant.moduleConfig && session.table.restaurant.moduleConfig.allowOrdering === false) {
+      const err: any = new Error('Las comandas digitales están desactivadas en este restaurante (Modo Carta Informativa)');
+      err.statusCode = 403;
+      err.code = 'ORDERING_DISABLED';
+      throw err;
+    }
+
+    // Comprobación de idempotencia: si ya existe una tanda con esta clave
+    const existing = await prisma.orderTanda.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+      include: {
+        orderItems: { include: { menuItem: true } },
+        createdByParticipant: true
+      }
+    });
+
+    if (existing) {
+      if (existing.tableSessionId !== session.id) {
+        const err: any = new Error('Clave de idempotencia pertenece a otra sesión de mesa');
+        err.statusCode = 409;
+        err.code = 'IDEMPOTENCY_CONFLICT';
+        throw err;
+      }
+      if (existing.createdByParticipantId && existing.createdByParticipantId !== participant.id) {
+        const err: any = new Error('Clave de idempotencia pertenece a otro participante');
+        err.statusCode = 409;
+        err.code = 'IDEMPOTENCY_CONFLICT';
+        throw err;
+      }
+      if (existing.orderItems.length !== (input.items || []).length) {
+        const err: any = new Error('Clave de idempotencia reutilizada con diferente carga de ítems');
+        err.statusCode = 409;
+        err.code = 'IDEMPOTENCY_CONFLICT';
+        throw err;
+      }
+      return this.formatOrderTandaDTO(existing);
+    }
+
+    // Validación de ítems
+    if (!Array.isArray(input.items) || input.items.length === 0) {
+      const err: any = new Error('La tanda debe contener al menos un ítem');
+      err.statusCode = 400;
+      err.code = 'EMPTY_TANDA';
+      throw err;
+    }
+
+    if (input.items.length > 50) {
+      const err: any = new Error('La tanda supera el límite máximo de 50 ítems');
+      err.statusCode = 400;
+      err.code = 'TANDA_LIMIT_EXCEEDED';
+      throw err;
+    }
+
+    // Detección de alérgenos en notas de la tanda o ítems
+    const ALLERGY_REGEX = /(alerg|celiac|tacc|mani|maní|marisc|intoleran|gluten|sin tacc)/i;
+    let hasAllergy = Boolean(input.notes && ALLERGY_REGEX.test(input.notes));
+
+    // Resolución de platos en el servidor (precios inmutables + snapshots)
+    const preparedItems: Array<{
+      menuItemId: string;
+      productNameSnapshot: string;
+      quantity: number;
+      unitPriceCents: number;
+      lineTotalCents: number;
+      unitPriceFloat: number;
+      notes: string | null;
+      modifiersSnapshotStr: string | null;
+      priceVersion: number;
+    }> = [];
+
+    for (const it of input.items) {
+      if (!it.quantity || !Number.isInteger(it.quantity) || it.quantity <= 0 || it.quantity > 50) {
+        const err: any = new Error('Cantidad de ítem inválida: entero 1..50');
+        err.statusCode = 400;
+        err.code = 'INVALID_QUANTITY';
+        throw err;
+      }
+
+      if (!it.menuItemId || typeof it.menuItemId !== 'string') {
+        const err: any = new Error('menuItemId requerido');
+        err.statusCode = 400;
+        err.code = 'INVALID_MENU_ITEM_ID';
+        throw err;
+      }
+
+      const menuItem = await prisma.menuItem.findFirst({
+        where: {
+          id: it.menuItemId,
+          category: { restaurantId: session.table.restaurantId }
+        }
+      });
+
+      if (!menuItem) {
+        const err: any = new Error('Plato no encontrado en el menú de este restaurante');
+        err.statusCode = 404;
+        err.code = 'ITEM_NOT_FOUND';
+        throw err;
+      }
+
+      if (!menuItem.isAvailable) {
+        const err: any = new Error(`El plato "${menuItem.name}" no está disponible actualmente`);
+        err.statusCode = 409;
+        err.code = 'ITEM_UNAVAILABLE';
+        throw err;
+      }
+
+      if (it.notes && ALLERGY_REGEX.test(it.notes)) {
+        hasAllergy = true;
+      }
+
+      const baseCents = menuItem.priceCents ?? toCentsFromFloatPrice(menuItem.price);
+      let deltaCents = 0;
+      let modSnapshotStr: string | null = null;
+
+      if (it.modifiersSnapshot) {
+        validateModifierSnapshot(it.modifiersSnapshot);
+        deltaCents = sumModifierDeltas(it.modifiersSnapshot);
+        modSnapshotStr = JSON.stringify(it.modifiersSnapshot);
+      }
+
+      const itemUnitPriceCents = baseCents + deltaCents;
+      assertValidCents(itemUnitPriceCents, 'itemUnitPriceCents');
+      const itemLineTotalCents = lineTotalCents(itemUnitPriceCents, it.quantity);
+
+      preparedItems.push({
+        menuItemId: menuItem.id,
+        productNameSnapshot: menuItem.name,
+        quantity: it.quantity,
+        unitPriceCents: itemUnitPriceCents,
+        lineTotalCents: itemLineTotalCents,
+        unitPriceFloat: itemUnitPriceCents / 100,
+        notes: it.notes ? it.notes.trim() : null,
+        modifiersSnapshotStr: modSnapshotStr,
+        priceVersion: menuItem.priceVersion
+      });
+    }
+
+    // Arbitraje de modo: si requiere validación o se detecta alergia -> CONFIRMED; directo -> IN_KITCHEN
+    const requireWaiter = session.table.restaurant.moduleConfig?.requireWaiterValidation ?? true;
+    const tandaStatus = requireWaiter || hasAllergy ? 'CONFIRMED' : 'IN_KITCHEN';
+
+    const now = new Date();
+
+    const createdTanda = await prisma.$transaction(async (tx) => {
+      // 1. Número de secuencia atómico para esta visita
+      const maxSeqResult = await tx.orderTanda.aggregate({
+        where: { tableSessionId: session.id },
+        _max: { seq: true }
+      });
+      const nextSeq = (maxSeqResult._max.seq ?? 0) + 1;
+
+      // 2. Orden unificada para la mesa
+      let order = await tx.order.findFirst({
+        where: {
+          tableSessionId: session.id,
+          status: { notIn: [OrderStatus.PAID, OrderStatus.CANCELLED] }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      const targetOrderStatus = tandaStatus === 'IN_KITCHEN' ? OrderStatus.IN_KITCHEN : OrderStatus.CONFIRMED;
+
+      if (!order) {
+        order = await tx.order.create({
+          data: {
+            tableSessionId: session.id,
+            status: targetOrderStatus,
+            totalAmount: 0,
+            totalCents: 0,
+            currency: 'ARS'
+          }
+        });
+      }
+
+      // 3. Crear registro de OrderTanda
+      const tanda = await tx.orderTanda.create({
+        data: {
+          tableSessionId: session.id,
+          seq: nextSeq,
+          status: tandaStatus,
+          idempotencyKey: input.idempotencyKey,
+          createdByParticipantId: participant.id,
+          confirmedAt: now
+        }
+      });
+
+      // 4. Crear los OrderItems enlazados a la orden y a la tanda
+      for (const pit of preparedItems) {
+        await tx.orderItem.create({
+          data: {
+            orderId: order.id,
+            tandaId: tanda.id,
+            participantId: participant.id,
+            menuItemId: pit.menuItemId,
+            quantity: pit.quantity,
+            unitPrice: pit.unitPriceFloat,
+            unitPriceCents: pit.unitPriceCents,
+            lineTotalCents: pit.lineTotalCents,
+            productNameSnapshot: pit.productNameSnapshot,
+            priceVersion: pit.priceVersion,
+            modifiersSnapshot: pit.modifiersSnapshotStr,
+            currency: 'ARS',
+            notes: pit.notes,
+            addedByGuest: participant.displayName || participant.id
+          }
+        });
+      }
+
+      // 5. Actualizar el total consolidado de la orden
+      const allOrderItems = await tx.orderItem.findMany({
+        where: { orderId: order.id }
+      });
+      const totalCentsSum = allOrderItems.reduce(
+        (acc, it) => acc + (it.lineTotalCents ?? Math.round(it.unitPrice * it.quantity * 100)),
+        0
+      );
+      const totalAmountFloat = Math.round(totalCentsSum) / 100;
+
+      const newOrderStatus =
+        order.status === OrderStatus.DRAFT ||
+        order.status === OrderStatus.CONFIRMED ||
+        order.status === OrderStatus.PENDING_VALIDATION
+          ? targetOrderStatus
+          : order.status;
+
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          totalCents: totalCentsSum,
+          totalAmount: totalAmountFloat,
+          status: newOrderStatus
+        }
+      });
+
+      // 6. Deduplicación o creación de llamado al mozo si se requiere validación
+      if (tandaStatus === 'CONFIRMED') {
+        const existingCall = await tx.callRequest.findFirst({
+          where: {
+            tableSessionId: session.id,
+            status: { in: ['PENDING', 'IN_PROGRESS'] }
+          }
+        });
+
+        if (!existingCall) {
+          try {
+            await tx.callRequest.create({
+              data: {
+                tableSessionId: session.id,
+                activeKey: session.id,
+                type: 'WAITER',
+                paymentMethod: 'NOT_APPLICABLE',
+                note: hasAllergy
+                  ? `Validación de comanda por ALERGIA/ALÉRGENOS (tanda #${tanda.seq})`
+                  : `Validación requerida para comanda (tanda #${tanda.seq})`,
+                origin: 'WEB_DIRECT',
+                status: 'PENDING'
+              }
+            });
+          } catch (err: any) {
+            if (err?.code !== 'P2002') throw err;
+          }
+        }
+      }
+
+      return tx.orderTanda.findUniqueOrThrow({
+        where: { id: tanda.id },
+        include: {
+          orderItems: {
+            include: { menuItem: true },
+            orderBy: { createdAt: 'asc' }
+          },
+          createdByParticipant: true
+        }
+      });
+    });
+
+    // Transición FSM en segundo plano si la tanda pasó directo a cocina
+    if (tandaStatus === 'IN_KITCHEN') {
+      try {
+        const freshTable = await prisma.table.findUnique({ where: { id: session.tableId } });
+        if (freshTable) {
+          if (freshTable.currentState === TableFSMState.AVAILABLE) {
+            await fsmService.attemptTransition({
+              tableId: session.tableId,
+              toState: TableFSMState.OCCUPIED_NO_ORDER,
+              source: SignalSource.CUSTOMER_APP,
+              trigger: 'TANDA_DIRECT_ORDER_SEATED'
+            });
+            await fsmService.attemptTransition({
+              tableId: session.tableId,
+              toState: TableFSMState.ORDER_IN_KITCHEN,
+              source: SignalSource.CUSTOMER_APP,
+              trigger: 'TANDA_DIRECT_ORDER_KITCHEN'
+            });
+          } else if (freshTable.currentState === TableFSMState.OCCUPIED_NO_ORDER) {
+            await fsmService.attemptTransition({
+              tableId: session.tableId,
+              toState: TableFSMState.ORDER_IN_KITCHEN,
+              source: SignalSource.CUSTOMER_APP,
+              trigger: 'TANDA_DIRECT_ORDER_KITCHEN'
+            });
+          }
+        }
+      } catch (err) {
+        // Registro de advertencia sin revertir la tanda ya confirmada
+        console.warn('[submitTanda] FSM state transition warning:', err);
+      }
+    }
+
+    const tandaDTO = this.formatOrderTandaDTO(createdTanda);
+
+    // Broadcast a través de eventBus para cocina y comensales
+    eventBus.broadcast(session.table.restaurantId, 'tanda.created', {
+      tableId: session.tableId,
+      tableLabel: session.table.label,
+      sector: session.table.sector,
+      tanda: tandaDTO
+    });
+
+    eventBus.broadcast(session.table.restaurantId, 'order.updated', {
+      tableId: session.tableId,
+      tableLabel: session.table.label
+    });
+
+    return tandaDTO;
+  }
+
   /**
    * Validador centralizado de sesión activa para acciones de comensal / invitado.
    * Comprueba:

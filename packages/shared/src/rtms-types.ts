@@ -262,3 +262,68 @@ export interface TablePerformanceDTO {
   revPASH: number;
   utilizationPercentage: number;
 }
+
+// ==========================================
+// COCINA Y CUENTAS (ETAPA 04): TANDAS & PARTICIPANTES
+// ==========================================
+
+export interface VisitParticipantDTO {
+  id: string;
+  tableSessionId: string;
+  displayName: string | null;
+  status: 'ACTIVE' | 'REVOKED';
+  createdAt: string;
+}
+
+export interface JoinParticipantDTO {
+  sessionToken: string;
+  displayName?: string;
+}
+
+export interface JoinParticipantResponseDTO {
+  participantId: string;
+  participantToken: string;
+  displayName: string | null;
+}
+
+export interface SubmitTandaItemDTO {
+  menuItemId: string;
+  quantity: number;
+  notes?: string;
+  modifiersSnapshot?: any;
+}
+
+export interface SubmitTandaDTO {
+  sessionToken: string;
+  participantToken: string;
+  idempotencyKey: string;
+  items: SubmitTandaItemDTO[];
+  notes?: string;
+}
+
+export interface OrderTandaDTO {
+  id: string;
+  tableSessionId: string;
+  seq: number;
+  status: string;
+  idempotencyKey: string;
+  createdByParticipantId: string | null;
+  createdByParticipant?: {
+    id: string;
+    displayName: string | null;
+  } | null;
+  confirmedAt: string | null;
+  createdAt: string;
+  items: Array<{
+    id: string;
+    menuItemId: string;
+    name: string;
+    quantity: number;
+    unitPriceCents: number | null;
+    lineTotalCents: number | null;
+    currency: string;
+    notes?: string | null;
+    modifiersSnapshot?: any;
+    addedByGuest: string;
+  }>;
+}

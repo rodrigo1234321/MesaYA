@@ -2,7 +2,14 @@ import { FastifyPluginAsync } from 'fastify';
 import { OrderService } from '../services/order.service';
 import { prisma } from '../lib/prisma';
 import { verifyStaffToken } from '../middlewares/auth.middleware';
-import { AddOrderItemDTO, ClaimItemDTO, SplitMode, OrderStatus } from '@mesaya/shared';
+import {
+  AddOrderItemDTO,
+  ClaimItemDTO,
+  SplitMode,
+  OrderStatus,
+  JoinParticipantDTO,
+  SubmitTandaDTO
+} from '@mesaya/shared';
 
 export const orderRoutes: FastifyPluginAsync = async (fastify) => {
   /**
@@ -111,6 +118,91 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.send(order);
       } catch (err: any) {
         const status = err.statusCode || 400;
+        return reply.status(status).send({ error: err.message, code: err.code });
+      }
+    }
+  );
+
+  /**
+   * POST /v1/orders/participants/join
+   * Une a un comensal como participante activo de la visita.
+   */
+  fastify.post<{ Body: JoinParticipantDTO }>(
+    '/orders/participants/join',
+    async (request, reply) => {
+      const { sessionToken, displayName } = request.body || {};
+      if (!sessionToken) {
+        return reply.status(401).send({ error: 'Token de sesión requerido', code: 'SESSION_TOKEN_REQUIRED' });
+      }
+      try {
+        const participant = await OrderService.joinParticipant(sessionToken, displayName);
+        return reply.status(201).send(participant);
+      } catch (err: any) {
+        const status = err.statusCode || 400;
+        return reply.status(status).send({ error: err.message, code: err.code });
+      }
+    }
+  );
+
+  /**
+   * POST /v1/orders/tandas
+   * Confirma y envía una tanda de comanda con autoría de participante e idempotencia.
+   */
+  fastify.post<{ Body: SubmitTandaDTO }>(
+    '/orders/tandas',
+    async (request, reply) => {
+      const body = request.body;
+      const sessionToken =
+        body?.sessionToken ||
+        (request.headers['x-session-token'] as string) ||
+        (request.query as any)?.sessionToken;
+      const participantToken =
+        body?.participantToken ||
+        (request.headers['x-participant-token'] as string) ||
+        (request.query as any)?.participantToken;
+
+      if (!sessionToken) {
+        return reply.status(401).send({ error: 'Token de sesión requerido', code: 'SESSION_TOKEN_REQUIRED' });
+      }
+      if (!participantToken) {
+        return reply.status(401).send({ error: 'Token de participante requerido', code: 'PARTICIPANT_TOKEN_REQUIRED' });
+      }
+
+      try {
+        const tanda = await OrderService.submitTanda({
+          ...body,
+          sessionToken,
+          participantToken
+        });
+        return reply.status(201).send(tanda);
+      } catch (err: any) {
+        const status = err.statusCode || 400;
+        return reply.status(status).send({ error: err.message, code: err.code });
+      }
+    }
+  );
+
+  /**
+   * GET /v1/orders/tandas
+   * Obtiene todas las tandas registradas para la sesión de mesa.
+   */
+  fastify.get(
+    '/orders/tandas',
+    async (request, reply) => {
+      const sessionToken =
+        (request.headers['x-session-token'] as string) ||
+        (request.query as any)?.sessionToken ||
+        (request.query as any)?.token;
+
+      if (!sessionToken) {
+        return reply.status(401).send({ error: 'Token de sesión requerido', code: 'SESSION_TOKEN_REQUIRED' });
+      }
+
+      try {
+        const tandas = await OrderService.getTandasForSession(sessionToken);
+        return reply.send(tandas);
+      } catch (err: any) {
+        const status = err.statusCode || 500;
         return reply.status(status).send({ error: err.message, code: err.code });
       }
     }
