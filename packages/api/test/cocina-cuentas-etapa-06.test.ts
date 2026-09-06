@@ -276,6 +276,63 @@ describe('COCINA-CUENTAS Etapa 06 — Admin Modos, KDS Operativo, Sincronizació
       expect(orderToValidate).toBeTruthy();
     });
 
+    it('revierte la orden si falla la sincronización de tandas', async () => {
+      const timestamp = Date.now();
+      const table = await prisma.table.create({
+        data: {
+          restaurantId: restA.id,
+          label: `Mesa rollback ${timestamp}`,
+          currentState: TableFSMState.OCCUPIED_NO_ORDER
+        }
+      });
+      const session = await prisma.tableSession.create({
+        data: {
+          tableId: table.id,
+          shiftId: shiftA.id,
+          token: `rollback-session-${timestamp}`,
+          activeKey: table.id,
+          expiresAt: new Date(Date.now() + 3 * 3600 * 1000)
+        }
+      });
+      const join = await app.inject({
+        method: 'POST',
+        url: '/v1/orders/participants/join',
+        payload: { sessionToken: session.token, displayName: 'Prueba rollback' }
+      });
+      const tanda = await app.inject({
+        method: 'POST',
+        url: '/v1/orders/tandas',
+        payload: {
+          sessionToken: session.token,
+          participantToken: join.json().participantToken,
+          idempotencyKey: `rollback-${timestamp}`,
+          items: [{ menuItemId: itemMuzzarella.id, quantity: 1 }]
+        }
+      });
+      expect(tanda.statusCode).toBe(201);
+
+      const order = await prisma.order.findFirst({ where: { tableSessionId: session.id } });
+      expect(order?.status).toBe(OrderStatus.CONFIRMED);
+
+      await prisma.$executeRawUnsafe(`CREATE TRIGGER force_tanda_sync_failure
+        BEFORE UPDATE OF status ON "OrderTanda"
+        WHEN NEW.status = 'IN_KITCHEN'
+        BEGIN SELECT RAISE(ABORT, 'forced tanda sync failure'); END;`);
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: `/v1/staff/orders/${order!.id}/validate`,
+          headers: { authorization: `Bearer ${tokenWaiterA}` }
+        });
+        expect(response.statusCode).toBe(400);
+      } finally {
+        await prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS force_tanda_sync_failure');
+      }
+
+      expect((await prisma.order.findUnique({ where: { id: order!.id } }))?.status).toBe(OrderStatus.CONFIRMED);
+      expect((await prisma.orderTanda.findFirst({ where: { tableSessionId: session.id } }))?.status).toBe('CONFIRMED');
+    });
+
     it('Validar orden por staff (validateOrder) transiciona orden y tandas a IN_KITCHEN', async () => {
       const valRes = await app.inject({
         method: 'POST',
@@ -355,10 +412,14 @@ describe('COCINA-CUENTAS Etapa 06 — Admin Modos, KDS Operativo, Sincronizació
         method: 'PATCH',
         url: `/v1/staff/orders/${orderB!.id}/status`,
         headers: { authorization: `Bearer ${tokenWaiterB}` },
-        payload: { status: OrderStatus.CANCELLED }
+        payload: { status: OrderStatus.CANCELLED, cancellationReason: 'Insumo principal agotado' }
       });
       expect(cancelRes.statusCode).toBe(200);
       expect(cancelRes.json().status).toBe(OrderStatus.CANCELLED);
+      expect(cancelRes.json().cancellationReason).toBe('Insumo principal agotado');
+
+      const cancelledOrder = await prisma.order.findUnique({ where: { id: orderB!.id } });
+      expect(cancelledOrder?.cancellationReason).toBe('Insumo principal agotado');
 
       const tandasB = await prisma.orderTanda.findMany({
         where: { tableSessionId: sessionB1.id }

@@ -297,13 +297,13 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.patch<{
     Params: { id: string };
-    Body: { status: OrderStatus; paymentMethod?: string; tipAmount?: number };
+    Body: { status: OrderStatus; paymentMethod?: string; tipAmount?: number; cancellationReason?: string };
   }>(
     '/staff/orders/:id/status',
     { preHandler: [verifyStaffToken] },
     async (request, reply) => {
       const { id } = request.params;
-      const { status, paymentMethod, tipAmount } = request.body || ({} as any);
+      const { status, paymentMethod, tipAmount, cancellationReason } = request.body || ({} as any);
 
       if (!status) {
         return reply.status(400).send({ error: 'status es requerido', code: 'STATUS_REQUIRED' });
@@ -319,7 +319,8 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
           staffRole,
           staffUserId,
           paymentMethod,
-          tipAmount
+          tipAmount,
+          cancellationReason
         });
         return reply.send(order);
       } catch (err: any) {

@@ -471,6 +471,7 @@ export interface OrderDTO {
   tableSessionId: string;
   status: OrderStatus;
   totalAmount: number;
+  cancellationReason?: string | null;
   items: OrderItemDTO[];
   createdAt: string;
   updatedAt: string;

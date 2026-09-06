@@ -307,6 +307,7 @@ export interface OrderTandaDTO {
   seq: number;
   status: string;
   idempotencyKey: string;
+  notes?: string | null;
   createdByParticipantId: string | null;
   createdByParticipant?: {
     id: string;

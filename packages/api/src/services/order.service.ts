@@ -83,7 +83,41 @@ export const ALLOWED_ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus
   [OrderStatus.CANCELLED]: Object.freeze([]) // Estado final inmutable
 });
 
+function normalizeKitchenNote(value: unknown, field: string): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') {
+    const error: any = new Error(`${field} debe ser texto`);
+    error.statusCode = 400;
+    error.code = 'INVALID_NOTE';
+    throw error;
+  }
+  const normalized = value.trim();
+  if (normalized.length > 500 || /[\u0000-\u001F\u007F]/.test(normalized)) {
+    const error: any = new Error(`${field} debe tener hasta 500 caracteres y no incluir controles`);
+    error.statusCode = 400;
+    error.code = 'INVALID_NOTE';
+    throw error;
+  }
+  return normalized || null;
+}
+
 export class OrderService {
+  private static tandaMatchesPayload(tanda: any, inputItems: SubmitTandaItemDTO[] | undefined, notes: string | null): boolean {
+    if (!Array.isArray(inputItems) || tanda.orderItems.length !== inputItems.length || (tanda.notes ?? null) !== notes) {
+      return false;
+    }
+    return tanda.orderItems.every((item: any, index: number) => {
+      const incoming = inputItems[index];
+      return (
+        incoming &&
+        item.menuItemId === incoming.menuItemId &&
+        item.quantity === incoming.quantity &&
+        (item.notes ?? null) === normalizeKitchenNote(incoming.notes, `items[${index}].notes`) &&
+        (item.modifiersSnapshot ?? null) === (incoming.modifiersSnapshot ? JSON.stringify(incoming.modifiersSnapshot) : null)
+      );
+    });
+  }
+
   /**
    * Helper para formatear cualquier registro de comanda a OrderDTO.
    */
@@ -93,6 +127,7 @@ export class OrderService {
       tableSessionId: order.tableSessionId,
       status: order.status as OrderStatus,
       totalAmount: order.totalAmount,
+      cancellationReason: order.cancellationReason ?? null,
       createdAt: order.createdAt instanceof Date ? order.createdAt.toISOString() : order.createdAt,
       updatedAt: order.updatedAt instanceof Date ? order.updatedAt.toISOString() : order.updatedAt,
       items: (order.items || []).map((item: any) => ({
@@ -138,6 +173,7 @@ export class OrderService {
       seq: tanda.seq,
       status: tanda.status,
       idempotencyKey: tanda.idempotencyKey,
+      notes: tanda.notes ?? null,
       createdByParticipantId: tanda.createdByParticipantId,
       createdByParticipant: tanda.createdByParticipant
         ? {
@@ -289,6 +325,8 @@ export class OrderService {
       throw err;
     }
 
+    const tandaNotes = normalizeKitchenNote(input.notes, 'notes');
+
     // Comprobación de idempotencia: si ya existe una tanda con esta clave
     const existing = await prisma.orderTanda.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
@@ -311,7 +349,7 @@ export class OrderService {
         err.code = 'IDEMPOTENCY_CONFLICT';
         throw err;
       }
-      if (existing.orderItems.length !== (input.items || []).length) {
+      if (!this.tandaMatchesPayload(existing, input.items, tandaNotes)) {
         const err: any = new Error('Clave de idempotencia reutilizada con diferente carga de ítems');
         err.statusCode = 409;
         err.code = 'IDEMPOTENCY_CONFLICT';
@@ -337,7 +375,7 @@ export class OrderService {
 
     // Detección de alérgenos en notas de la tanda o ítems
     const ALLERGY_REGEX = /(alerg|celiac|tacc|mani|maní|marisc|intoleran|gluten|sin tacc)/i;
-    let hasAllergy = Boolean(input.notes && ALLERGY_REGEX.test(input.notes));
+    let hasAllergy = Boolean(tandaNotes && ALLERGY_REGEX.test(tandaNotes));
 
     // Resolución de platos en el servidor (precios inmutables + snapshots)
     const preparedItems: Array<{
@@ -388,7 +426,8 @@ export class OrderService {
         throw err;
       }
 
-      if (it.notes && ALLERGY_REGEX.test(it.notes)) {
+      const itemNotes = normalizeKitchenNote(it.notes, 'items.notes');
+      if (itemNotes && ALLERGY_REGEX.test(itemNotes)) {
         hasAllergy = true;
       }
 
@@ -413,7 +452,7 @@ export class OrderService {
         unitPriceCents: itemUnitPriceCents,
         lineTotalCents: itemLineTotalCents,
         unitPriceFloat: itemUnitPriceCents / 100,
-        notes: it.notes ? it.notes.trim() : null,
+        notes: itemNotes,
         modifiersSnapshotStr: modSnapshotStr,
         priceVersion: menuItem.priceVersion
       });
@@ -425,13 +464,18 @@ export class OrderService {
 
     const now = new Date();
 
-    const createdTanda = await prisma.$transaction(async (tx) => {
-      // 1. Número de secuencia atómico para esta visita
-      const maxSeqResult = await tx.orderTanda.aggregate({
-        where: { tableSessionId: session.id },
-        _max: { seq: true }
+    let createdTanda: any;
+    try {
+      createdTanda = await prisma.$transaction(async (tx) => {
+      // 1. Reserva una secuencia con UPDATE atómico sobre la visita. En PostgreSQL
+      // este UPDATE bloquea la fila; en SQLite se serializa dentro de la transacción.
+      // Nunca calcular MAX(seq)+1: dos participantes concurrentes obtendrían el mismo valor.
+      const sequence = await tx.tableSession.update({
+        where: { id: session.id },
+        data: { nextTandaSeq: { increment: 1 } },
+        select: { nextTandaSeq: true }
       });
-      const nextSeq = (maxSeqResult._max.seq ?? 0) + 1;
+      const nextSeq = sequence.nextTandaSeq - 1;
 
       // 2. Orden unificada para la mesa
       let order = await tx.order.findFirst({
@@ -463,6 +507,7 @@ export class OrderService {
           seq: nextSeq,
           status: tandaStatus,
           idempotencyKey: input.idempotencyKey,
+          notes: tandaNotes,
           createdByParticipantId: participant.id,
           confirmedAt: now
         }
@@ -546,17 +591,42 @@ export class OrderService {
         }
       }
 
-      return tx.orderTanda.findUniqueOrThrow({
-        where: { id: tanda.id },
+        return tx.orderTanda.findUniqueOrThrow({
+          where: { id: tanda.id },
+          include: {
+            orderItems: {
+              include: { menuItem: true },
+              orderBy: { createdAt: 'asc' }
+            },
+            createdByParticipant: true
+          }
+        });
+      });
+    } catch (err: any) {
+      // Dos reintentos del mismo cliente pueden cruzarse antes de la primera
+      // lectura de idempotencia. La unicidad de DB decide; el perdedor devuelve
+      // la tanda ya creada sólo si su carga coincide exactamente.
+      if (err?.code !== 'P2002') throw err;
+      const concurrent = await prisma.orderTanda.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
         include: {
-          orderItems: {
-            include: { menuItem: true },
-            orderBy: { createdAt: 'asc' }
-          },
+          orderItems: { include: { menuItem: true }, orderBy: { createdAt: 'asc' } },
           createdByParticipant: true
         }
       });
-    });
+      if (
+        !concurrent ||
+        concurrent.tableSessionId !== session.id ||
+        (concurrent.createdByParticipantId && concurrent.createdByParticipantId !== participant.id) ||
+        !this.tandaMatchesPayload(concurrent, input.items, tandaNotes)
+      ) {
+        const conflict: any = new Error('Clave de idempotencia reutilizada con diferente carga de ítems');
+        conflict.statusCode = 409;
+        conflict.code = 'IDEMPOTENCY_CONFLICT';
+        throw conflict;
+      }
+      createdTanda = concurrent;
+    }
 
     // Transición FSM en segundo plano si la tanda pasó directo a cocina
     if (tandaStatus === 'IN_KITCHEN') {
@@ -1158,18 +1228,20 @@ export class OrderService {
       throw error;
     }
 
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { status: OrderStatus.IN_KITCHEN }
-    });
+    await prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.IN_KITCHEN }
+      });
 
-    // Sincronizar tandas asociadas a la sesión de mesa que estén en CONFIRMED o DRAFT
-    await prisma.orderTanda.updateMany({
-      where: {
-        tableSessionId: order.tableSessionId,
-        status: { in: ['DRAFT', 'CONFIRMED'] }
-      },
-      data: { status: 'IN_KITCHEN' }
+      // Pedido y tandas deben avanzar juntos: un fallo revierte ambos cambios.
+      await tx.orderTanda.updateMany({
+        where: {
+          tableSessionId: order.tableSessionId,
+          status: { in: ['DRAFT', 'CONFIRMED'] }
+        },
+        data: { status: 'IN_KITCHEN' }
+      });
     });
 
     const fullOrder = await this.getOrderById(order.id);
@@ -1390,6 +1462,7 @@ export class OrderService {
       staffUserId?: string;
       paymentMethod?: string;
       tipAmount?: number;
+      cancellationReason?: string;
     }
   ): Promise<OrderDTO> {
     const order = await prisma.order.findUnique({
@@ -1433,6 +1506,12 @@ export class OrderService {
       return fullOrder!;
     }
 
+    const cancellationReason =
+      newStatus === OrderStatus.CANCELLED
+        ? normalizeKitchenNote(options?.cancellationReason, 'cancellationReason')
+        : null;
+    let physicalMethod: 'WAITER_CASH' | 'WAITER_CARD' | null = null;
+
     // Confirmación manual de cobro (PAID): reservada a MANAGER autenticado
     if (newStatus === OrderStatus.PAID) {
       if (options?.staffRole !== 'MANAGER') {
@@ -1452,7 +1531,7 @@ export class OrderService {
         error.code = 'INVALID_PAYMENT_METHOD';
         throw error;
       }
-      const physicalMethod = isCard ? 'WAITER_CARD' : 'WAITER_CASH';
+      physicalMethod = isCard ? 'WAITER_CARD' : 'WAITER_CASH';
 
       // Validar que la comanda esté en un estado factible de cobro (SERVED, IN_KITCHEN, READY_TO_SERVE)
       const allowed = ALLOWED_ORDER_TRANSITIONS[order.status as OrderStatus];
@@ -1463,21 +1542,6 @@ export class OrderService {
         throw error;
       }
 
-      // Registrar cobro presencial trazable sin crear 'APPROVED' digital de pasarela
-      await prisma.paymentTransaction.create({
-        data: {
-          idempotencyKey: `manual_pay_${order.id}_${Date.now()}_${randomUUID().slice(0, 8)}`,
-          orderId: order.id,
-          tableSessionId: order.tableSessionId,
-          guestSessionId: options?.staffUserId || 'manager-in-person',
-          method: physicalMethod,
-          amount: order.totalAmount,
-          tipAmount: Math.max(0, options?.tipAmount || 0),
-          mpPaymentId: null, // NUNCA confirmación digital de proveedor externo
-          status: 'MANUAL_SETTLED', // Estado manual presencial trazable
-          resolvedAt: new Date()
-        }
-      });
     } else {
       // Validar tabla pequeña de transiciones permitidas
       const allowed = ALLOWED_ORDER_TRANSITIONS[order.status as OrderStatus];
@@ -1489,37 +1553,49 @@ export class OrderService {
       }
     }
 
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { status: newStatus }
-    });
+    await prisma.$transaction(async (tx) => {
+      if (newStatus === OrderStatus.PAID) {
+        await tx.paymentTransaction.create({
+          data: {
+            idempotencyKey: `manual_pay_${order.id}_${Date.now()}_${randomUUID().slice(0, 8)}`,
+            orderId: order.id,
+            tableSessionId: order.tableSessionId,
+            guestSessionId: options?.staffUserId || 'manager-in-person',
+            method: physicalMethod!,
+            amount: order.totalAmount,
+            tipAmount: Math.max(0, options?.tipAmount || 0),
+            mpPaymentId: null,
+            status: 'MANUAL_SETTLED',
+            resolvedAt: new Date()
+          }
+        });
+      }
 
-    // Sincronización coherente de tandas de la sesión según el nuevo estado de la comanda
-    if (newStatus === OrderStatus.IN_KITCHEN) {
-      await prisma.orderTanda.updateMany({
-        where: {
-          tableSessionId: order.tableSessionId,
-          status: { in: ['DRAFT', 'CONFIRMED'] }
-        },
-        data: { status: 'IN_KITCHEN' }
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: newStatus,
+          ...(newStatus === OrderStatus.CANCELLED ? { cancellationReason } : {})
+        }
       });
-    } else if (newStatus === OrderStatus.SERVED) {
-      await prisma.orderTanda.updateMany({
-        where: {
-          tableSessionId: order.tableSessionId,
-          status: 'IN_KITCHEN'
-        },
-        data: { status: 'SERVED' }
-      });
-    } else if (newStatus === OrderStatus.CANCELLED) {
-      await prisma.orderTanda.updateMany({
-        where: {
-          tableSessionId: order.tableSessionId,
-          status: { in: ['DRAFT', 'CONFIRMED', 'IN_KITCHEN'] }
-        },
-        data: { status: 'CANCELLED' }
-      });
-    }
+
+      if (newStatus === OrderStatus.IN_KITCHEN) {
+        await tx.orderTanda.updateMany({
+          where: { tableSessionId: order.tableSessionId, status: { in: ['DRAFT', 'CONFIRMED'] } },
+          data: { status: 'IN_KITCHEN' }
+        });
+      } else if (newStatus === OrderStatus.SERVED) {
+        await tx.orderTanda.updateMany({
+          where: { tableSessionId: order.tableSessionId, status: 'IN_KITCHEN' },
+          data: { status: 'SERVED' }
+        });
+      } else if (newStatus === OrderStatus.CANCELLED) {
+        await tx.orderTanda.updateMany({
+          where: { tableSessionId: order.tableSessionId, status: { in: ['DRAFT', 'CONFIRMED', 'IN_KITCHEN'] } },
+          data: { status: 'CANCELLED' }
+        });
+      }
+    });
 
     const restaurantId = order.tableSession.table.restaurantId;
 

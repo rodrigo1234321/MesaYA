@@ -1287,6 +1287,34 @@ function getDraftCartStorageKey(token, participantId) {
   return `mesaya_draft_cart_${token || 'anon'}_${participantId || 'anon'}`;
 }
 
+function getPendingTandaStorageKey(token, participantId) {
+  return `mesaya_pending_tanda_${token || 'anon'}_${participantId || 'anon'}`;
+}
+
+function getOrCreatePendingTandaKey(tableToken, payload) {
+  const storageKey = getPendingTandaStorageKey(tableToken, currentParticipantId);
+  const fingerprint = JSON.stringify(payload);
+  try {
+    const pending = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+    if (pending?.fingerprint === fingerprint && typeof pending.idempotencyKey === 'string') {
+      return pending.idempotencyKey;
+    }
+  } catch (_) {}
+
+  const randomPart = window.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const idempotencyKey = `tanda_${currentParticipantId || 'p'}_${randomPart}`;
+  try {
+    sessionStorage.setItem(storageKey, JSON.stringify({ idempotencyKey, fingerprint }));
+  } catch (_) {}
+  return idempotencyKey;
+}
+
+function clearPendingTandaKey(tableToken) {
+  try {
+    sessionStorage.removeItem(getPendingTandaStorageKey(tableToken, currentParticipantId));
+  } catch (_) {}
+}
+
 function initParticipantSession(tableToken) {
   if (!tableToken) return;
   const key = getParticipantStorageKey(tableToken);
@@ -1664,8 +1692,13 @@ async function submitCurrentTanda() {
     el.btnSubmitTanda.textContent = 'Enviando comanda...';
   }
 
-  const idempotencyKey = `tanda_${currentParticipantId || 'p'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const generalNotes = el.inputTandaNotes?.value?.trim() || undefined;
+  const items = draftCart.map(item => ({
+    menuItemId: item.id,
+    quantity: item.quantity,
+    notes: item.notes || undefined
+  }));
+  const idempotencyKey = getOrCreatePendingTandaKey(tableToken, { items, notes: generalNotes || null });
 
   try {
     const res = await fetchWithRetry(`${API_BASE}/orders/tandas`, {
@@ -1675,11 +1708,7 @@ async function submitCurrentTanda() {
         sessionToken: tableToken,
         participantToken: currentParticipantToken,
         idempotencyKey,
-        items: draftCart.map(item => ({
-          menuItemId: item.id,
-          quantity: item.quantity,
-          notes: item.notes || undefined
-        })),
+        items,
         notes: generalNotes
       })
     });
@@ -1699,6 +1728,7 @@ async function submitCurrentTanda() {
       return;
     }
 
+    clearPendingTandaKey(tableToken);
     draftCart = [];
     saveDraftCart();
     if (el.inputTandaNotes) el.inputTandaNotes.value = '';

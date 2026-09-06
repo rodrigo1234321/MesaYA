@@ -186,6 +186,8 @@ model TableSession {
   activeKey     String?      @unique // tableId mientras la sesión está activa; null al revocar
   expiresAt     DateTime     // TTL: 3 horas
   closedAt      DateTime?
+  // Contador atómico por visita para numerar tandas sin carreras MAX(seq)+1.
+  nextTandaSeq  Int          @default(1)
   createdAt     DateTime     @default(now())
 
   calls         CallRequest[]
@@ -244,6 +246,7 @@ model Order {
   currency       String       @default("ARS")
   totalCents     Int?
   idempotencyKey String?      @unique
+  cancellationReason String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -539,6 +542,7 @@ model OrderTanda {
   seq                    Int // secuencia por visita asignada por servidor (etapa 04; sin default: colisión ruidosa, no silenciosa)
   status                 String            @default("DRAFT") // DRAFT | CONFIRMED | IN_KITCHEN | SERVED | CANCELLED
   idempotencyKey         String            @unique
+  notes                  String?
   createdByParticipantId String?
   createdByParticipant   VisitParticipant? @relation("TandaAuthor", fields: [createdByParticipantId], references: [id], onDelete: SetNull)
   confirmedAt            DateTime?

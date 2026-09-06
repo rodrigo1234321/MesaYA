@@ -226,7 +226,7 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
     if (!rejectingOrderId) return;
     setRejectSubmitting(true);
     try {
-      await StaffApi.updateOrderStatus(rejectingOrderId, 'CANCELLED');
+      await StaffApi.updateOrderStatus(rejectingOrderId, 'CANCELLED', rejectReason.trim() || undefined);
       setRejectingOrderId(null);
       setRejectReason('');
       await fetchOrders();

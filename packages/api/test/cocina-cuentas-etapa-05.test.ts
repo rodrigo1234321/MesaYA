@@ -112,6 +112,15 @@ describe('COCINA-CUENTAS Etapa 05 — Comensal Web (apps/client-web)', () => {
       expect(appJs).not.toMatch(/menuItemId:\s*item\.id,\s*priceCents:/);
     });
 
+    it('conserva la misma clave de idempotencia para reintentar el mismo borrador tras una respuesta perdida', () => {
+      expect(appJs).toContain('function getOrCreatePendingTandaKey(');
+      expect(appJs).toContain('function clearPendingTandaKey(');
+      expect(appJs).toContain('mesaya_pending_tanda_');
+      expect(appJs).toContain('fingerprint === fingerprint');
+      expect(appJs).toContain('const idempotencyKey = getOrCreatePendingTandaKey');
+      expect(appJs).toContain('clearPendingTandaKey(tableToken);');
+    });
+
     it('maneja los errores de negocio de tandas (agotados, mesa pagada, pedidos desactivados)', () => {
       expect(appJs).toContain('ITEM_UNAVAILABLE');
       expect(appJs).toContain('TABLE_ALREADY_PAID');

@@ -188,11 +188,11 @@ export class StaffApi {
     return res.json();
   }
 
-  static async updateOrderStatus(orderId: string, status: string) {
+  static async updateOrderStatus(orderId: string, status: string, cancellationReason?: string) {
     const res = await fetch(`${API_BASE}/staff/orders/${orderId}/status`, {
       method: 'PATCH',
       headers: this.getAuthHeaders(),
-      body: JSON.stringify({ status })
+      body: JSON.stringify({ status, ...(cancellationReason ? { cancellationReason } : {}) })
     });
     if (!res.ok) throw new Error('Error al actualizar estado');
     return res.json();

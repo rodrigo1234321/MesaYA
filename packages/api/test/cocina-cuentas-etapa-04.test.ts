@@ -423,6 +423,89 @@ describe('COCINA-CUENTAS Etapa 04 — Participantes, Tandas, Idempotencia, Modos
   // 4. IDEMPOTENCIA Y SEGURIDAD
   // =========================================================================
   describe('4. Idempotencia, stock y seguridad anti-tampering', () => {
+    it('serializa dos tandas concurrentes de participantes distintos sin colisión de secuencia ni segunda orden', async () => {
+      const timestamp = Date.now();
+      const table = await prisma.table.create({
+        data: {
+          restaurantId: restDirect.id,
+          label: `Mesa Concurrente ${timestamp}`,
+          currentState: TableFSMState.OCCUPIED_NO_ORDER
+        }
+      });
+      const session = await prisma.tableSession.create({
+        data: {
+          tableId: table.id,
+          shiftId: shiftDirect.id,
+          token: `token-concurrent-${timestamp}`,
+          activeKey: table.id,
+          expiresAt: new Date(Date.now() + 3 * 3600 * 1000)
+        }
+      });
+      const [joinA, joinB] = await Promise.all(['Ana', 'Bruno'].map((displayName) =>
+        app.inject({
+          method: 'POST',
+          url: '/v1/orders/participants/join',
+          payload: { sessionToken: session.token, displayName }
+        })
+      ));
+      expect(joinA.statusCode).toBe(201);
+      expect(joinB.statusCode).toBe(201);
+
+      const [first, second] = await Promise.all([
+        app.inject({
+          method: 'POST',
+          url: '/v1/orders/tandas',
+          payload: {
+            sessionToken: session.token,
+            participantToken: joinA.json().participantToken,
+            idempotencyKey: `concurrent-${timestamp}-ana`,
+            items: [{ menuItemId: itemBurger.id, quantity: 1 }]
+          }
+        }),
+        app.inject({
+          method: 'POST',
+          url: '/v1/orders/tandas',
+          payload: {
+            sessionToken: session.token,
+            participantToken: joinB.json().participantToken,
+            idempotencyKey: `concurrent-${timestamp}-bruno`,
+            items: [{ menuItemId: itemBurger.id, quantity: 1 }]
+          }
+        })
+      ]);
+
+      expect(first.statusCode).toBe(201);
+      expect(second.statusCode).toBe(201);
+      expect([first.json().seq, second.json().seq].sort((a: number, b: number) => a - b)).toEqual([1, 2]);
+      expect(await prisma.order.count({ where: { tableSessionId: session.id } })).toBe(1);
+      expect(await prisma.orderTanda.count({ where: { tableSessionId: session.id } })).toBe(2);
+    });
+
+    it('absorbe dos reintentos concurrentes con la misma clave sin devolver P2002 ni duplicar', async () => {
+      const joined = await app.inject({
+        method: 'POST',
+        url: '/v1/orders/participants/join',
+        payload: { sessionToken: sessionWaiter.token, displayName: 'Reintento simultáneo' }
+      });
+      expect(joined.statusCode).toBe(201);
+
+      const payload = {
+        sessionToken: sessionWaiter.token,
+        participantToken: joined.json().participantToken,
+        idempotencyKey: `same-key-concurrent-${Date.now()}`,
+        items: [{ menuItemId: itemEmpanada.id, quantity: 1 }]
+      };
+      const [first, second] = await Promise.all([
+        app.inject({ method: 'POST', url: '/v1/orders/tandas', payload }),
+        app.inject({ method: 'POST', url: '/v1/orders/tandas', payload })
+      ]);
+
+      expect(first.statusCode).toBe(201);
+      expect(second.statusCode).toBe(201);
+      expect(first.json().id).toBe(second.json().id);
+      expect(await prisma.orderTanda.count({ where: { idempotencyKey: payload.idempotencyKey } })).toBe(1);
+    });
+
     it('reintentar con la misma idempotencyKey devuelve la misma tanda sin duplicar', async () => {
       const resJoin = await app.inject({
         method: 'POST',
