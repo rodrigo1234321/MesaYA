@@ -183,6 +183,7 @@ async function performDishCartAdd(request) {
   try {
     const result = await addCartItem(request.dishId, request.qty, request.notes || undefined);
     if (result) {
+      actionBtn.innerHTML = '<span>🛒 Agregar al carrito</span>';
       closeDishDetailSheet();
       showToast(`${request.dishName} × ${request.qty} agregado al carrito.`, 'success');
     } else {
@@ -195,6 +196,7 @@ async function performDishCartAdd(request) {
   } finally {
     cartAdding = false;
     actionBtn.disabled = false;
+    actionBtn.innerHTML = '<span>🛒 Agregar al carrito</span>';
   }
 }
 
