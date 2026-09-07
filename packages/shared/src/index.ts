@@ -506,6 +506,7 @@ export interface OrderItemDTO {
   unitPrice: number;
   notes?: string | null;
   addedByGuest: string;
+  guestName?: string | null;
   claimedByGuest?: string | null;
   claimVersion: number;
   isPaid: boolean;
@@ -527,6 +528,7 @@ export interface AddOrderItemDTO {
   menuItemId: string;
   quantity: number;
   notes?: string;
+  guestName?: string;
 }
 
 export interface RemoveOrderItemDTO {

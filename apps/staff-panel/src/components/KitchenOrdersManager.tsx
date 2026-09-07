@@ -9,6 +9,7 @@ interface KitchenItem {
   notes?: string | null;
   unitPrice: number;
   addedByGuest?: string | null;
+  guestName?: string | null;
 }
 
 interface KitchenOrder {
@@ -217,6 +218,11 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
                       {item.notes && (
                         <p className="text-[11px] text-slate-400 italic pl-4 mt-0.5">
                           "{item.notes}"
+                        </p>
+                      )}
+                      {item.guestName && (
+                        <p className="text-[10px] text-amber-300/90 pl-4 mt-0.5">
+                          👤 {item.guestName}
                         </p>
                       )}
                     </div>

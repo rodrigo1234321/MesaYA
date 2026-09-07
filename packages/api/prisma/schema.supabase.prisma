@@ -251,6 +251,7 @@ model OrderItem {
   unitPrice      Float
   notes          String?
   addedByGuest   String      // guest session id
+  guestName      String?     // nombre visible del comensal en la comanda colaborativa
   
   // Bloqueo optimista para Split Bill por Ítem
   claimedByGuest String?     // identificador de comensal

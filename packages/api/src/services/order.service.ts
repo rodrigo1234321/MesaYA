@@ -83,6 +83,7 @@ export class OrderService {
         unitPrice: item.unitPrice,
         notes: item.notes,
         addedByGuest: item.addedByGuest,
+        guestName: item.guestName,
         claimedByGuest: item.claimedByGuest,
         claimVersion: item.claimVersion,
         isPaid: item.isPaid
@@ -261,6 +262,7 @@ export class OrderService {
         unitPrice: item.unitPrice,
         notes: item.notes,
         addedByGuest: item.addedByGuest,
+        guestName: item.guestName,
         claimedByGuest: item.claimedByGuest,
         claimVersion: item.claimVersion,
         isPaid: item.isPaid
@@ -328,6 +330,29 @@ export class OrderService {
       throw error;
     }
 
+    let guestName: string | null = null;
+    if (dto.guestName !== undefined && dto.guestName !== null) {
+      if (typeof dto.guestName !== 'string') {
+        const error: any = new Error('El nombre del comensal debe ser texto');
+        error.statusCode = 400;
+        error.code = 'INVALID_GUEST_NAME';
+        throw error;
+      }
+      guestName = dto.guestName.trim().replace(/\s+/g, ' ');
+      if (guestName.length < 2) {
+        const error: any = new Error('El nombre del comensal debe tener al menos 2 caracteres');
+        error.statusCode = 400;
+        error.code = 'INVALID_GUEST_NAME';
+        throw error;
+      }
+      if (guestName.length > 60) {
+        const error: any = new Error('El nombre del comensal no puede superar los 60 caracteres');
+        error.statusCode = 400;
+        error.code = 'GUEST_NAME_TOO_LONG';
+        throw error;
+      }
+    }
+
     if (!dto.menuItemId || typeof dto.menuItemId !== 'string') {
       const error: any = new Error('menuItemId requerido');
       error.statusCode = 400;
@@ -390,6 +415,7 @@ export class OrderService {
         unitPrice: menuItem.price, // PRECIO DEL SERVIDOR (Inmune a manipulación en el cliente)
         notes: dto.notes ? dto.notes.trim() : null,
         addedByGuest: dto.guestSessionId || 'guest-web',
+        guestName,
         claimVersion: 0,
         isPaid: false
       }
@@ -1143,7 +1169,8 @@ export class OrderService {
           quantity: it.quantity,
           notes: it.notes,
           unitPrice: it.unitPrice,
-          addedByGuest: it.addedByGuest
+          addedByGuest: it.addedByGuest,
+          guestName: it.guestName
         }))
       };
     });

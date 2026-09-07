@@ -31,6 +31,7 @@ let cartSubmitting = false;   // Guard against double-submit
 let cartAdding = false;       // Guard against duplicate add requests on slow mobile networks
 let cartDishQty = 1;          // Quantity selector in dish detail sheet
 let cartDishNotes = '';       // Notes field in dish detail sheet
+let pendingDishAdd = null;    // Plato que espera a que el comensal confirme su nombre
 
 function getGuestSessionId() {
   let gid = sessionStorage.getItem('mesaya_guest_session_id');
@@ -39,6 +40,80 @@ function getGuestSessionId() {
     sessionStorage.setItem('mesaya_guest_session_id', gid);
   }
   return gid;
+}
+
+function getGuestName() {
+  const stored = sessionStorage.getItem('mesaya_guest_name');
+  return stored ? stored.trim().replace(/\s+/g, ' ') : '';
+}
+
+function setGuestName(name) {
+  const normalized = (name || '').trim().replace(/\s+/g, ' ');
+  if (normalized) {
+    sessionStorage.setItem('mesaya_guest_name', normalized);
+  } else {
+    sessionStorage.removeItem('mesaya_guest_name');
+  }
+  renderGuestIdentity();
+  return normalized;
+}
+
+function renderGuestIdentity() {
+  const name = getGuestName();
+  const title = document.getElementById('guestIdentityTitle');
+  const subtitle = document.getElementById('guestIdentitySubtitle');
+  const button = document.getElementById('btnGuestIdentity');
+  if (name) {
+    if (title) title.textContent = `Pidiendo como ${name}`;
+    if (subtitle) subtitle.textContent = 'Tus platos quedan identificados en la comanda compartida.';
+    if (button) button.textContent = 'Cambiar nombre';
+  } else {
+    if (title) title.textContent = '¿Quién está pidiendo?';
+    if (subtitle) subtitle.textContent = 'Poné tu nombre para distinguir los pedidos si son varios.';
+    if (button) button.textContent = 'Agregar nombre';
+  }
+}
+
+function openGuestIdentitySheet() {
+  const sheet = document.getElementById('guestIdentitySheetBackdrop');
+  const input = document.getElementById('guestNameInput');
+  const error = document.getElementById('guestNameError');
+  if (!sheet || !input) return;
+  input.value = getGuestName();
+  if (error) {
+    error.textContent = '';
+    error.classList.add('hidden');
+  }
+  sheet.classList.add('active');
+  document.body.classList.add('modal-open');
+  window.setTimeout(() => input.focus(), 120);
+}
+
+function closeGuestIdentitySheet() {
+  const sheet = document.getElementById('guestIdentitySheetBackdrop');
+  if (sheet) sheet.classList.remove('active');
+  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden)');
+  if (!anyModalActive) document.body.classList.remove('modal-open');
+}
+
+function saveGuestIdentity() {
+  const input = document.getElementById('guestNameInput');
+  const error = document.getElementById('guestNameError');
+  const normalized = setGuestName(input?.value || '');
+  if (normalized.length < 2) {
+    if (error) {
+      error.textContent = 'Escribí al menos 2 caracteres para identificarte.';
+      error.classList.remove('hidden');
+    }
+    input?.focus();
+    return;
+  }
+
+  closeGuestIdentitySheet();
+  showToast(`Listo, el pedido queda a nombre de ${normalized}.`, 'success');
+  const request = pendingDishAdd;
+  pendingDishAdd = null;
+  if (request) void performDishCartAdd(request);
 }
 
 function canOrderDirectly() {
@@ -83,6 +158,7 @@ async function addCartItem(menuItemId, quantity, notes) {
     body: JSON.stringify({
       sessionToken: currentToken,
       guestSessionId: getGuestSessionId(),
+      guestName: getGuestName() || undefined,
       menuItemId,
       quantity,
       notes: notes || undefined
@@ -96,6 +172,30 @@ async function addCartItem(menuItemId, quantity, notes) {
   cartOrder = data;
   renderCartBadge();
   return data;
+}
+
+async function performDishCartAdd(request) {
+  const actionBtn = document.getElementById('btnOrderSpecificDish');
+  if (!actionBtn || cartAdding) return;
+  cartAdding = true;
+  actionBtn.disabled = true;
+  actionBtn.innerHTML = '<span class="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin inline-block"></span> Agregando...';
+  try {
+    const result = await addCartItem(request.dishId, request.qty, request.notes || undefined);
+    if (result) {
+      closeDishDetailSheet();
+      showToast(`${request.dishName} × ${request.qty} agregado al carrito.`, 'success');
+    } else {
+      actionBtn.innerHTML = '<span>🛒 Agregar al carrito</span>';
+    }
+  } catch (err) {
+    console.warn('No se pudo agregar el plato al carrito:', err);
+    actionBtn.innerHTML = '<span>🛒 Agregar al carrito</span>';
+    showToast('No se pudo agregar el plato. Revisá la conexión e intentá nuevamente.', 'error');
+  } finally {
+    cartAdding = false;
+    actionBtn.disabled = false;
+  }
 }
 
 async function removeCartItem(orderItemId) {
@@ -332,6 +432,8 @@ const el = {
   restaurantName: document.getElementById('restaurantName'),
   tableBadge: document.getElementById('tableBadge'),
   sectorBadge: document.getElementById('sectorBadge'),
+  btnOpenCartHeader: document.getElementById('btnOpenCartHeader'),
+  cartHeaderBadge: document.getElementById('cartHeaderBadge'),
   btnOpenMenuHeader: document.getElementById('btnOpenMenuHeader'),
   btnOpenMenuHero: document.getElementById('btnOpenMenuHero'),
   heroCoverImage: document.getElementById('heroCoverImage'),
@@ -1395,6 +1497,7 @@ function closeAllModals() {
   closeDishDetailSheet();
   closeSommelierDrawer();
   closeCartDrawer();
+  closeGuestIdentitySheet();
   document.body.classList.remove('modal-open');
 }
 
@@ -1730,25 +1833,14 @@ async function loadBillDetails() {
         const qty = cartDishQty || 1;
         const notesEl = document.getElementById('dishSheetNotesInput');
         const notes = notesEl ? notesEl.value.trim() : '';
-        cartAdding = true;
-        btnOrderSpecificDish.disabled = true;
-        btnOrderSpecificDish.innerHTML = '<span class="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin inline-block"></span> Agregando...';
-        try {
-          const result = await addCartItem(dishId, qty, notes || undefined);
-          if (result) {
-            closeDishDetailSheet();
-            showToast(`${dishName} × ${qty} agregado al carrito.`, 'success');
-          } else {
-            btnOrderSpecificDish.innerHTML = '<span>🛒 Agregar al carrito</span>';
-          }
-        } catch (err) {
-          console.warn('No se pudo agregar el plato al carrito:', err);
-          btnOrderSpecificDish.innerHTML = '<span>🛒 Agregar al carrito</span>';
-          showToast('No se pudo agregar el plato. Revisá la conexión e intentá nuevamente.', 'error');
-        } finally {
-          cartAdding = false;
-          btnOrderSpecificDish.disabled = false;
+        const request = { dishId, dishName, qty, notes };
+        if (!getGuestName()) {
+          pendingDishAdd = request;
+          openGuestIdentitySheet();
+          showToast('Indicá tu nombre para distinguir tu pedido en la mesa.', 'info');
+          return;
         }
+        await performDishCartAdd(request);
       } else {
         const dishName = selectedDishForOrder.name;
         closeDishDetailSheet();
@@ -1821,6 +1913,32 @@ async function loadBillDetails() {
   });
 
   // Cart drawer handlers
+  if (el.btnOpenCartHeader) el.btnOpenCartHeader.addEventListener('click', openCartDrawer);
+
+  const btnGuestIdentity = document.getElementById('btnGuestIdentity');
+  if (btnGuestIdentity) btnGuestIdentity.addEventListener('click', openGuestIdentitySheet);
+  const btnCloseGuestIdentity = document.getElementById('btnCloseGuestIdentity');
+  if (btnCloseGuestIdentity) btnCloseGuestIdentity.addEventListener('click', closeGuestIdentitySheet);
+  const btnSaveGuestName = document.getElementById('btnSaveGuestName');
+  if (btnSaveGuestName) btnSaveGuestName.addEventListener('click', saveGuestIdentity);
+  const guestNameInput = document.getElementById('guestNameInput');
+  if (guestNameInput) {
+    guestNameInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        saveGuestIdentity();
+      }
+    });
+  }
+  const guestIdentitySheet = document.getElementById('guestIdentitySheetBackdrop');
+  if (guestIdentitySheet) {
+    enableSheetSwipeToDismiss('guestIdentitySheetBackdrop', closeGuestIdentitySheet);
+    guestIdentitySheet.addEventListener('click', (event) => {
+      if (event.target === guestIdentitySheet) closeGuestIdentitySheet();
+    });
+  }
+  renderGuestIdentity();
+
   const btnCloseCart = document.getElementById('btnCloseCartDrawer');
   if (btnCloseCart) btnCloseCart.addEventListener('click', closeCartDrawer);
 
@@ -1864,9 +1982,15 @@ function closeSommelierDrawer() {
 // CART DRAWER RENDERING & INTERACTION
 // ==========================================
 function renderCartBadge() {
+  const count = cartItemCount();
+  if (el.cartHeaderBadge) {
+    el.cartHeaderBadge.textContent = String(count);
+    el.cartHeaderBadge.classList.toggle('hidden', count === 0);
+    el.cartHeaderBadge.classList.toggle('inline-flex', count > 0);
+  }
+
   const btn = el.btnOpenMenuHeader;
   if (!btn) return;
-  const count = cartItemCount();
   if (count > 0) {
     btn.innerHTML = `<span class="relative inline-flex">
       <span class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[9px] font-black flex items-center justify-center">${count}</span>
@@ -1898,17 +2022,19 @@ function renderCartDrawer() {
   }
 
   emptyMsg.classList.add('hidden');
-  countEl.textContent = `${items.length} ítem${items.length > 1 ? 's' : ''}`;
+  const quantityCount = cartItemCount();
+  countEl.textContent = `${quantityCount} ítem${quantityCount !== 1 ? 's' : ''}`;
   totalEl.textContent = `$${Number(cartOrder.totalAmount || 0).toLocaleString('es-AR')}`;
 
   itemsList.innerHTML = items.map(item => {
     const safeId = escapeHtmlAttr(item.id);
     const safeName = escapeHtml(item.name);
     const lineTotal = Number(item.unitPrice * item.quantity).toLocaleString('es-AR');
+    const guestLabel = item.guestName ? ` • 👤 ${escapeHtml(item.guestName)}` : '';
     return `<div class="flex items-center justify-between gap-2 py-2.5 border-b border-slate-800/40 last:border-0">
       <div class="min-w-0 flex-1">
         <p class="text-xs font-bold text-white truncate">${safeName}</p>
-        <p class="text-[11px] text-slate-400">${item.quantity}x $${Number(item.unitPrice).toLocaleString('es-AR')}${item.notes ? ' • ' + escapeHtml(item.notes) : ''}</p>
+        <p class="text-[11px] text-slate-400">${item.quantity}x $${Number(item.unitPrice).toLocaleString('es-AR')}${item.notes ? ' • ' + escapeHtml(item.notes) : ''}${guestLabel}</p>
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <span class="text-xs font-mono font-bold text-amber-400">$${lineTotal}</span>

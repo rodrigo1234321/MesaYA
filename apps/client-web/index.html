@@ -36,13 +36,21 @@
       </div>
     </div>
 
-    <!-- Quick Menu Pill Button -->
-    <button id="btnOpenMenuHeader" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] font-bold text-amber-300 active:scale-95 transition-transform hover:bg-amber-500/20 shadow-sm">
+    <!-- Atajos persistentes: en móvil el carrito nunca queda escondido dentro de la carta -->
+    <div class="flex items-center gap-1.5 shrink-0">
+      <button id="btnOpenCartHeader" aria-label="Abrir mi pedido" class="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/90 border border-amber-500/30 text-[11px] font-bold text-amber-300 active:scale-95 transition-transform hover:bg-slate-700 shadow-sm">
+        <span class="text-sm leading-none">🛒</span>
+        <span class="hidden sm:inline">Mi Pedido</span>
+        <span id="cartHeaderBadge" class="hidden absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-slate-950 text-[9px] font-black items-center justify-center">0</span>
+      </button>
+      <!-- Quick Menu Pill Button -->
+    <button id="btnOpenMenuHeader" class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] font-bold text-amber-300 active:scale-95 transition-transform hover:bg-amber-500/20 shadow-sm">
       <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
       </svg>
       Ver Carta
     </button>
+    </div>
   </header>
 
   <!-- MAIN SCROLLABLE CONTAINER -->
@@ -107,6 +115,20 @@
         </button>
       </div>
     </div>
+
+    <!-- Identidad opcional del comensal: se guarda sólo en este teléfono y se adjunta a sus ítems -->
+    <section id="guestIdentityCard" class="stagger-2 p-3 rounded-2xl bg-slate-900/80 border border-indigo-500/30 shadow-md">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-base shrink-0">👤</div>
+          <div class="min-w-0">
+            <p id="guestIdentityTitle" class="text-xs font-extrabold text-white truncate">¿Quién está pidiendo?</p>
+            <p id="guestIdentitySubtitle" class="text-[10px] text-slate-400 truncate">Poné tu nombre para distinguir los pedidos si son varios.</p>
+          </div>
+        </div>
+        <button id="btnGuestIdentity" type="button" class="shrink-0 px-3 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/40 text-[10px] font-extrabold text-indigo-200 hover:bg-indigo-500/25 active:scale-95 transition-all">Agregar nombre</button>
+      </div>
+    </section>
 
     <!-- ACTIVE CALL BANNER (CUANDO HAY UN LLAMADO EN CURSO) -->
     <div id="activeCallCard" class="hidden rounded-2xl bg-gradient-to-b from-indigo-950/90 to-slate-900/95 border border-indigo-500/50 p-3.5 shadow-xl shadow-indigo-950/40 space-y-2.5 animate-in fade-in">
@@ -639,6 +661,33 @@
   <!-- =======================================================
       🛒 CART DRAWER (Customer Order)
   ======================================================= -->
+  <!-- =======================================================
+      👤 IDENTIDAD DEL COMENSAL (COLLABORATIVE CART)
+  ======================================================= -->
+  <div id="guestIdentitySheetBackdrop" class="bottom-sheet-backdrop" style="z-index: 95;">
+    <div class="bottom-sheet-content" style="z-index: 96;">
+      <div class="drag-handle-container">
+        <div class="drag-handle-pill"></div>
+      </div>
+      <div class="p-5 space-y-4 bg-slate-900">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h3 class="text-base font-extrabold text-white flex items-center gap-2">👤 Identificate en la mesa</h3>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">Así el mozo puede distinguir quién pidió cada plato cuando comparten la mesa.</p>
+          </div>
+          <button id="btnCloseGuestIdentity" type="button" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-bold shrink-0">✕</button>
+        </div>
+        <div class="space-y-1.5">
+          <label for="guestNameInput" class="text-xs font-bold text-slate-300">Tu nombre</label>
+          <input id="guestNameInput" type="text" maxlength="60" autocomplete="name" placeholder="Ej: Rodrigo" class="w-full min-h-[48px] bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400 transition-colors" />
+          <p id="guestNameError" class="hidden text-[11px] text-red-300"></p>
+        </div>
+        <button id="btnSaveGuestName" type="button" class="w-full min-h-[48px] py-3 px-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 font-extrabold text-sm text-white shadow-lg shadow-indigo-500/20 active:scale-[0.98] transition-all">Continuar</button>
+        <p class="text-[10px] text-slate-500 text-center leading-relaxed">El nombre queda guardado sólo en este teléfono durante esta sesión de mesa. No hace falta crear una cuenta.</p>
+      </div>
+    </div>
+  </div>
+
   <div id="cartDrawerBackdrop" class="bottom-sheet-backdrop" style="z-index: 75;">
     <div class="bottom-sheet-content" style="z-index: 76;">
       <div class="drag-handle-container">
