@@ -1723,6 +1723,8 @@ async function loadBillDetails() {
 
       if (canOrderDirectly()) {
         if (cartAdding) return;
+        const dishId = selectedDishForOrder.id;
+        const dishName = selectedDishForOrder.name;
         const qty = cartDishQty || 1;
         const notesEl = document.getElementById('dishSheetNotesInput');
         const notes = notesEl ? notesEl.value.trim() : '';
@@ -1730,13 +1732,17 @@ async function loadBillDetails() {
         btnOrderSpecificDish.disabled = true;
         btnOrderSpecificDish.innerHTML = '<span class="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin inline-block"></span> Agregando...';
         try {
-          const result = await addCartItem(selectedDishForOrder.id, qty, notes || undefined);
+          const result = await addCartItem(dishId, qty, notes || undefined);
           if (result) {
             closeDishDetailSheet();
-            showToast(`${selectedDishForOrder.name} × ${qty} agregado al carrito.`, 'success');
+            showToast(`${dishName} × ${qty} agregado al carrito.`, 'success');
           } else {
             btnOrderSpecificDish.innerHTML = '<span>🛒 Agregar al carrito</span>';
           }
+        } catch (err) {
+          console.warn('No se pudo agregar el plato al carrito:', err);
+          btnOrderSpecificDish.innerHTML = '<span>🛒 Agregar al carrito</span>';
+          showToast('No se pudo agregar el plato. Revisá la conexión e intentá nuevamente.', 'error');
         } finally {
           cartAdding = false;
           btnOrderSpecificDish.disabled = false;
