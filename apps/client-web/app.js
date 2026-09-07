@@ -75,6 +75,8 @@ async function loadActiveOrder() {
 
 async function addCartItem(menuItemId, quantity, notes) {
   if (!currentToken) return;
+  // Las mutaciones no se reintentan automáticamente: si el servidor confirma
+  // y la red demora la respuesta, repetir el POST duplicaría la comanda.
   const res = await fetchWithRetry(`${API_BASE}/orders/items`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -85,7 +87,7 @@ async function addCartItem(menuItemId, quantity, notes) {
       quantity,
       notes: notes || undefined
     })
-  });
+  }, 1, 10000);
   const data = await res.json();
   if (!res.ok) {
     handleOrderError(res.status, data);
@@ -101,7 +103,7 @@ async function removeCartItem(orderItemId) {
   const res = await fetchWithRetry(`${API_BASE}/orders/items/${orderItemId}`, {
     method: 'DELETE',
     headers: { 'x-session-token': currentToken }
-  });
+  }, 1, 10000);
   const data = await res.json();
   if (!res.ok) {
     handleOrderError(res.status, data);
@@ -126,7 +128,7 @@ async function submitCartOrder() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionToken: currentToken })
-    });
+    }, 1, 10000);
     const data = await res.json();
     if (!res.ok) {
       handleOrderError(res.status, data);
@@ -1528,7 +1530,7 @@ function bindEvents() {
       el.modalWaiter.classList.remove('hidden');
       document.body.classList.add('modal-open');
     }
-  });
+  }, 1, 10000);
 
 async function loadBillDetails() {
   if (!currentToken) return;
