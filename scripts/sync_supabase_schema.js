@@ -5,8 +5,9 @@ const sourcePath = path.join(__dirname, '..', 'packages', 'api', 'prisma', 'sche
 const destPath = path.join(__dirname, '..', 'packages', 'api', 'prisma', 'schema.supabase.prisma');
 
 const checkOnly = process.argv.includes('--check');
+const normalizeLineEndings = (value) => value.replace(/\r\n?/g, '\n');
 
-const content = fs.readFileSync(sourcePath, 'utf8');
+const content = normalizeLineEndings(fs.readFileSync(sourcePath, 'utf8'));
 
 const postgresHeader = `datasource db {
   provider  = "postgresql"
@@ -15,7 +16,7 @@ const postgresHeader = `datasource db {
 }`;
 
 const updated = content.replace(/datasource db \{[\s\S]*?\}/, postgresHeader);
-const current = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : null;
+const current = fs.existsSync(destPath) ? normalizeLineEndings(fs.readFileSync(destPath, 'utf8')) : null;
 
 if (checkOnly) {
   if (current === updated) {
