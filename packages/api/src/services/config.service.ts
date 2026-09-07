@@ -4,7 +4,11 @@ import {
   PaymentMode,
   RestaurantModuleConfigDTO,
   UpdateModuleConfigDTO,
-  ModuleConfigAuditDTO
+  ModuleConfigAuditDTO,
+  CapabilityState,
+  CapabilityKey,
+  CapabilityEntry,
+  RestaurantCapabilitiesDTO
 } from '@mesaya/shared';
 
 export class ConfigService {
@@ -82,18 +86,20 @@ export class ConfigService {
         }
       });
 
-      return {
+      const parsed: RestaurantModuleConfigDTO = {
         ...created,
         paymentMode: created.paymentMode as PaymentMode,
         suggestedTipPercentages: JSON.parse(created.suggestedTipPercentages)
       };
+      return { ...parsed, capabilities: this.buildCapabilities(parsed).capabilities };
     }
 
-    return {
+    const parsed: RestaurantModuleConfigDTO = {
       ...restaurant.moduleConfig,
       paymentMode: restaurant.moduleConfig.paymentMode as PaymentMode,
       suggestedTipPercentages: JSON.parse(restaurant.moduleConfig.suggestedTipPercentages)
     };
+    return { ...parsed, capabilities: this.buildCapabilities(parsed).capabilities };
   }
 
   /**
@@ -172,16 +178,17 @@ export class ConfigService {
       });
     }
 
-    return {
+    const parsed: RestaurantModuleConfigDTO = {
       ...config,
       paymentMode: config.paymentMode as PaymentMode,
       suggestedTipPercentages: JSON.parse(config.suggestedTipPercentages)
     };
+    return { ...parsed, capabilities: this.buildCapabilities(parsed).capabilities };
   }
 
   /**
    * Actualiza la configuración de módulos de forma transaccional junto con el log de auditoría.
-   * Emite evento SSE a comensales y staff.
+   * Emite evento via eventBus a comensales y staff (SSE deshabilitado en piloto; eventBus es no-op).
    */
   static async updateConfigTransacted(
     restaurantIdOrSlug: string,
@@ -299,10 +306,153 @@ export class ConfigService {
       suggestedTipPercentages: JSON.parse(updated.suggestedTipPercentages)
     };
 
-    // Emitir evento SSE en tiempo real
-    eventBus.broadcast(restaurantId, 'config.updated', parsedDTO);
+    // Emitir evento via eventBus (SSE deshabilitado; eventBus es no-op)
+    const response = {
+      ...parsedDTO,
+      capabilities: this.buildCapabilities(parsedDTO).capabilities
+    };
+    eventBus.broadcast(restaurantId, 'config.updated', response);
 
-    return parsedDTO;
+    return response;
+  }
+
+  /**
+   * Construye el mapa de capacidades efectivas a partir de la configuración almacenada.
+   * SEPARA la disponibilidad real de los flags persistidos para evitar que
+   * consumidores interpreten "habilitado en DB" como "funcional en el producto".
+   *
+   * SEGURIDAD: No expone credenciales, secretos ni datos de pago.
+   * Sólo refleja estado operativo codificado estáticamente.
+   */
+  static buildCapabilities(config: RestaurantModuleConfigDTO): RestaurantCapabilitiesDTO {
+    const caps: Record<CapabilityKey, CapabilityEntry> = {
+      ordering: {
+        key: 'ordering',
+        state: CapabilityState.AVAILABLE,
+        configuredEnabled: config.allowOrdering,
+        effectiveEnabled: config.allowOrdering,
+        reasonCode: config.allowOrdering ? 'ORDERING_ENABLED' : 'ORDERING_DISABLED_BY_CONFIG',
+        message: config.allowOrdering
+          ? 'El comensal puede generar comandas desde su celular.'
+          : 'El módulo de pedidos está deshabilitado por el administrador.'
+      },
+      waiter_validation: {
+        key: 'waiter_validation',
+        state: CapabilityState.AVAILABLE,
+        configuredEnabled: config.requireWaiterValidation,
+        effectiveEnabled: config.requireWaiterValidation,
+        reasonCode: config.requireWaiterValidation ? 'WAITER_VALIDATION_ACTIVE' : 'WAITER_VALIDATION_OPTIONAL',
+        message: config.requireWaiterValidation
+          ? 'El mozo debe validar cada comanda antes de enviarla a cocina.'
+          : 'La validación del mozo está desactivada; las comandas van directo a cocina.'
+      },
+      manual_payment: {
+        key: 'manual_payment',
+        state: CapabilityState.PILOT_ONLY,
+        configuredEnabled: config.paymentMode !== PaymentMode.DIGITAL_MP,
+        effectiveEnabled: false,
+        reasonCode: 'MANUAL_PAYMENT_API_ONLY',
+        message: 'El cobro presencial existe en la API para encargados, pero falta la pantalla operativa de caja.'
+      },
+      digital_payment: {
+        key: 'digital_payment',
+        state: CapabilityState.COMING_SOON,
+        configuredEnabled: config.paymentMode !== PaymentMode.WAITER_ONLY,
+        effectiveEnabled: false,
+        reasonCode: 'DIGITAL_PAYMENTS_UNAVAILABLE',
+        message: 'Los pagos digitales por Mercado Pago aún no están operativos. Los endpoints devuelven 503.'
+      },
+      split_bill: {
+        key: 'split_bill',
+        state: CapabilityState.COMING_SOON,
+        configuredEnabled: config.allowSplitBill,
+        effectiveEnabled: false,
+        reasonCode: 'SPLIT_BILL_UNAVAILABLE',
+        message: 'La división de cuenta entre comensales aún no está disponible.'
+      },
+      waitlist: {
+        key: 'waitlist',
+        state: CapabilityState.PILOT_ONLY,
+        configuredEnabled: config.enableWaitlist,
+        effectiveEnabled: config.enableWaitlist,
+        reasonCode: config.enableWaitlist ? 'WAITLIST_ACTIVE' : 'WAITLIST_DISABLED',
+        message: config.enableWaitlist
+          ? 'La API y la gestión del staff están activas; falta una pantalla pública de ingreso.'
+          : 'La fila virtual no está habilitada.'
+      },
+      waitlist_preorder: {
+        key: 'waitlist_preorder',
+        state: CapabilityState.COMING_SOON,
+        configuredEnabled: config.enableWaitlist && config.enableWaitlistPreOrder,
+        effectiveEnabled: false,
+        reasonCode: 'WAITLIST_PREORDER_UNAVAILABLE',
+        message: 'El pre-pedido en fila virtual aún no está disponible.'
+      },
+      rewards: {
+        key: 'rewards',
+        state: CapabilityState.COMING_SOON,
+        configuredEnabled: config.enableRewards,
+        effectiveEnabled: false,
+        reasonCode: 'REWARDS_NO_LEDGER',
+        message: 'El programa de fidelización Rewards tiene un calculador, pero falta el ledger y redención.'
+      },
+      upsell: {
+        key: 'upsell',
+        state: CapabilityState.PILOT_ONLY,
+        configuredEnabled: config.enableUpsell,
+        effectiveEnabled: false,
+        reasonCode: config.enableUpsell ? 'UPSELL_PILOT_ONLY' : 'UPSELL_DISABLED',
+        message: config.enableUpsell
+          ? 'Recomendaciones de upsell disponibles vía API, pero ningún cliente las consume aún.'
+          : 'El módulo de upsell está deshabilitado.'
+      },
+      smart_tips: {
+        key: 'smart_tips',
+        state: CapabilityState.PILOT_ONLY,
+        configuredEnabled: config.enableSmartTips,
+        effectiveEnabled: false,
+        reasonCode: config.enableSmartTips ? 'SMART_TIPS_PILOT_ONLY' : 'SMART_TIPS_DISABLED',
+        message: config.enableSmartTips
+          ? 'Propinas sugeridas disponibles con UI parcial; no todas las vistas están implementadas.'
+          : 'El módulo de propinas inteligentes está deshabilitado.'
+      },
+      reviews: {
+        key: 'reviews',
+        state: (() => {
+          if (config.enableReviews && !config.googlePlaceId) return CapabilityState.MISCONFIGURED;
+          if (config.enableReviews && config.googlePlaceId) return CapabilityState.PILOT_ONLY;
+          return CapabilityState.COMING_SOON;
+        })(),
+        configuredEnabled: config.enableReviews,
+        effectiveEnabled: Boolean(config.enableReviews && config.googlePlaceId),
+        reasonCode: (() => {
+          if (config.enableReviews && !config.googlePlaceId) return 'REVIEWS_NO_PLACE_ID';
+          if (config.enableReviews && config.googlePlaceId) return 'REVIEWS_PILOT_ONLY';
+          return 'REVIEWS_DISABLED';
+        })(),
+        message: (() => {
+          if (config.enableReviews && !config.googlePlaceId) return 'Reseñas habilitadas sin Google Place ID configurado; no funcionarán.';
+          if (config.enableReviews && config.googlePlaceId) return 'Reseñas habilitadas con Place ID; interfaz parcial en piloto.';
+          return 'El módulo de reseñas no está habilitado.';
+        })()
+      }
+    };
+
+    return { restaurantId: config.restaurantId, capabilities: caps };
+  }
+
+  /**
+   * Obtiene el mapa de capacidades efectivas para un restaurante.
+   */
+  static async getCapabilities(restaurantIdOrSlug: string): Promise<RestaurantCapabilitiesDTO | null> {
+    const restaurant = await prisma.restaurant.findFirst({
+      where: { OR: [{ id: restaurantIdOrSlug }, { slug: restaurantIdOrSlug }] },
+      select: { id: true }
+    });
+    if (!restaurant) return null;
+
+    const config = await this.getAdminConfig(restaurant.id);
+    return this.buildCapabilities(config);
   }
 
   /**

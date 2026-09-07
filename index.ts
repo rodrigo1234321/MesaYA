@@ -31,7 +31,10 @@ let appPromise: Promise<any> | null = null;
 
 export async function getApp() {
   if (!appPromise) {
-    appPromise = buildApp();
+    appPromise = buildApp().catch((err) => {
+      appPromise = null;
+      throw err;
+    });
   }
   const app = await appPromise;
   await app.ready();

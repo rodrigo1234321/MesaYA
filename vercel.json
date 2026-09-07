@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/index.ts": {
-      "includeFiles": "packages/shared/**"
+      "includeFiles": "{packages/shared/**,node_modules/.prisma/client/**}"
     }
   },
   "rewrites": [

@@ -227,6 +227,10 @@
         <span class="text-sm">✨</span>
         <span>Sommelier IA</span>
       </button>
+      <button id="btnOpenCartFromMenu" class="px-3.5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-extrabold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-sm">
+        <span class="text-sm">🛒</span>
+        <span>Mi Pedido</span>
+      </button>
       <button id="btnOrderFromMenu" class="flex-1 py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 font-extrabold text-xs text-slate-950 flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20 active:scale-95 transition-all">
         <span>🙋 Llamar al Mozo para Pedir</span>
       </button>
@@ -278,6 +282,22 @@
             <span class="font-bold block text-[11px] uppercase tracking-wider text-amber-400">Sugerencia de Maridaje</span>
             <span id="dishSheetPairingText" class="text-[11px] text-amber-200/90">Maridaje recomendado por el Sommelier</span>
           </div>
+        </div>
+
+        <!-- Quantity Controls -->
+        <div class="flex items-center justify-between gap-3 pt-1">
+          <span class="text-xs font-bold text-slate-300">Cantidad</span>
+          <div class="flex items-center gap-2">
+            <button id="dishSheetQtyMinus" type="button" class="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold text-base flex items-center justify-center active:scale-90 transition-all" aria-label="Reducir cantidad">−</button>
+            <span id="dishSheetQtyDisplay" class="w-8 text-center text-sm font-mono font-black text-amber-400">1</span>
+            <button id="dishSheetQtyPlus" type="button" class="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold text-base flex items-center justify-center active:scale-90 transition-all" aria-label="Aumentar cantidad">+</button>
+          </div>
+        </div>
+
+        <!-- Notes Input -->
+        <div>
+          <label for="dishSheetNotesInput" class="text-xs font-bold text-slate-300 block mb-1.5">Notas del plato (opcional)</label>
+          <input id="dishSheetNotesInput" type="text" maxlength="500" placeholder="Ej: sin cebolla, jugo terminate..." class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors" />
         </div>
       </div>
 
@@ -612,6 +632,51 @@
         >
           Enviar al Encargado
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =======================================================
+      🛒 CART DRAWER (Customer Order)
+  ======================================================= -->
+  <div id="cartDrawerBackdrop" class="bottom-sheet-backdrop" style="z-index: 75;">
+    <div class="bottom-sheet-content" style="z-index: 76;">
+      <div class="drag-handle-container">
+        <div class="drag-handle-pill"></div>
+      </div>
+
+      <!-- Cart Header -->
+      <div class="p-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-950/90 shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-slate-950 font-bold text-lg shadow-md shadow-amber-500/20">
+            🛒
+          </div>
+          <div>
+            <h3 class="text-sm font-extrabold text-white">Tu Pedido</h3>
+            <p id="cartItemCount" class="text-[10px] text-amber-400">0 ítems</p>
+          </div>
+        </div>
+        <button id="btnCloseCartDrawer" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700">
+          Cerrar ✕
+        </button>
+      </div>
+
+      <!-- Cart Items List -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-1">
+        <p id="cartEmptyMsg" class="text-center text-xs text-slate-500 py-8">Tu carrito está vacío. Abrí la carta para agregar platos.</p>
+        <div id="cartItemsList" class="space-y-0"></div>
+      </div>
+
+      <!-- Cart Footer: Total + Submit -->
+      <div class="p-4 bg-slate-950 border-t border-slate-800/80 shrink-0 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-300 uppercase tracking-wider">Total estimado</span>
+          <span id="cartTotal" class="text-lg font-mono font-black text-amber-400">$0</span>
+        </div>
+        <button id="btnCartSubmit" class="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 font-extrabold text-xs text-slate-950 flex items-center justify-center gap-2 shadow-xl shadow-amber-500/25 active:scale-98 transition-all">
+          🛒 Enviar pedido
+        </button>
+        <p id="cartSubmitHint" class="text-[10px] text-slate-500 text-center leading-relaxed">El precio final se calcula en el servidor. El mozo validará el pedido antes del envío a cocina.</p>
       </div>
     </div>
   </div>

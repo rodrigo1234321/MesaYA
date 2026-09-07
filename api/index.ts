@@ -30,7 +30,10 @@ let appPromise: Promise<any> | null = null;
 
 export default async function handler(req: any, res: any) {
   if (!appPromise) {
-    appPromise = buildApp();
+    appPromise = buildApp().catch((err) => {
+      appPromise = null;
+      throw err;
+    });
   }
   const app = await appPromise;
   await app.ready();

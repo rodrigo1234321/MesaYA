@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { StaffApi, API_BASE } from '../lib/api';
 import { StaffUserDTO } from '@mesaya/shared';
 import { unlockAudio } from '../lib/audio';
+import { resolveRestaurantSlug } from '../lib/resolveRestaurantSlug';
 import { Lock, ArrowRight, UserCheck, Shield, Sparkles } from 'lucide-react';
 
 interface LoginModalProps {
@@ -22,10 +23,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
         if (Array.isArray(data) && data.length > 0) {
           setRestaurantsList(data);
           const saved = StaffApi.getSavedUser();
-          if (saved && data.some(r => r.slug === saved.restaurantId || r.id === saved.restaurantId)) {
-            const found = data.find(r => r.slug === saved.restaurantId || r.id === saved.restaurantId);
-            if (found) setSlug(found.slug);
-          }
+          const resolved = resolveRestaurantSlug(data, saved?.restaurantId);
+          if (resolved) setSlug(resolved);
         }
       })
       .catch(() => {});

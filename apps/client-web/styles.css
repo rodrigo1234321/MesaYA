@@ -462,3 +462,11 @@ body.modal-open {
 .animate-glow {
   animation: pulseGlow 2.5s infinite ease-in-out;
 }
+
+/* Cart Drawer Z-Index Layering */
+#cartDrawerBackdrop {
+  z-index: 75;
+}
+#cartDrawerBackdrop .bottom-sheet-content {
+  z-index: 76;
+}

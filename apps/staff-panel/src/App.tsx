@@ -242,7 +242,7 @@ export const App: React.FC = () => {
         <WaitlistManager restaurantId={currentUser.restaurantId} />
       ) : (
         <>
-          {/* Live SSE Status Bar */}
+          {/* Live Polling Status Bar */}
           <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs">
             <div className="flex items-center space-x-2">
               <span className="relative flex h-2.5 w-2.5">
@@ -256,7 +256,7 @@ export const App: React.FC = () => {
                 )}
               </span>
               <span className="font-semibold text-slate-300">
-                {connected ? 'En vivo (SSE Conectado)' : 'Conectando con el salón...'}
+                {connected ? 'En vivo (Sincronizado)' : 'Sincronizando con el salón...'}
               </span>
             </div>
 

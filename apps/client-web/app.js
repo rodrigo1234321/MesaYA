@@ -24,6 +24,155 @@ let callTimerInterval = null;
 let lastCallType = 'WAITER';
 
 // ==========================================
+// CART / ORDER STATE (Customer Direct Ordering)
+// ==========================================
+let cartOrder = null;         // Active OrderDTO from server (null = no active order)
+let cartSubmitting = false;   // Guard against double-submit
+let cartAdding = false;       // Guard against duplicate add requests on slow mobile networks
+let cartDishQty = 1;          // Quantity selector in dish detail sheet
+let cartDishNotes = '';       // Notes field in dish detail sheet
+
+function getGuestSessionId() {
+  let gid = sessionStorage.getItem('mesaya_guest_session_id');
+  if (!gid) {
+    gid = 'gw-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    sessionStorage.setItem('mesaya_guest_session_id', gid);
+  }
+  return gid;
+}
+
+function canOrderDirectly() {
+  if (!currentToken) return false;
+  // Fail closed while the server configuration is still loading or unavailable.
+  if (!restaurantConfigLoaded) return false;
+  if (activeRestaurantConfig && activeRestaurantConfig.allowOrdering === false) return false;
+  return true;
+}
+
+function cartItemCount() {
+  if (!cartOrder || !cartOrder.items) return 0;
+  return cartOrder.items.reduce((s, i) => s + i.quantity, 0);
+}
+
+function cartTotalAmount() {
+  if (!cartOrder || !cartOrder.items) return 0;
+  return cartOrder.totalAmount || 0;
+}
+
+async function loadActiveOrder() {
+  if (!currentToken) return;
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/active`, {
+      headers: { 'x-session-token': currentToken }
+    });
+    if (res && res.ok) {
+      const data = await res.json();
+      cartOrder = data.order || null;
+    }
+  } catch (_) {}
+  renderCartBadge();
+}
+
+async function addCartItem(menuItemId, quantity, notes) {
+  if (!currentToken) return;
+  const res = await fetchWithRetry(`${API_BASE}/orders/items`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionToken: currentToken,
+      guestSessionId: getGuestSessionId(),
+      menuItemId,
+      quantity,
+      notes: notes || undefined
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    handleOrderError(res.status, data);
+    return null;
+  }
+  cartOrder = data;
+  renderCartBadge();
+  return data;
+}
+
+async function removeCartItem(orderItemId) {
+  if (!currentToken) return;
+  const res = await fetchWithRetry(`${API_BASE}/orders/items/${orderItemId}`, {
+    method: 'DELETE',
+    headers: { 'x-session-token': currentToken }
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    handleOrderError(res.status, data);
+    return null;
+  }
+  cartOrder = data;
+  renderCartBadge();
+  renderCartDrawer();
+  return data;
+}
+
+async function submitCartOrder() {
+  if (!currentToken || cartSubmitting) return;
+  if (!cartOrder || !cartOrder.items || cartOrder.items.length === 0) {
+    showToast('No hay ítems en el carrito para enviar.', 'warning');
+    return;
+  }
+  cartSubmitting = true;
+  renderCartSubmitBtn();
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionToken: currentToken })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      handleOrderError(res.status, data);
+      return;
+    }
+    cartOrder = data;
+    renderCartBadge();
+    closeCartDrawer();
+    if (data.status === 'IN_KITCHEN') {
+      showToast('¡Pedido enviado directo a cocina! 🍳', 'success');
+    } else if (data.status === 'PENDING_VALIDATION') {
+      showToast('¡Pedido enviado! El mozo lo validará antes de enviarlo a cocina. ✅', 'success');
+    } else {
+      showToast('Pedido enviado exitosamente.', 'success');
+    }
+  } catch (err) {
+    showToast('No se pudo conectar con el servidor. Tu pedido no se perdió.', 'error');
+  } finally {
+    cartSubmitting = false;
+    renderCartSubmitBtn();
+  }
+}
+
+function handleOrderError(status, data) {
+  const msg = data && data.error ? data.error : '';
+  if (status === 401 || status === 410) {
+    showExpiredState(msg || 'La sesión de mesa ha finalizado.');
+    stopPolling();
+    return;
+  }
+  if (status === 403) {
+    showToast(msg || 'Las comandas digitales no están habilitadas en este restaurante.', 'error');
+    return;
+  }
+  if (status === 422) {
+    showToast(msg || 'El plato seleccionado no está disponible.', 'warning');
+    return;
+  }
+  if (status === 503) {
+    showToast(msg || 'Servicio temporalmente no disponible. Intentá en unos segundos.', 'warning');
+    return;
+  }
+  showToast(msg || 'Ocurrió un error al procesar el pedido.', 'error');
+}
+
+// ==========================================
 // SEGURIDAD Y SANITIZACIÓN CONTEXTUAL (Etapa 19)
 // ==========================================
 function escapeHtml(str) {
@@ -443,6 +592,9 @@ async function init(overrideToken) {
 
     // Start background sync
     startPolling();
+
+    // Load active order for cart
+    loadActiveOrder();
   } catch (err) {
     console.warn('Falla al conectar sesión:', err);
     if (el.stateLoading) el.stateLoading.classList.add('hidden');
@@ -497,6 +649,8 @@ const MENU_TAG_MAP = {
 
 function openDishDetailSheet(item) {
   selectedDishForOrder = item;
+  cartDishQty = 1;
+  cartDishNotes = '';
   triggerHaptic();
 
   const sheet = document.getElementById('dishDetailSheetBackdrop');
@@ -509,6 +663,9 @@ function openDishDetailSheet(item) {
   const tagsEl = document.getElementById('dishSheetTagsContainer');
   const pairingBox = document.getElementById('dishSheetPairingBox');
   const pairingText = document.getElementById('dishSheetPairingText');
+  const qtyDisplay = document.getElementById('dishSheetQtyDisplay');
+  const notesInput = document.getElementById('dishSheetNotesInput');
+  const actionBtn = document.getElementById('btnOrderSpecificDish');
 
   if (imgEl) {
     const defaultImg = 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80';
@@ -517,6 +674,21 @@ function openDishDetailSheet(item) {
   if (titleEl) titleEl.textContent = item.name;
   if (descEl) descEl.textContent = item.description || 'Elaborado artesanalmente en el momento con ingredientes frescos de primera calidad.';
   if (priceEl) priceEl.textContent = `$${Number(item.price).toLocaleString('es-AR')}`;
+
+  // Reset quantity and notes
+  if (qtyDisplay) qtyDisplay.textContent = '1';
+  if (notesInput) notesInput.value = '';
+
+  // Configure action button based on ordering capability
+  if (actionBtn) {
+    if (canOrderDirectly()) {
+      actionBtn.innerHTML = '<span>🛒 Agregar al carrito</span>';
+      actionBtn.className = 'w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 font-extrabold text-xs text-slate-950 flex items-center justify-center gap-2 shadow-xl shadow-amber-500/25 active:scale-98 transition-all';
+    } else {
+      actionBtn.innerHTML = '<span>🛎️ Pedir este plato al Mozo</span>';
+      actionBtn.className = 'w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 font-extrabold text-xs text-white flex items-center justify-center gap-2 shadow-xl shadow-indigo-500/25 active:scale-98 transition-all';
+    }
+  }
 
   if (tagsEl) {
     tagsEl.innerHTML = '';
@@ -1220,6 +1392,7 @@ function closeAllModals() {
   if (el.modalMenu) el.modalMenu.classList.add('hidden');
   closeDishDetailSheet();
   closeSommelierDrawer();
+  closeCartDrawer();
   document.body.classList.remove('modal-open');
 }
 
@@ -1344,6 +1517,12 @@ function bindEvents() {
   }
 
   if (el.btnOrderFromMenu) el.btnOrderFromMenu.addEventListener('click', () => {
+    if (canOrderDirectly()) {
+      closeAllModals();
+      openCartDrawer();
+      return;
+    }
+
     closeAllModals();
     if (el.modalWaiter) {
       el.modalWaiter.classList.remove('hidden');
@@ -1354,40 +1533,48 @@ function bindEvents() {
 async function loadBillDetails() {
   if (!currentToken) return;
   try {
+    // Prefer freshly fetched data for bill modal accuracy
     const res = await fetchWithRetry(`${API_BASE}/orders/session/${currentToken}`);
+    let order = null;
+    let items = [];
+    let total = 0;
+
     if (res && res.ok) {
       const data = await res.json();
-      const order = data.order;
-      const items = order && order.items ? order.items : [];
-      const total = order ? (order.totalAmount || 0) : 0;
+      order = data.order;
+      items = order && order.items ? order.items : [];
+      total = order ? (order.totalAmount || 0) : 0;
+    } else if (cartOrder) {
+      items = cartOrder.items || [];
+      total = cartOrder.totalAmount || 0;
+    }
 
-      if (el.modalBillTotal) {
-        el.modalBillTotal.textContent = `$${Number(total).toLocaleString('es-AR')}`;
-      }
-      if (el.modalBillStatusText) {
-        el.modalBillStatusText.textContent = items.length > 0
-          ? `${items.length} producto${items.length > 1 ? 's' : ''} registrado${items.length > 1 ? 's' : ''}`
-          : 'Consumo registrado en la mesa';
-      }
+    if (el.modalBillTotal) {
+      el.modalBillTotal.textContent = `$${Number(total).toLocaleString('es-AR')}`;
+    }
+    if (el.modalBillStatusText) {
+      el.modalBillStatusText.textContent = items.length > 0
+        ? `${items.length} producto${items.length > 1 ? 's' : ''} registrado${items.length > 1 ? 's' : ''}`
+        : 'Consumo registrado en la mesa';
+    }
 
-      if (el.modalBillItemsList && el.modalBillNoItems) {
-        if (items.length > 0) {
-          el.modalBillItemsList.innerHTML = items.map(item => `
-            <div class="flex justify-between items-center py-1.5 text-slate-300">
-              <span class="truncate pr-2"><strong class="text-white">${item.quantity}x</strong> ${item.name}</span>
-              <span class="font-semibold text-white shrink-0">$${Number(item.unitPrice * item.quantity).toLocaleString('es-AR')}</span>
-            </div>
-          `).join('');
-          el.modalBillNoItems.classList.add('hidden');
-          if (el.modalBillItemCount) {
-            el.modalBillItemCount.textContent = `${items.length} ítem${items.length > 1 ? 's' : ''}`;
-            el.modalBillItemCount.classList.remove('hidden');
-          }
-        } else {
-          el.modalBillItemsList.innerHTML = '';
-          el.modalBillNoItems.classList.remove('hidden');
-          if (el.modalBillItemCount) el.modalBillItemCount.classList.add('hidden');
+    if (el.modalBillItemsList && el.modalBillNoItems) {
+      if (items.length > 0) {
+        el.modalBillItemsList.innerHTML = items.map(item => `
+          <div class="flex justify-between items-center py-1.5 text-slate-300">
+            <span class="truncate pr-2"><strong class="text-white">${item.quantity}x</strong> ${escapeHtml(item.name)}</span>
+            <span class="font-semibold text-white shrink-0">$${Number(item.unitPrice * item.quantity).toLocaleString('es-AR')}</span>
+          </div>
+        `).join('');
+        el.modalBillNoItems.classList.add('hidden');
+        if (el.modalBillItemCount) {
+          el.modalBillItemCount.textContent = `${items.length} ítem${items.length > 1 ? 's' : ''}`;
+          el.modalBillItemCount.classList.remove('hidden');
         }
+      } else {
+        el.modalBillItemsList.innerHTML = '';
+        el.modalBillNoItems.classList.remove('hidden');
+        if (el.modalBillItemCount) el.modalBillItemCount.classList.add('hidden');
       }
     }
   } catch (err) {
@@ -1531,8 +1718,30 @@ async function loadBillDetails() {
 
   const btnOrderSpecificDish = document.getElementById('btnOrderSpecificDish');
   if (btnOrderSpecificDish) {
-    btnOrderSpecificDish.addEventListener('click', () => {
-      if (selectedDishForOrder) {
+    btnOrderSpecificDish.addEventListener('click', async () => {
+      if (!selectedDishForOrder) return;
+
+      if (canOrderDirectly()) {
+        if (cartAdding) return;
+        const qty = cartDishQty || 1;
+        const notesEl = document.getElementById('dishSheetNotesInput');
+        const notes = notesEl ? notesEl.value.trim() : '';
+        cartAdding = true;
+        btnOrderSpecificDish.disabled = true;
+        btnOrderSpecificDish.innerHTML = '<span class="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin inline-block"></span> Agregando...';
+        try {
+          const result = await addCartItem(selectedDishForOrder.id, qty, notes || undefined);
+          if (result) {
+            closeDishDetailSheet();
+            showToast(`${selectedDishForOrder.name} × ${qty} agregado al carrito.`, 'success');
+          } else {
+            btnOrderSpecificDish.innerHTML = '<span>🛒 Agregar al carrito</span>';
+          }
+        } finally {
+          cartAdding = false;
+          btnOrderSpecificDish.disabled = false;
+        }
+      } else {
         const dishName = selectedDishForOrder.name;
         closeDishDetailSheet();
         closeAllModals();
@@ -1540,6 +1749,25 @@ async function loadBillDetails() {
           showToast('Comandas digitales desactivadas (Modo Carta Informativa). Solicitud enviada al personal.', 'info');
         }
         sendCall('WAITER', 'NOT_APPLICABLE', `Pedido: ${dishName}`);
+      }
+    });
+  }
+
+  // Quantity controls in dish detail sheet
+  const qtyMinusBtn = document.getElementById('dishSheetQtyMinus');
+  const qtyPlusBtn = document.getElementById('dishSheetQtyPlus');
+  const qtyDisplay = document.getElementById('dishSheetQtyDisplay');
+  if (qtyMinusBtn && qtyPlusBtn && qtyDisplay) {
+    qtyMinusBtn.addEventListener('click', () => {
+      if (cartDishQty > 1) {
+        cartDishQty--;
+        qtyDisplay.textContent = String(cartDishQty);
+      }
+    });
+    qtyPlusBtn.addEventListener('click', () => {
+      if (cartDishQty < 50) {
+        cartDishQty++;
+        qtyDisplay.textContent = String(cartDishQty);
       }
     });
   }
@@ -1583,6 +1811,27 @@ async function loadBillDetails() {
     sessionStorage.removeItem('mesaya_token');
     init();
   });
+
+  // Cart drawer handlers
+  const btnCloseCart = document.getElementById('btnCloseCartDrawer');
+  if (btnCloseCart) btnCloseCart.addEventListener('click', closeCartDrawer);
+
+  const btnCartSubmit = document.getElementById('btnCartSubmit');
+  if (btnCartSubmit) btnCartSubmit.addEventListener('click', submitCartOrder);
+
+  const cartDrawer = document.getElementById('cartDrawerBackdrop');
+  if (cartDrawer) {
+    enableSheetSwipeToDismiss('cartDrawerBackdrop', closeCartDrawer);
+  }
+
+  // Cart entry point in menu modal footer
+  const btnOpenCartFromMenu = document.getElementById('btnOpenCartFromMenu');
+  if (btnOpenCartFromMenu) {
+    btnOpenCartFromMenu.addEventListener('click', () => {
+      if (el.modalMenu) el.modalMenu.classList.add('hidden');
+      openCartDrawer();
+    });
+  }
 }
 
 function openSommelierDrawer() {
@@ -1598,6 +1847,107 @@ function closeSommelierDrawer() {
   const drawer = document.getElementById('sommelierSheetBackdrop');
   if (drawer) drawer.classList.remove('active');
   const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden)');
+  if (!anyModalActive) {
+    document.body.classList.remove('modal-open');
+  }
+}
+
+// ==========================================
+// CART DRAWER RENDERING & INTERACTION
+// ==========================================
+function renderCartBadge() {
+  const btn = el.btnOpenMenuHeader;
+  if (!btn) return;
+  const count = cartItemCount();
+  if (count > 0) {
+    btn.innerHTML = `<span class="relative inline-flex">
+      <span class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[9px] font-black flex items-center justify-center">${count}</span>
+      🛒 Ver Carta
+    </span>`;
+  } else {
+    btn.innerHTML = `<svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+    </svg> Ver Carta`;
+  }
+}
+
+function renderCartDrawer() {
+  const drawer = document.getElementById('cartDrawerBackdrop');
+  if (!drawer) return;
+  const itemsList = document.getElementById('cartItemsList');
+  const emptyMsg = document.getElementById('cartEmptyMsg');
+  const totalEl = document.getElementById('cartTotal');
+  const countEl = document.getElementById('cartItemCount');
+  if (!itemsList || !emptyMsg || !totalEl || !countEl) return;
+
+  const items = cartOrder && cartOrder.items ? cartOrder.items : [];
+  if (items.length === 0) {
+    itemsList.innerHTML = '';
+    emptyMsg.classList.remove('hidden');
+    totalEl.textContent = '$0';
+    countEl.textContent = '0 ítems';
+    return;
+  }
+
+  emptyMsg.classList.add('hidden');
+  countEl.textContent = `${items.length} ítem${items.length > 1 ? 's' : ''}`;
+  totalEl.textContent = `$${Number(cartOrder.totalAmount || 0).toLocaleString('es-AR')}`;
+
+  itemsList.innerHTML = items.map(item => {
+    const safeId = escapeHtmlAttr(item.id);
+    const safeName = escapeHtml(item.name);
+    const lineTotal = Number(item.unitPrice * item.quantity).toLocaleString('es-AR');
+    return `<div class="flex items-center justify-between gap-2 py-2.5 border-b border-slate-800/40 last:border-0">
+      <div class="min-w-0 flex-1">
+        <p class="text-xs font-bold text-white truncate">${safeName}</p>
+        <p class="text-[11px] text-slate-400">${item.quantity}x $${Number(item.unitPrice).toLocaleString('es-AR')}${item.notes ? ' • ' + escapeHtml(item.notes) : ''}</p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="text-xs font-mono font-bold text-amber-400">$${lineTotal}</span>
+        <button data-remove-id="${safeId}" class="cart-remove-btn w-7 h-7 rounded-lg bg-red-950/60 border border-red-500/30 text-red-400 flex items-center justify-center text-xs font-bold active:scale-90 transition-all" aria-label="Eliminar ${safeName}">
+          ✕
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+
+  itemsList.querySelectorAll('.cart-remove-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const itemId = btn.getAttribute('data-remove-id');
+      if (itemId) {
+        await removeCartItem(itemId);
+      }
+    });
+  });
+}
+
+function renderCartSubmitBtn() {
+  const btn = document.getElementById('btnCartSubmit');
+  if (!btn) return;
+  if (cartSubmitting) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin inline-block"></span> Enviando...';
+  } else {
+    btn.disabled = false;
+    const count = cartItemCount();
+    btn.innerHTML = count > 0 ? `🛒 Enviar pedido (${count})` : '🛒 Enviar pedido';
+  }
+}
+
+function openCartDrawer() {
+  triggerHaptic();
+  const drawer = document.getElementById('cartDrawerBackdrop');
+  if (!drawer) return;
+  renderCartDrawer();
+  renderCartSubmitBtn();
+  drawer.classList.add('active');
+  document.body.classList.add('modal-open');
+}
+
+function closeCartDrawer() {
+  const drawer = document.getElementById('cartDrawerBackdrop');
+  if (drawer) drawer.classList.remove('active');
+  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden), #modalCart:not(.hidden)');
   if (!anyModalActive) {
     document.body.classList.remove('modal-open');
   }
@@ -1765,14 +2115,19 @@ async function handleSommelierQuery(queryText) {
 }
 
 let activeRestaurantConfig = null;
+let restaurantConfigLoaded = false;
 let selectedTipPercentage = 10;
 
 async function loadRestaurantModuleConfig(slug) {
   try {
     const res = await fetchWithRetry(`${API_BASE}/restaurants/${encodeURIComponent(slug)}/config`);
-    if (!res.ok) return;
+    if (!res.ok) {
+      restaurantConfigLoaded = false;
+      return;
+    }
     const config = await res.json();
     activeRestaurantConfig = config;
+    restaurantConfigLoaded = true;
 
     // Adaptar textos y acciones según allowOrdering (Comandas Digitales vs Modo Carta Informativa)
     if (config.allowOrdering === false) {
@@ -1785,12 +2140,19 @@ async function loadRestaurantModuleConfig(slug) {
       }
     } else {
       if (el.btnOrderFromMenu) {
-        el.btnOrderFromMenu.innerHTML = '<span>🙋 Llamar al Mozo para Pedir</span>';
+        el.btnOrderFromMenu.innerHTML = '<span>🛒 Ver carrito y enviar</span>';
       }
       const orderSpecificBtn = document.getElementById('btnOrderSpecificDish');
       if (orderSpecificBtn) {
         orderSpecificBtn.innerHTML = '<span>🛎️ Pedir este plato al Mozo</span>';
       }
+    }
+
+    const cartSubmitHint = document.getElementById('cartSubmitHint');
+    if (cartSubmitHint) {
+      cartSubmitHint.textContent = config.requireWaiterValidation === false
+        ? 'El precio final se calcula en el servidor. El pedido se enviará directo a cocina.'
+        : 'El precio final se calcula en el servidor. El mozo validará el pedido antes del envío a cocina.';
     }
 
     // Apply Google Review Deep Link if available (validado contra caracteres maliciosos)
@@ -1814,6 +2176,7 @@ async function loadRestaurantModuleConfig(slug) {
       }
     }
   } catch (err) {
+    restaurantConfigLoaded = false;
     console.warn('Error al cargar configuración modular:', err);
   }
 }

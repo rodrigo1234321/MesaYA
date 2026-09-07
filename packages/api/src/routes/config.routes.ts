@@ -26,6 +26,28 @@ export const configRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   /**
+   * GET /v1/restaurants/:slug/capabilities
+   * Endpoint PÚBLICO que expone la disponibilidad efectiva de cada módulo.
+   * NO duplica los flags almacenados: los traduce a estados operativos.
+   * SEGURIDAD: No expone credenciales ni secretos de pago.
+   */
+  fastify.get<{ Params: { slug: string } }>(
+    '/restaurants/:slug/capabilities',
+    async (request, reply) => {
+      const { slug } = request.params;
+      const capabilities = await ConfigService.getCapabilities(slug);
+
+      if (!capabilities) {
+        return reply.status(404).send({
+          error: 'Restaurante no encontrado'
+        });
+      }
+
+      return reply.send(capabilities);
+    }
+  );
+
+  /**
    * GET /v1/admin/restaurants/:id/config
    * Endpoint de configuración para el dashboard administrativo.
    */
