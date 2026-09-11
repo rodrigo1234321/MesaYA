@@ -37,7 +37,10 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
 
   const getTablePermanentUrl = (label: string) => {
     const slug = restaurantSlug || restaurantId;
-    const clientBaseUrl = (import.meta as any).env?.VITE_CLIENT_WEB_URL;
+    // Keep QR/mesa links on the public client even when this dashboard was
+    // built with the shared VITE_CLIENT_URL variable used by the other apps.
+    const clientBaseUrl = (import.meta as any).env?.VITE_CLIENT_WEB_URL ||
+      (import.meta as any).env?.VITE_CLIENT_URL;
     if (clientBaseUrl) {
       const base = clientBaseUrl.replace(/\/$/, '');
       return `${base}/?r=${encodeURIComponent(slug)}&m=${encodeURIComponent(label)}`;
