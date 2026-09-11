@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+.git
+.vercel
+.tmp
+dist
+**/dist
+build
+**/build
+screenshots
+docs
+*.db
+*.sqlite
+.env
+.env.*
+!.env.example
