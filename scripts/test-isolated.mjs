@@ -21,7 +21,7 @@ const DEV_DB_PATH = path.resolve(projectRoot, 'packages', 'api', 'prisma', 'dev.
 const QA_ROOT = path.resolve(projectRoot, '.tmp', 'qa');
 
 const PRISMA_CLI = path.resolve(projectRoot, 'node_modules', 'prisma', 'build', 'index.js');
-const TSX_CLI = path.resolve(projectRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const TSX_CLI = path.resolve(projectRoot, 'scripts', 'run-tsx.mjs');
 const VITEST_CLI = path.resolve(projectRoot, 'node_modules', 'vitest', 'vitest.mjs');
 const COMMAND_TIMEOUT_MS = 15 * 60 * 1000;
 const runnerStarted = Date.now();

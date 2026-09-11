@@ -214,6 +214,29 @@ export interface TablePositionUpdateDTO {
 // CAPA 3: ANALYTICS & REVPASH METRICS
 // ==========================================
 
+export type AnalyticsDataQuality = 'MEASURED' | 'PARTIAL' | 'NO_DATA' | 'ESTIMATED';
+
+/**
+ * Metadatos comunes para que una cifra nunca pierda su contexto operativo.
+ * ESTIMATED queda reservado para proyecciones explícitas; los endpoints
+ * operativos no deben inventar valores para completar una tarjeta.
+ */
+export interface AnalyticsMetricDTO {
+  value: number;
+  unit: string;
+  period: { from: string; to: string; timezone: string };
+  sampleSize: number;
+  source: string;
+  quality: AnalyticsDataQuality;
+}
+
+export interface AnalyticsQualityDTO {
+  timezone: string;
+  period: { from: string; to: string };
+  measuredRecords: number;
+  warnings: string[];
+}
+
 export interface RTMSAnalyticsSummaryDTO {
   restaurantId: string;
   restaurantName: string;
@@ -231,6 +254,8 @@ export interface RTMSAnalyticsSummaryDTO {
   averageDurationMinutes: number;
   occupancyRatePercentage: number;
   turnsPerTableAverage: number;
+  metrics?: Record<string, AnalyticsMetricDTO>;
+  quality?: AnalyticsQualityDTO;
 }
 
 export interface PhaseMetricsDTO {
@@ -239,6 +264,8 @@ export interface PhaseMetricsDTO {
   eatingDwellAvgMinutes: number; // Served -> Bill Requested
   paymentToVacateAvgMinutes: number; // Bill/Paid -> Vacated (sobremesa)
   cleaningTurnaroundAvgMinutes: number; // Vacated -> Cleaned/Available
+  metrics?: Record<string, AnalyticsMetricDTO>;
+  quality?: AnalyticsQualityDTO;
 }
 
 export interface HeatmapHourCellDTO {
@@ -248,6 +275,7 @@ export interface HeatmapHourCellDTO {
   occupancyPercentage: number;
   sessionsCount: number;
   revenue: number;
+  metrics?: Record<string, AnalyticsMetricDTO>;
 }
 
 export interface TablePerformanceDTO {
@@ -261,4 +289,6 @@ export interface TablePerformanceDTO {
   averageTurnTimeMinutes: number;
   revPASH: number;
   utilizationPercentage: number;
+  metrics?: Record<string, AnalyticsMetricDTO>;
+  quality?: AnalyticsQualityDTO;
 }

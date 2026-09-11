@@ -138,22 +138,24 @@ export const MetricsView: React.FC<MetricsViewProps> = ({ restaurantId }) => {
 
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-1.5">
           <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Satisfacción (NPS)</span>
+            <span>Satisfacción (1–5)</span>
             <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
           </div>
-          <p className="text-xl font-extrabold text-white">{metrics.npsAverage} / 5.0</p>
-          <p className="text-[10px] text-amber-400 font-semibold">Calificación comensales</p>
+          <p className="text-xl font-extrabold text-white">{metrics.ratingSampleSize ? `${metrics.ratingAverage ?? metrics.npsAverage} / 5.0` : 'Sin datos'}</p>
+          <p className="text-[10px] text-amber-400 font-semibold">
+            {metrics.ratingSampleSize ? `Calificación comensales (${metrics.ratingSampleSize} respuestas)` : 'Sin datos medidos'}
+          </p>
         </div>
 
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-1.5">
           <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Ahorro Estimado</span>
+            <span>Medición de ahorro</span>
             <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
           <p className="text-xl font-extrabold text-emerald-400">
-            ~{Math.round(metrics.totalCallsToday * 0.6)} viajes
+            {metrics.totalCallsToday > 0 ? 'Disponible en próximo corte' : 'Sin datos medidos'}
           </p>
-          <p className="text-[10px] text-slate-400 font-medium">Viajes muertos evitados</p>
+          <p className="text-[10px] text-slate-400 font-medium">No se proyectan ahorros sin medición</p>
         </div>
       </div>
 

@@ -2,7 +2,8 @@
   "name": "@mesaya/qr-generator",
   "version": "1.0.0",
   "scripts": {
-    "generate": "tsx generate.ts"
+    "generate": "node ../../scripts/run-tsx.mjs generate.ts",
+    "test": "node ../../scripts/run-tsx.mjs --test qr-url.test.ts"
   },
   "dependencies": {
     "qrcode": "^1.5.3"

@@ -102,8 +102,47 @@ export async function seedDatabase(customPrisma?: PrismaClient) {
   }
 }
 
+/**
+ * Seeds a fresh local development database without weakening the destructive
+ * test-seed guard. This path is intentionally separate from `seedDatabase`:
+ * it only accepts an explicitly opted-in local SQLite URL and refuses to run
+ * when the database already contains a restaurant.
+ */
+export function assertSafeLocalSeedEnvironment(
+  dbUrl: string = process.env.DATABASE_URL || '',
+  nodeEnv: string = process.env.NODE_ENV || ''
+): void {
+  if (nodeEnv === 'production') {
+    throw new Error('GUARD_VIOLATION: El seed local no puede ejecutarse en producción');
+  }
+  if (process.env.MESAYA_LOCAL_SEED !== 'true') {
+    throw new Error('GUARD_VIOLATION: El seed local requiere MESAYA_LOCAL_SEED=true');
+  }
+  if (!dbUrl.startsWith('file:') || /supabase\.co|postgres(?:ql)?:/i.test(dbUrl)) {
+    throw new Error('GUARD_VIOLATION: El seed local sólo acepta una base SQLite local');
+  }
+}
+
+export async function seedLocalDatabase(customPrisma?: PrismaClient) {
+  assertSafeLocalSeedEnvironment();
+  const prisma = customPrisma ?? new PrismaClient();
+  try {
+    const existingRestaurants = await prisma.restaurant.count();
+    if (existingRestaurants > 0) {
+      console.log(`ℹ️ Base local ya inicializada (${existingRestaurants} restaurante(s)); no se sobrescriben datos.`);
+      return { seeded: false, reason: 'already_initialized' as const };
+    }
+    await runSeedLogic(prisma);
+    return { seeded: true };
+  } finally {
+    if (!customPrisma) {
+      await prisma.$disconnect();
+    }
+  }
+}
+
 async function runSeedLogic(prisma: PrismaClient) {
-  console.log('🌱 Sembrando datos para MesaYA (Restaurante Piloto en Mar del Plata)...');
+  console.log('🌱 Sembrando datos demo para MesaYA (Trattoria del Puerto)...');
 
   // 1. Limpiar datos previos
   await prisma.tableStateEvent.deleteMany();
@@ -125,7 +164,7 @@ async function runSeedLogic(prisma: PrismaClient) {
   await prisma.subscription.deleteMany();
   await prisma.restaurant.deleteMany();
 
-  // 2. Crear Restaurante Piloto: Trattoria del Puerto
+  // 2. Crear restaurante demo: Trattoria del Puerto
   const restaurant = await prisma.restaurant.create({
     data: {
       name: 'Trattoria del Puerto',
@@ -430,6 +469,7 @@ async function runSeedLogic(prisma: PrismaClient) {
           name: itemData.name,
           description: itemData.description,
           price: itemData.price,
+          priceMinor: Math.round(itemData.price * 100), // C3: dual-write
           imageUrl: itemData.imageUrl,
           isAvailable: true,
           isFeatured: itemData.isFeatured,
@@ -438,6 +478,47 @@ async function runSeedLogic(prisma: PrismaClient) {
         }
       });
     }
+  }
+
+  // E05 — fixture observable: config conservadora + una tanda en revisión excepcional
+  // para que Servicio muestre una tarjeta ORDER_VALIDATION poblada en local.
+  await prisma.restaurantModuleConfig.upsert({
+    where: { restaurantId: restaurant.id },
+    create: { restaurantId: restaurant.id, allowOrdering: true, requireWaiterValidation: false, reviewQuantityThreshold: 6 },
+    update: { reviewQuantityThreshold: 6 }
+  });
+  try {
+    const demoTable = createdTables[0];
+    const demoSession = await prisma.tableSession.findFirst({ where: { tableId: demoTable.id, shiftId: shift.id } });
+    const demoCategory = await prisma.menuCategory.findFirst({ where: { restaurantId: restaurant.id } });
+    const demoItem = demoCategory
+      ? await prisma.menuItem.findFirst({ where: { categoryId: demoCategory.id } })
+      : null;
+    if (demoSession && demoItem) {
+      const demoOrder = await prisma.order.create({
+        data: {
+          tableSessionId: demoSession.id,
+          status: 'PENDING_VALIDATION',
+          source: 'GUEST_QR',
+          reviewReasonCode: 'QUANTITY_THRESHOLD',
+          reviewReasonDetail: 'Seed E05: 7× supera el umbral de 6; revisar antes de enviar a cocina.'
+        }
+      });
+      await prisma.orderItem.create({
+        data: {
+          orderId: demoOrder.id,
+          menuItemId: demoItem.id,
+          quantity: 7,
+          unitPrice: demoItem.price,
+          unitPriceMinor: Math.round(Number(demoItem.price) * 100),
+          notes: 'Alergia al gluten; carta validada (contexto E05, no bloquea)',
+          addedByGuest: 'Seed E05'
+        }
+      });
+      console.log(`🧪 Seed E05: orden demo en revisión ${demoOrder.id} sobre ${demoTable.label}`);
+    }
+  } catch (seedE05Error) {
+    console.warn('⚠️ Seed E05 omitido sin romper el seed base:', (seedE05Error as Error)?.message);
   }
 
   console.log('✅ Seed completado con éxito!');

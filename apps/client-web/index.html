@@ -10,7 +10,53 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,800;1,400&family=Outfit:wght@500;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body id="appBody" class="min-h-[100dvh] flex flex-col justify-between max-w-md mx-auto p-3.5 sm:p-4 select-none antialiased relative theme-gourmet pb-safe">
+<body id="appBody" class="min-h-[100dvh] flex flex-col justify-between max-w-md mx-auto w-full overflow-x-hidden p-3.5 sm:p-4 select-none antialiased relative theme-gourmet pb-safe">
+
+  <!-- Public queue mode (?fila=<slug>): works from a phone before seating and
+       does not depend on a table session token. -->
+  <section id="waitlistPublicRoot" class="hidden min-h-[calc(100dvh-2rem)] flex-col justify-between py-3" aria-live="polite">
+    <div class="space-y-4">
+      <header class="flex items-center gap-3 border-b border-slate-800/70 pb-3">
+        <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-xl shadow-lg shadow-amber-500/20">🍽️</div>
+        <div>
+          <p class="text-[10px] uppercase tracking-[0.18em] text-amber-400 font-black">MesaYA</p>
+          <h1 id="waitlistRestaurantName" class="text-lg font-black text-white">Fila virtual</h1>
+        </div>
+      </header>
+
+      <div id="waitlistJoinView" class="space-y-3">
+        <div class="space-y-1">
+          <p class="text-2xl font-black text-white">Guardá tu lugar</p>
+          <p id="waitlistIntroText" class="text-xs leading-relaxed text-slate-400">Ingresá tus datos y te avisamos cuando una mesa esté lista.</p>
+        </div>
+        <form id="waitlistJoinForm" class="space-y-3 rounded-3xl border border-amber-500/25 bg-slate-900/90 p-4 shadow-xl">
+          <label class="block space-y-1.5"><span class="text-[11px] font-bold text-slate-300">Nombre o apellido</span><input id="waitlistGuestName" required minlength="2" maxlength="50" autocomplete="name" class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-amber-500" placeholder="Ej. Familia Pérez"></label>
+          <label class="block space-y-1.5"><span class="text-[11px] font-bold text-slate-300">Cantidad de personas</span><input id="waitlistPartySize" required type="number" min="1" max="20" step="1" inputmode="numeric" value="2" class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-amber-500"></label>
+          <label class="block space-y-1.5"><span class="text-[11px] font-bold text-slate-300">Celular para avisarte</span><input id="waitlistPhone" required type="tel" minlength="8" maxlength="20" autocomplete="tel" class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-amber-500" placeholder="223 555 1234"></label>
+          <div id="waitlistPreOrderSection" class="hidden space-y-2 rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+            <div><p class="text-xs font-black text-white">Adelantá tu pedido</p><p class="text-[10px] text-slate-500">Se valida con la carta y se envía a cocina sólo al sentarte.</p></div>
+            <div id="waitlistPreOrderList" class="space-y-2"></div>
+          </div>
+          <label class="flex items-start gap-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3"><input id="waitlistConsent" required type="checkbox" class="mt-0.5 accent-amber-500"><span class="text-[10px] leading-relaxed text-slate-400">Acepto que el local use estos datos sólo para gestionar mi turno y avisarme.</span></label>
+          <button id="waitlistJoinButton" type="submit" class="w-full rounded-xl bg-amber-500 px-4 py-3 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/20 active:scale-[.98]">Sumarme a la fila</button>
+          <p id="waitlistJoinError" class="hidden text-[11px] font-semibold text-red-300"></p>
+        </form>
+      </div>
+
+      <div id="waitlistTicketView" class="hidden space-y-3">
+        <div class="rounded-3xl border border-emerald-500/30 bg-emerald-950/30 p-5 text-center shadow-xl">
+          <p class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300">Tu ticket</p>
+          <p id="waitlistTicketGuest" class="mt-2 text-xl font-black text-white"></p>
+          <div class="mt-4 grid grid-cols-2 gap-2"><div class="rounded-2xl bg-slate-950/70 p-3"><p class="text-[10px] text-slate-500">Lugar</p><p id="waitlistTicketPosition" class="text-2xl font-black text-amber-300">—</p></div><div class="rounded-2xl bg-slate-950/70 p-3"><p class="text-[10px] text-slate-500">Espera estimada</p><p id="waitlistTicketWait" class="text-lg font-black text-white">—</p></div></div>
+          <p id="waitlistTicketStatus" class="mt-4 text-sm font-bold text-emerald-200"></p>
+          <p id="waitlistTicketMeta" class="mt-2 text-[10px] text-slate-500"></p>
+        </div>
+        <button id="waitlistNewTicketButton" type="button" class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-xs font-bold text-slate-300">Ingresar otro grupo</button>
+      </div>
+      <div id="waitlistUnavailableView" class="hidden rounded-3xl border border-red-500/30 bg-red-950/30 p-5 text-center"><p class="text-3xl">⛔</p><p class="mt-2 font-black text-white">La fila no está disponible</p><p id="waitlistUnavailableText" class="mt-2 text-xs text-slate-400"></p></div>
+    </div>
+    <p class="pt-4 text-center text-[10px] text-slate-600">MesaYA • El estado se actualiza automáticamente</p>
+  </section>
 
   <!-- 🌟 COMPACT PREMIUM HEADER -->
   <header class="flex items-center justify-between py-1.5 pb-2.5 border-b border-slate-800/70 stagger-1 mb-2.5">
@@ -36,13 +82,14 @@
       </div>
     </div>
 
-    <!-- Quick Menu Pill Button -->
-    <button id="btnOpenMenuHeader" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] font-bold text-amber-300 active:scale-95 transition-transform hover:bg-amber-500/20 shadow-sm">
-      <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
-      </svg>
-      Ver Carta
-    </button>
+    <!-- Quick Menu / collaborative cart actions -->
+    <div class="flex items-center gap-1.5">
+      <button id="btnOpenCartHeader" class="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-bold text-emerald-300 active:scale-95 transition-transform hover:bg-emerald-500/20 shadow-sm" aria-label="Abrir carrito colaborativo">
+        <span aria-hidden="true">🛒</span>
+        <span id="headerCartLabel">Carrito</span>
+        <span id="headerCartCount" class="hidden min-w-4 h-4 px-1 rounded-full bg-emerald-400 text-[9px] leading-4 text-slate-950 font-black text-center">0</span>
+      </button>
+    </div>
   </header>
 
   <!-- MAIN SCROLLABLE CONTAINER -->
@@ -55,7 +102,9 @@
     </div>
 
     <!-- EXPIRED / CLOSED SESSION NOTICE -->
-    <div id="stateExpired" class="hidden bg-slate-900/90 border border-red-500/30 rounded-2xl p-5 text-center space-y-3 shadow-xl">
+    <div id="networkStatus" class="hidden rounded-2xl border border-amber-500/40 bg-amber-950/70 px-4 py-3 text-xs font-bold leading-relaxed text-amber-100 shadow-lg" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="stateExpired" class="hidden bg-slate-900/90 border border-red-500/30 rounded-2xl p-5 text-center space-y-3 shadow-xl" role="status" aria-live="polite" aria-atomic="true">
       <div class="w-12 h-12 rounded-full bg-red-950/60 text-red-400 flex items-center justify-center mx-auto border border-red-500/30">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
@@ -72,43 +121,43 @@
       </div>
     </div>
 
-    <!-- 🌟 1. SMART TABLE SERVICE HUB (CLEAN & MINIMALIST - 3 COLUMNS) -->
+    <!-- C02: tres acciones de servicio en columna touch-first (56–64 px); horizontal solo en viewport ancho -->
     <div id="actionsContainer" class="stagger-2 space-y-1.5">
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <!-- Button 1: Pedir la Cuenta -->
-        <button id="btnActionBill" class="p-3 rounded-2xl bg-slate-900/90 border border-emerald-500/30 hover:border-emerald-500/60 flex flex-col items-center justify-center text-center group active:scale-95 transition-all shadow-md">
-          <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-1.5 group-hover:scale-105 transition-transform">
+        <button id="btnActionBill" class="p-3 min-h-[60px] rounded-2xl bg-slate-900/90 border border-emerald-500/30 hover:border-emerald-500/60 flex flex-row sm:flex-col items-center sm:justify-center gap-3 sm:gap-0 text-left sm:text-center group active:scale-95 transition-all shadow-md">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center sm:mb-1.5 group-hover:scale-105 transition-transform shrink-0">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <rect x="2" y="5" width="20" height="14" rx="2" stroke-width="2"/>
               <line x1="2" y1="10" x2="22" y2="10" stroke-width="2"/>
             </svg>
           </div>
-          <span class="font-extrabold text-xs text-white block leading-tight">Pedir Cuenta</span>
+          <span class="font-extrabold text-sm text-white block leading-tight">Pedir la cuenta</span>
         </button>
 
         <!-- Button 2: Llamar al Mozo -->
-        <button id="btnActionWaiter" class="p-3 rounded-2xl bg-slate-900/90 border border-indigo-500/30 hover:border-indigo-500/60 flex flex-col items-center justify-center text-center group active:scale-95 transition-all shadow-md">
-          <div class="w-10 h-10 rounded-xl bg-indigo-500/15 text-indigo-400 flex items-center justify-center mb-1.5 group-hover:scale-105 transition-transform">
+        <button id="btnActionWaiter" class="p-3 min-h-[60px] rounded-2xl bg-slate-900/90 border border-indigo-500/30 hover:border-indigo-500/60 flex flex-row sm:flex-col items-center sm:justify-center gap-3 sm:gap-0 text-left sm:text-center group active:scale-95 transition-all shadow-md">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/15 text-indigo-400 flex items-center justify-center sm:mb-1.5 group-hover:scale-105 transition-transform shrink-0">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
             </svg>
           </div>
-          <span class="font-extrabold text-xs text-white block leading-tight">Llamar Mozo</span>
+          <span class="font-extrabold text-sm text-white block leading-tight">Llamar al mozo</span>
         </button>
 
         <!-- Button 3: Insumos & Vajilla -->
-        <button id="btnActionSupplies" class="p-3 rounded-2xl bg-slate-900/90 border border-amber-500/30 hover:border-amber-500/60 flex flex-col items-center justify-center text-center group active:scale-95 transition-all shadow-md">
-          <div class="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center mb-1.5 group-hover:scale-105 transition-transform">
+        <button id="btnActionSupplies" class="p-3 min-h-[60px] rounded-2xl bg-slate-900/90 border border-amber-500/30 hover:border-amber-500/60 flex flex-row sm:flex-col items-center sm:justify-center gap-3 sm:gap-0 text-left sm:text-center group active:scale-95 transition-all shadow-md">
+          <div class="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center sm:mb-1.5 group-hover:scale-105 transition-transform shrink-0">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
             </svg>
           </div>
-          <span class="font-extrabold text-xs text-white block leading-tight">Insumos</span>
+          <span class="font-extrabold text-sm text-white block leading-tight">Pedir insumos</span>
         </button>
       </div>
     </div>
 
-    <!-- ACTIVE CALL BANNER (CUANDO HAY UN LLAMADO EN CURSO) -->
+    <!-- ACTIVE CALL BANNER (UNA TARJETA POR CADA MOTIVO ACTIVO) -->
     <div id="activeCallCard" class="hidden rounded-2xl bg-gradient-to-b from-indigo-950/90 to-slate-900/95 border border-indigo-500/50 p-3.5 shadow-xl shadow-indigo-950/40 space-y-2.5 animate-in fade-in">
       <div class="flex items-center justify-between">
         <div class="flex items-center space-x-2.5">
@@ -117,30 +166,22 @@
             <span id="pingDot" class="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
           </span>
           <div>
-            <h4 id="activeCallTitle" class="text-xs font-bold text-white tracking-tight">Mozo notificado</h4>
-            <p id="activeCallSubtitle" class="text-[10px] text-slate-300">Tu solicitud está en camino a tu mesa</p>
+            <h4 id="activeCallTitle" class="text-xs font-bold text-white tracking-tight">Solicitudes enviadas</h4>
+            <p id="activeCallSubtitle" class="text-[10px] text-slate-300">El estado de cada motivo se actualiza automáticamente</p>
           </div>
         </div>
         <span id="activeCallBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-          Pendiente
+          0 activas
         </span>
       </div>
 
-      <div id="activeCallDetails" class="bg-slate-950/80 rounded-xl p-2.5 text-xs text-slate-300 border border-slate-800 flex items-center justify-between">
-        <span id="activeCallDetailText" class="font-medium text-[11px]">Cuenta (Mercado Pago)</span>
-        <span id="activeCallTimer" class="font-mono text-amber-400 font-bold text-xs">0:00</span>
-      </div>
-
-      <!-- Cancel / "Ya fui atendido" -->
-      <button id="btnCancelCall" class="w-full py-2 px-3 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700 text-[11px] font-semibold text-slate-300 active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5">
-        <span>✓ Ya fui atendido / Cancelar</span>
-      </button>
+      <div id="activeCallList" class="space-y-2.5" aria-live="polite"></div>
     </div>
 
     <!-- 🌟 HERO PRINCIPAL: BOTÓN GIGANTE "CARTA" CON FOTO GASTRONÓMICA REAL -->
-    <section id="heroMenuCard" class="stagger-3 relative overflow-hidden rounded-3xl bg-slate-900 border border-amber-500/40 shadow-2xl shadow-amber-950/30 group cursor-pointer active:scale-[0.98] transition-all">
+    <section id="heroMenuCard" class="stagger-3 relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-slate-900 border border-amber-500/40 shadow-2xl shadow-amber-950/30 group cursor-pointer active:scale-[0.98] transition-all">
       <!-- Background Image with High-Res Gourmet Food Photography -->
-      <div class="relative h-52 sm:h-60 w-full overflow-hidden">
+      <div class="relative flex min-h-0 flex-1 w-full overflow-hidden">
         <img id="heroCoverImage" 
              src="https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=1200&q=85" 
              alt="Carta Gastronómica" 
@@ -177,36 +218,22 @@
       </div>
     </section>
 
-    <!-- 🌟 PLATOS DESTACADOS: STORY CARDS (APPETITE APPEAL) -->
-    <div id="featuredDishesSection" class="stagger-4 space-y-2">
-      <div class="flex items-center justify-between px-0.5">
-        <h3 class="text-[11px] font-extrabold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-          <span>⭐</span> Platos Estrella de la Casa
-        </h3>
-        <span class="text-[9px] text-slate-400">Toca para ver ficha</span>
-      </div>
-
-      <!-- Horizontal Scrollable Story Cards -->
-      <div id="featuredStoryCardsContainer" class="flex items-center gap-2.5 overflow-x-auto pb-1.5 no-scrollbar snap-x snap-mandatory">
-        <!-- Injected Dynamically by app.js -->
-      </div>
-    </div>
-
   </main>
 
   <!-- ==========================================
       MODAL: VISOR DE CARTA COMPLETA INTERACTIVA
   ========================================== -->
-  <div id="modalMenu" class="fixed inset-0 bg-slate-950/95 backdrop-blur-lg z-50 hidden flex flex-col p-3 sm:p-5">
-    <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+  <div id="modalMenu" class="fixed inset-0 bg-slate-950/95 backdrop-blur-lg z-50 hidden flex flex-col p-3 sm:p-5" role="dialog" aria-modal="true" aria-labelledby="menuHeading" tabindex="-1">
+    <div class="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
       <div class="flex items-center gap-2">
         <span class="text-lg">📖</span>
         <div>
-          <h3 class="text-sm font-extrabold text-white">Carta Digital & Precios</h3>
+          <h3 id="menuHeading" class="text-sm font-extrabold text-white">Carta Digital & Precios</h3>
           <p id="menuRestaurantSubtitle" class="text-[11px] text-amber-400">Carta Tradicional de Autor</p>
+          <p class="text-[10px] text-slate-400">Tocá un plato para ver el detalle y agregarlo al carrito.</p>
         </div>
       </div>
-      <button id="btnCloseModalMenu" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-200 border border-slate-700">
+      <button id="btnCloseModalMenu" type="button" aria-label="Cerrar carta" class="px-3 py-1.5 min-w-[48px] min-h-[48px] bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-200 border border-slate-700">
         Cerrar ✕
       </button>
     </div>
@@ -217,18 +244,62 @@
     </div>
 
     <!-- Interactive Menu Sections & Food Items Container -->
-    <div id="dynamicMenuCategoriesContainer" class="flex-1 overflow-y-auto py-4 space-y-6 pr-1">
+    <div id="dynamicMenuCategoriesContainer" class="flex-1 min-h-0 overflow-y-auto py-4 space-y-6 pr-1">
       <!-- Injected Dynamically -->
     </div>
 
     <!-- In-Modal Call Action Button -->
-    <div class="pt-3 border-t border-slate-800 flex gap-2">
+    <div class="pt-3 border-t border-slate-800 flex gap-2 shrink-0">
       <button id="btnOpenSommelierModal" class="px-3.5 py-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 font-extrabold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-sm">
         <span class="text-sm">✨</span>
         <span>Sommelier IA</span>
       </button>
       <button id="btnOrderFromMenu" class="flex-1 py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 font-extrabold text-xs text-slate-950 flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20 active:scale-95 transition-all">
-        <span>🙋 Llamar al Mozo para Pedir</span>
+        <span>🛒 Ver carrito colaborativo</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- C04: CARRITO COMO BORRADOR — claramente separado del consumo cobrado -->
+  <div id="modalCart" class="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="cartHeading" tabindex="-1">
+    <div class="w-full max-w-md bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-5 space-y-4 animate-in slide-in-from-bottom max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h3 id="cartHeading" class="text-lg font-extrabold text-white">En tu carrito — borrador</h3>
+          <p id="cartCollaborativeHint" class="text-xs text-slate-400">Borrador colaborativo: lo que agregue cualquier comensal aparece aquí. Todavía no se cobró nada.</p>
+          <p id="cartNoChargeHint" class="mt-1 text-[11px] leading-relaxed text-amber-300/90">Agregar al carrito no genera cobro. El cobro es presencial con el mozo. El total de abajo es solo de este borrador.</p>
+        </div>
+        <button id="btnCloseModalCart" type="button" class="w-12 h-12 min-w-[48px] min-h-[48px] rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-bold transition-colors shrink-0" aria-label="Cerrar carrito">✕</button>
+      </div>
+      <div id="cartDraftMeta" class="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 flex items-center justify-between gap-2 text-[11px]">
+        <span class="text-slate-400">Estado</span>
+        <span id="cartDraftStatusLabel" class="font-bold text-slate-200">Borrador editable</span>
+      </div>
+      <div id="cartItemsContainer" class="space-y-2">
+        <p id="cartEmptyState" class="text-center py-8 text-xs text-slate-500">Todavía no hay platos en el carrito. Agregá desde la carta; podés volver sin perder la posición.</p>
+        <div id="cartItemsList" class="space-y-2"></div>
+      </div>
+      <div class="flex items-center justify-between border-t border-slate-800 pt-3">
+        <span id="cartTotalLabel" class="text-xs font-bold uppercase tracking-wider text-slate-400">Total borrador</span>
+        <span id="cartTotal" class="text-xl font-black text-amber-400">$0</span>
+      </div>
+      <p id="cartTotalDisclaimer" class="text-[11px] text-slate-400">Este total no es la cuenta. La cuenta real suma todas las tandas enviadas y se ve en “Pedir la cuenta”.</p>
+      <p id="cartOrderStatus" class="hidden text-xs rounded-xl border px-3 py-2 leading-relaxed"></p>
+      <p id="cartError" class="hidden text-xs rounded-xl border border-rose-500/30 bg-rose-950/30 px-3 py-2 leading-relaxed text-rose-200"></p>
+      <!-- C05: historial de tandas integrado al recorrido del carrito -->
+      <section id="orderHistorySection" class="hidden border-t border-slate-800 pt-4 space-y-3" aria-labelledby="orderHistoryHeading">
+        <div>
+          <h4 id="orderHistoryHeading" class="text-sm font-black text-white">Tus pedidos</h4>
+          <p class="text-[11px] leading-relaxed text-slate-400">Cada envío queda separado y conserva su estado. El borrador de arriba todavía no forma parte de este historial.</p>
+        </div>
+        <div id="orderHistoryList" class="space-y-2"></div>
+        <p id="orderHistoryEmpty" class="text-[11px] text-slate-500">Todavía no enviaste tandas. Cuando confirmes un pedido, lo vas a encontrar acá.</p>
+      </section>
+      <button id="btnSubmitCart" class="w-full min-h-[48px] py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 font-extrabold text-xs text-slate-950 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-[0.98] transition-all">
+        <span>Enviar pedido — confirmar</span>
+      </button>
+      <button id="btnCartCallWaiter" class="w-full min-h-[48px] py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 font-bold text-xs text-slate-200 border border-slate-700 transition-all">
+        🙋 Llamar al mozo
       </button>
     </div>
   </div>
@@ -236,7 +307,7 @@
   <!-- =======================================================
       🌟 NATIVE MOBILE BOTTOM SHEET DRAWER (DISH DETAIL)
   ======================================================= -->
-  <div id="dishDetailSheetBackdrop" class="bottom-sheet-backdrop">
+  <div id="dishDetailSheetBackdrop" class="bottom-sheet-backdrop" role="dialog" aria-modal="true" aria-labelledby="dishSheetTitle" aria-hidden="true" inert>
     <div class="bottom-sheet-content">
       <div class="drag-handle-container">
         <div class="drag-handle-pill"></div>
@@ -246,16 +317,16 @@
       <div class="relative h-52 w-full overflow-hidden bg-slate-950 shrink-0">
         <img id="dishSheetImage" src="" alt="Plato" class="w-full h-full object-cover">
         <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent"></div>
-        <button id="btnCloseDishSheet" class="absolute top-3 right-3 w-8 h-8 rounded-full bg-slate-950/80 backdrop-blur-md text-white flex items-center justify-center text-xs font-bold border border-slate-700">
+        <button id="btnCloseDishSheet" type="button" aria-label="Cerrar detalle del plato" class="absolute top-3 right-3 w-12 h-12 min-w-[48px] min-h-[48px] rounded-full bg-slate-950/80 backdrop-blur-md text-white flex items-center justify-center text-xs font-bold border border-slate-700">
           ✕
         </button>
       </div>
 
       <!-- Dish Content Body -->
-      <div class="p-5 space-y-4 overflow-y-auto flex-1 bg-slate-900">
+      <div class="p-5 space-y-4 overflow-y-auto flex-1 min-h-0 bg-slate-900" role="region" tabindex="0" aria-label="Detalle del plato">
         <div class="flex items-start justify-between gap-3">
           <div>
-            <h3 id="dishSheetTitle" class="text-lg font-extrabold text-white leading-tight">
+            <h3 id="dishSheetTitle" class="text-lg font-extrabold text-white leading-tight break-words">
               Plato
             </h3>
             <div id="dishSheetTagsContainer" class="flex flex-wrap gap-1.5 mt-2">
@@ -267,7 +338,7 @@
           </span>
         </div>
 
-        <p id="dishSheetDescription" class="text-xs text-slate-300 leading-relaxed">
+        <p id="dishSheetDescription" class="text-xs text-slate-300 leading-relaxed break-words">
           Elaborado artesanalmente en el momento con ingredientes frescos de primera calidad.
         </p>
 
@@ -281,10 +352,31 @@
         </div>
       </div>
 
-      <!-- Bottom Direct Order Button -->
-      <div class="p-4 bg-slate-950 border-t border-slate-800/80 shrink-0">
-        <button id="btnOrderSpecificDish" class="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 font-extrabold text-xs text-slate-950 flex items-center justify-center gap-2 shadow-xl shadow-amber-500/25 active:scale-98 transition-all">
-          <span>🛎️ Pedir este plato al Mozo</span>
+      <!-- C04: cantidad, nombre, nota, disponibilidad y total borrador diferenciado; volver conserva contexto -->
+      <div class="p-4 bg-slate-950 border-t border-slate-800/80 shrink-0 space-y-3">
+        <div id="dishSheetAvailability" class="hidden rounded-xl border px-3 py-2 text-[11px] leading-relaxed"></div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-[132px_minmax(0,1fr)] sm:items-start">
+          <div class="text-[11px] text-slate-400 font-bold">
+            <span>Cantidad</span>
+            <div class="mt-1 flex min-h-[48px] items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 p-1" role="group" aria-label="Cantidad del plato">
+              <button id="btnDishOrderQuantityMinus" type="button" class="min-h-[40px] min-w-[40px] rounded-lg bg-slate-800 text-xl leading-none text-white disabled:cursor-not-allowed disabled:opacity-40" aria-label="Restar cantidad">−</button>
+              <output id="dishOrderQuantityDisplay" class="min-w-8 flex-1 text-center text-base font-black text-white" aria-live="polite">1</output>
+              <button id="btnDishOrderQuantityPlus" type="button" class="min-h-[40px] min-w-[40px] rounded-lg bg-slate-800 text-xl leading-none text-white disabled:cursor-not-allowed disabled:opacity-40" aria-label="Sumar cantidad">+</button>
+              <input id="dishOrderQuantity" type="hidden" value="1" />
+            </div>
+          </div>
+          <label class="text-[11px] text-slate-400 font-bold">Tu nombre (opcional)
+            <input id="dishOrderGuestName" type="text" maxlength="40" placeholder="Ej. Ana" class="mt-1 w-full min-h-[48px] bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500" aria-label="Tu nombre" autocomplete="nickname" />
+          </label>
+        </div>
+        <label class="block text-[11px] text-slate-400 font-bold">Nota para cocina (opcional)
+          <textarea id="dishOrderNote" rows="2" maxlength="500" placeholder="Sin cebolla, punto de cocción, alergias... Texto largo se guarda completo." class="mt-1 w-full min-h-[48px] bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 resize-none break-words"></textarea>
+          <span class="mt-1 block text-[10px] text-slate-400">Máx. 500 caracteres. Se muestra tal cual en cocina y carrito.</span>
+        </label>
+        <p class="text-[11px] leading-relaxed text-amber-200/90">Agregar al carrito no cobra. El total del carrito es solo borrador; la cuenta suma lo ya enviado.</p>
+        <p id="dishSheetError" class="hidden rounded-xl border border-rose-500/30 bg-rose-950/30 px-3 py-2 text-xs leading-relaxed text-rose-200"></p>
+        <button id="btnOrderSpecificDish" class="w-full min-h-[48px] py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 font-extrabold text-xs text-slate-950 flex items-center justify-center gap-2 shadow-xl shadow-amber-500/25 active:scale-98 transition-all">
+          <span>🛒 Agregar al carrito — no se cobra aún</span>
         </button>
       </div>
     </div>
@@ -293,7 +385,7 @@
   <!-- =======================================================
       ✨ NATIVE MOBILE DRAWER: SOMMELIER IA & GUÍA DE CARTA
   ======================================================= -->
-  <div id="sommelierSheetBackdrop" class="bottom-sheet-backdrop">
+  <div id="sommelierSheetBackdrop" class="bottom-sheet-backdrop" role="dialog" aria-modal="true" aria-labelledby="sommelierHeading" aria-hidden="true" inert>
     <div class="bottom-sheet-content h-[85dvh]">
       <div class="drag-handle-container">
         <div class="drag-handle-pill"></div>
@@ -306,13 +398,13 @@
             ✨
           </div>
           <div>
-            <h3 class="text-sm font-extrabold text-white flex items-center gap-1.5">
+            <h3 id="sommelierHeading" class="text-sm font-extrabold text-white flex items-center gap-1.5">
               <span>Sommelier & Guía Gastronómico</span>
             </h3>
             <p class="text-[10px] text-amber-400">Conectado a la carta real de la casa</p>
           </div>
         </div>
-        <button id="btnCloseSommelierSheet" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700">
+        <button id="btnCloseSommelierSheet" type="button" aria-label="Cerrar Sommelier y guía gastronómica" class="min-h-[48px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700">
           Cerrar ✕
         </button>
       </div>
@@ -337,7 +429,7 @@
       </div>
 
       <!-- Chat Conversation History -->
-      <div id="sommelierChatMessages" class="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-950/40">
+      <div id="sommelierChatMessages" class="flex-1 min-h-0 p-4 overflow-y-auto space-y-3 bg-slate-950/40">
         <!-- Initial Welcome Message from Sommelier -->
         <div class="flex items-start gap-2.5">
           <div class="w-7 h-7 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-xs shrink-0">
@@ -370,22 +462,47 @@
   </div>
 
   <!-- MODAL: SELECCIÓN DE MEDIO DE PAGO (CUENTA) -->
-  <div id="modalBill" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+  <div id="modalBill" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="billHeading" tabindex="-1">
     <div class="w-full max-w-md bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 space-y-4 animate-in slide-in-from-bottom max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="text-lg font-extrabold text-white">Pedir la Cuenta</h3>
+          <h3 id="billHeading" class="text-lg font-extrabold text-white">Pedir la Cuenta</h3>
           <p class="text-xs text-slate-400">El mozo se acercará a la mesa para el cobro</p>
         </div>
-        <button id="btnCloseModalBill" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-bold transition-colors">✕</button>
+        <button id="btnCloseModalBill" type="button" aria-label="Cerrar cuenta" class="w-12 h-12 min-w-[48px] min-h-[48px] rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-bold transition-colors">✕</button>
       </div>
 
       <!-- CARD TOTAL CONSUMIDO -->
       <div class="p-4 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/80 shadow-lg text-center space-y-1">
-        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total estimado</p>
+        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Consumo acumulado</p>
         <div id="modalBillTotal" class="text-3xl font-black text-white tracking-tight">$0</div>
         <p id="modalBillStatusText" class="text-[11px] text-slate-400">Consumo registrado en la mesa</p>
       </div>
+
+      <!-- Cuenta acumulada y total real que se solicitará al mozo -->
+      <dl id="modalBillAccountSummary" class="grid grid-cols-1 gap-2 rounded-2xl bg-slate-950/60 border border-slate-800 p-3 text-xs">
+        <div class="flex items-center justify-between gap-3">
+          <dt class="text-slate-400">Pagos registrados</dt>
+          <dd id="modalBillPaid" class="font-black text-emerald-300">$0</dd>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <dt class="text-slate-400">Propina ya cobrada</dt>
+          <dd id="modalBillTip" class="font-black text-indigo-300">$0</dd>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <dt class="text-slate-400">Propina elegida</dt>
+          <dd id="modalBillRequestedTip" class="font-black text-indigo-300">$0</dd>
+        </div>
+        <div class="flex items-center justify-between gap-3 border-t border-slate-800 pt-2">
+          <dt class="font-bold text-slate-200">Saldo pendiente</dt>
+          <dd id="modalBillBalance" class="font-black text-amber-300">$0</dd>
+        </div>
+        <div class="flex items-center justify-between gap-3 border-t border-emerald-500/20 pt-2">
+          <dt class="font-black text-emerald-100">Total a pagar</dt>
+          <dd id="modalBillPayableTotal" class="text-lg font-black text-emerald-300">$0</dd>
+        </div>
+      </dl>
+      <p id="modalBillPending" class="hidden text-[11px] leading-relaxed rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-200"></p>
 
       <!-- ACCORDION: DETALLE DE CONSUMOS -->
       <div class="rounded-2xl bg-slate-950/60 border border-slate-800 overflow-hidden">
@@ -402,17 +519,28 @@
             <!-- Dynamic Items -->
           </div>
           <div id="modalBillNoItems" class="text-center py-2 text-[11px] text-slate-500 italic">
-            Sin comandas digitales registradas en el sistema.<br>El mozo te traerá el ticket con el consumo final.
+            Sin consumo aceptado registrado en el sistema.<br>El mozo confirmará el ticket con el consumo final.
           </div>
         </div>
       </div>
 
-      <!-- AVISO PILOTO: PAGO PRESENCIAL -->
+      <!-- AVISO: PAGO PRESENCIAL -->
       <div class="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start space-x-2.5">
         <span class="text-base leading-none">ℹ️</span>
         <p class="text-xs text-amber-200/90 leading-relaxed">
           <strong class="font-semibold text-amber-300">Cobro presencial:</strong> El mozo se acercará con la cuenta física y la forma de cobro seleccionada.
         </p>
+      </div>
+
+      <div id="billTipCallout" class="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-start gap-3">
+        <span class="text-xl leading-none" aria-hidden="true">⭐</span>
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-extrabold text-indigo-100">Propina y opinión</p>
+          <p id="billTipSelection" class="mt-1 text-[11px] leading-relaxed text-indigo-200/80">Podés dejar una propina opcional y una valoración. La propina elegida se suma al total que cobrará el mozo.</p>
+        </div>
+        <button id="btnOpenReviewFromBill" type="button" aria-controls="modalReviewFair" aria-expanded="false" class="shrink-0 min-h-[40px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-[11px] font-extrabold text-white shadow-md shadow-indigo-600/20">
+          Elegir →
+        </button>
       </div>
 
       <!-- BOTONES DE MEDIOS DE PAGO (Touch-friendly 52px) -->
@@ -430,23 +558,34 @@
             <span class="text-xs font-bold text-emerald-400 group-hover:translate-x-0.5 transition-transform">Elegir →</span>
           </button>
 
-          <button data-method="CARD" class="btn-pay-method min-h-[52px] w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-indigo-950/40 border border-slate-700 hover:border-indigo-500/50 flex items-center justify-between text-left group transition-all">
+          <button data-method="CARD_DEBIT" class="btn-pay-method min-h-[52px] w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-indigo-950/40 border border-slate-700 hover:border-indigo-500/50 flex items-center justify-between text-left group transition-all">
             <div class="flex items-center space-x-3">
               <span class="text-2xl">💳</span>
               <div>
-                <span class="font-bold text-sm text-white block">Tarjeta Débito / Crédito</span>
+                <span class="font-bold text-sm text-white block">Tarjeta de débito</span>
                 <span class="text-[11px] text-slate-400">El mozo trae la terminal / Posnet a la mesa</span>
               </div>
             </div>
             <span class="text-xs font-bold text-indigo-400 group-hover:translate-x-0.5 transition-transform">Elegir →</span>
           </button>
 
-          <button data-method="MERCADO_PAGO" class="btn-pay-method min-h-[52px] w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-sky-950/40 border border-slate-700 hover:border-sky-500/50 flex items-center justify-between text-left group transition-all">
+          <button data-method="CARD_CREDIT" class="btn-pay-method min-h-[52px] w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-indigo-950/40 border border-slate-700 hover:border-indigo-500/50 flex items-center justify-between text-left group transition-all">
+            <div class="flex items-center space-x-3">
+              <span class="text-2xl">💳</span>
+              <div>
+                <span class="font-bold text-sm text-white block">Tarjeta de crédito</span>
+                <span class="text-[11px] text-slate-400">El mozo trae la terminal / Posnet a la mesa</span>
+              </div>
+            </div>
+            <span class="text-xs font-bold text-indigo-400 group-hover:translate-x-0.5 transition-transform">Elegir →</span>
+          </button>
+
+          <button id="btnPayMethodMercadoPago" data-method="MERCADO_PAGO" class="btn-pay-method min-h-[52px] w-full p-3.5 rounded-2xl bg-slate-800/90 hover:bg-sky-950/40 border border-slate-700 hover:border-sky-500/50 flex items-center justify-between text-left group transition-all">
             <div class="flex items-center space-x-3">
               <span class="text-2xl">📱</span>
               <div>
-                <span class="font-bold text-sm text-white block">Mercado Pago (QR Presencial)</span>
-                <span class="text-[11px] text-slate-400">El mozo trae el QR en pantalla o ticket</span>
+                <span class="font-bold text-sm text-white block">QR / Mercado Pago</span>
+                <span class="text-[11px] text-slate-400">Preferencia informativa; el mozo confirma el cobro en la mesa</span>
               </div>
             </div>
             <span class="text-xs font-bold text-sky-400 group-hover:translate-x-0.5 transition-transform">Elegir →</span>
@@ -457,14 +596,14 @@
   </div>
 
   <!-- MODAL: LLAMAR AL MOZO CON MOTIVO -->
-  <div id="modalWaiter" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+  <div id="modalWaiter" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="waiterHeading" tabindex="-1">
     <div class="w-full max-w-md bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 space-y-5 animate-in slide-in-from-bottom">
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="text-lg font-extrabold text-white">Llamar al Mozo</h3>
+          <h3 id="waiterHeading" class="text-lg font-extrabold text-white">Llamar al Mozo</h3>
           <p class="text-xs text-slate-400">¿En qué podemos ayudarte?</p>
         </div>
-        <button id="btnCloseModalWaiter" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold">✕</button>
+        <button id="btnCloseModalWaiter" type="button" aria-label="Cerrar llamado al mozo" class="w-12 h-12 min-w-[48px] min-h-[48px] rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold">✕</button>
       </div>
 
       <div class="grid grid-cols-1 gap-2.5">
@@ -505,14 +644,14 @@
   </div>
 
   <!-- MODAL: PEDIDO DE INSUMOS RÁPIDOS -->
-  <div id="modalSupplies" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+  <div id="modalSupplies" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="suppliesHeading" tabindex="-1">
     <div class="w-full max-w-md bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 space-y-4">
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="text-lg font-extrabold text-white">¿Qué insumo necesitas?</h3>
+          <h3 id="suppliesHeading" class="text-lg font-extrabold text-white">¿Qué insumo necesitas?</h3>
           <p class="text-xs text-slate-400">El mozo te lo acercará en su próxima pasada</p>
         </div>
-        <button id="btnCloseModalSupplies" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold">✕</button>
+        <button id="btnCloseModalSupplies" type="button" aria-label="Cerrar pedido de insumos" class="w-12 h-12 min-w-[48px] min-h-[48px] rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold">✕</button>
       </div>
 
       <div class="grid grid-cols-2 gap-2">
@@ -523,8 +662,8 @@
       </div>
 
       <div class="pt-2">
-        <input id="customSupplyNote" type="text" placeholder="Otra aclaración (ej: limón, salsa picante)..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">
-        <button id="btnSubmitCustomSupply" class="w-full mt-3 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 font-extrabold text-xs text-slate-950 shadow-lg shadow-amber-500/20">
+        <input id="customSupplyNote" type="text" placeholder="Otra aclaración (ej: limón, salsa picante)..." class="w-full min-h-[48px] bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">
+        <button id="btnSubmitCustomSupply" type="button" class="w-full min-h-[48px] mt-3 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 font-extrabold text-xs text-slate-950 shadow-lg shadow-amber-500/20">
           Confirmar Pedido de Insumos
         </button>
       </div>
@@ -532,42 +671,46 @@
   </div>
 
   <!-- MODAL: SMART TIPPING & RESEÑAS GOOGLE "ASK-ALL, ROUTE-FAIR" -->
-  <div id="modalReviewFair" class="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
-    <div class="w-full max-w-md bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 space-y-5 animate-in slide-in-from-bottom">
+  <div id="modalReviewFair" class="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reviewHeading" tabindex="-1">
+    <div class="w-full max-w-md bg-slate-900 border-t sm:border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 space-y-5 animate-in slide-in-from-bottom max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2.5">
           <div class="w-9 h-9 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center text-lg">
             ⭐
           </div>
           <div>
-            <h3 class="text-base font-extrabold text-white">¡Gracias por tu visita!</h3>
-            <p class="text-xs text-slate-400">Tu opinión nos ayuda a mejorar día a día</p>
+            <h3 id="reviewHeading" class="text-base font-extrabold text-white">Propina y opinión</h3>
+            <p class="text-xs text-slate-400">Elegí una propina y guardá tu valoración en el mismo paso</p>
           </div>
         </div>
-        <button id="btnCloseModalReview" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold">✕</button>
+        <button id="btnCloseModalReview" type="button" aria-label="Cerrar valoración" title="Volver a la cuenta" class="w-12 h-12 min-w-[48px] min-h-[48px] rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold">←</button>
       </div>
 
       <!-- Smart Tip Selector -->
       <div id="smartTipSection" class="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
         <div class="flex items-center justify-between text-xs">
-          <span class="font-bold text-slate-200">Reconocer la atención del mozo:</span>
-          <span id="tipSelectedAmount" class="font-mono font-bold text-emerald-400">10%</span>
+          <span class="font-bold text-slate-200">¿Querés reconocer al mozo?</span>
+          <span id="tipSelectedAmount" class="font-mono font-bold text-emerald-400">0%</span>
         </div>
-        <div class="grid grid-cols-3 gap-2">
+        <p class="text-[10px] leading-relaxed text-slate-400">La propina es opcional y se informa al mozo junto con el medio de pago.</p>
+        <div id="tipOptionsContainer" class="grid grid-cols-4 gap-2">
+          <button data-tip="0" class="btn-tip-pill py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-bold text-xs active:scale-95 transition-all">0%</button>
           <button data-tip="10" class="btn-tip-pill py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs active:scale-95 transition-all">10%</button>
           <button data-tip="15" class="btn-tip-pill py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-bold text-xs active:scale-95 transition-all">15%</button>
           <button data-tip="20" class="btn-tip-pill py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-bold text-xs active:scale-95 transition-all">20%</button>
         </div>
+        <label class="block text-[10px] text-slate-400">O monto libre (ARS)
+          <input id="tipCustomAmount" type="number" min="0" step="1" inputmode="decimal" placeholder="0" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+        </label>
       </div>
 
       <!-- Ethical Review Routing: Ask-All, Route-Fair (Google & FTC Compliant) -->
-      <div class="space-y-2 pt-1">
+      <div id="reviewOptions" class="space-y-2 pt-1">
         <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">Elige cómo deseas dejarnos tu devolución:</p>
         
         <!-- Option A: Google Public Review (Deep link) -->
         <a
           id="btnGoogleReviewDeepLink"
-          href="https://search.google.com/local/writereview?placeid=ChIJN1t_tDeuEmsRUsoyG83frY4"
           target="_blank"
           rel="noreferrer"
           class="w-full p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 hover:border-amber-500/80 flex items-center justify-between text-left group transition-all"
@@ -597,6 +740,22 @@
           <span class="text-xs font-bold text-indigo-400">Escribir →</span>
         </button>
       </div>
+
+      <div id="internalRatingSection" class="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">Calificación privada (1 a 5)</p>
+        <div id="ratingOptions" class="flex items-center justify-center gap-2">
+          <button type="button" data-rating="1" class="btn-rating p-2 rounded-xl bg-slate-800 text-slate-300">1</button>
+          <button type="button" data-rating="2" class="btn-rating p-2 rounded-xl bg-slate-800 text-slate-300">2</button>
+          <button type="button" data-rating="3" class="btn-rating p-2 rounded-xl bg-slate-800 text-slate-300">3</button>
+          <button type="button" data-rating="4" class="btn-rating p-2 rounded-xl bg-slate-800 text-slate-300">4</button>
+          <button type="button" data-rating="5" class="btn-rating p-2 rounded-xl bg-slate-800 text-slate-300">5</button>
+        </div>
+      </div>
+
+      <button id="btnSubmitReview" type="button" class="w-full min-h-[48px] py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20">
+        Guardar propina y valoración
+      </button>
+      <p id="reviewSubmitHint" class="-mt-3 text-center text-[10px] leading-relaxed text-slate-500">Después elegí efectivo, tarjeta o QR para enviar el pedido de cuenta al mozo.</p>
 
       <!-- Private Feedback Drawer / Input Form -->
       <div id="privateFeedbackFormContainer" class="hidden p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">

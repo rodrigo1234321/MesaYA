@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "node ../../scripts/run-tsx.mjs watch src/index.ts",
     "build": "prisma generate && tsc",
     "start": "node dist/index.js",
     "generate:sqlite": "node ../../scripts/prisma-generate.mjs sqlite",
@@ -13,12 +13,12 @@
     "prisma:postgres:migrate": "node ../../scripts/postgres-migrate.mjs deploy",
     "test:postgres": "node ../../scripts/test-postgres.mjs",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed": "node ../../scripts/run-tsx.mjs prisma/seed.ts",
     "prisma:supabase:generate": "npm run generate:postgres",
     "prisma:supabase:push": "prisma db push --schema=prisma/schema.supabase.prisma",
     "prisma:supabase:migrate": "prisma migrate dev --schema=prisma/schema.supabase.prisma",
-    "prisma:supabase:seed": "tsx prisma/seed.ts",
-    "test": "vitest run"
+    "prisma:supabase:seed": "node ../../scripts/run-tsx.mjs prisma/seed.ts",
+    "test": "node ../../scripts/test-local.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",

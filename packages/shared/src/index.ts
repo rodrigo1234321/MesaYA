@@ -1,3 +1,5 @@
+import type { FloorPlanResponseDTO } from './rtms-types';
+
 export enum PlanTier {
   LEAN = 'LEAN',
   SALON_TABLET = 'SALON_TABLET',
@@ -45,6 +47,8 @@ export enum PaymentMethod {
   CASH = 'CASH',
   MERCADO_PAGO = 'MERCADO_PAGO',
   CARD = 'CARD',
+  CARD_DEBIT = 'CARD_DEBIT',
+  CARD_CREDIT = 'CARD_CREDIT',
   NOT_APPLICABLE = 'NOT_APPLICABLE'
 }
 
@@ -52,6 +56,8 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   [PaymentMethod.CASH]: 'Efectivo',
   [PaymentMethod.MERCADO_PAGO]: 'Mercado Pago (QR)',
   [PaymentMethod.CARD]: 'Tarjeta (Débito/Crédito)',
+  [PaymentMethod.CARD_DEBIT]: 'Tarjeta Débito',
+  [PaymentMethod.CARD_CREDIT]: 'Tarjeta Crédito',
   [PaymentMethod.NOT_APPLICABLE]: 'No Aplica'
 };
 
@@ -68,6 +74,8 @@ export interface SessionValidationResponse {
   isActive?: boolean;
   error?: string;
   message?: string;
+  code?: string;
+  details?: any;
   table?: {
     id: string;
     label: string;
@@ -91,9 +99,22 @@ export interface SessionValidationResponse {
     id: string;
     type: CallType;
     paymentMethod: PaymentMethod;
+    /** Propina que el comensal eligió al pedir la cuenta, en centavos. */
+    tipMinor?: number;
+    note?: string | null;
     status: CallStatus;
     createdAt: string;
   } | null;
+  activeCalls?: Array<{
+    id: string;
+    type: CallType;
+    paymentMethod: PaymentMethod;
+    /** Propina que el comensal eligió al pedir la cuenta, en centavos. */
+    tipMinor?: number;
+    note?: string | null;
+    status: CallStatus;
+    createdAt: string;
+  }>;
   expiresAt?: string;
 }
 
@@ -101,6 +122,8 @@ export interface CreateCallDTO {
   sessionToken: string;
   type: CallType;
   paymentMethod?: PaymentMethod;
+  /** Propina elegida por el comensal para el cobro, en centavos. */
+  tipMinor?: number;
   note?: string;
   origin?: CallOrigin;
   latitude?: number;
@@ -119,6 +142,8 @@ export interface CallEventData {
   sector: Sector;
   type: CallType;
   paymentMethod: PaymentMethod;
+  /** Propina elegida por el comensal para el cobro, en centavos. */
+  tipMinor?: number;
   note?: string | null;
   origin: CallOrigin;
   status: CallStatus;
@@ -130,6 +155,8 @@ export interface CallEventData {
 export interface StaffLoginDTO {
   restaurantSlug: string;
   pin: string;
+  /** Identificador del terminal físico compartido; nunca es un secreto. */
+  terminalId?: string;
 }
 
 export interface StaffUserDTO {
@@ -139,6 +166,178 @@ export interface StaffUserDTO {
   assignedSector?: Sector | null;
   restaurantId: string;
   restaurantName: string;
+}
+
+/**
+ * Proyección operativa del terminal compartido (S02).
+ * Los identificadores de tarea son estables y no exponen tokens de sesión.
+ */
+export type ServiceTaskKind =
+  | 'CALL'
+  | 'ORDER_VALIDATION'
+  | 'ORDER_PREPARATION'
+  | 'ORDER_DELIVERY'
+  | 'ACCOUNT_COLLECTION'
+  | 'TABLE_CLEANUP';
+
+export type ServiceTaskAction =
+  | 'CLAIM'
+  | 'VALIDATE_ORDER'
+  | 'MARK_READY'
+  | 'SERVE_ORDER'
+  | 'COLLECT_ACCOUNT'
+  | 'MARK_CLEAN';
+
+export type ServiceTaskIntention = 'COMPLETE' | 'REJECT' | 'UNDO';
+
+/** Ventana corta y fija para deshacer una entrega (E09): 30 segundos. */
+export const DELIVERY_UNDO_WINDOW_SECONDS = 30;
+
+export interface ServiceTaskActDTO {
+  action?: ServiceTaskIntention;
+  reason?: string;
+}
+
+export interface ServiceTaskActResultDTO {
+  success: boolean;
+  taskKey: string;
+  taskType: ServiceTaskKind;
+  targetId: string;
+  action: ServiceTaskIntention;
+  status: string;
+  idempotentReplay?: boolean;
+}
+
+export type OrderReviewReasonCode =
+  | 'WAITER_VALIDATION_REQUIRED'
+  | 'STOCK_UNAVAILABLE'
+  | 'QUANTITY_THRESHOLD';
+
+export interface ServiceTaskClaimDTO {
+  id: string;
+  taskKey: string;
+  taskType: ServiceTaskKind;
+  targetId: string;
+  staffUserId: string;
+  staffName?: string | null;
+  terminalId?: string | null;
+  claimedAt: string;
+  status: 'ACTIVE' | 'RELEASED' | 'RESOLVED';
+}
+
+export type ServiceParticipantKind = 'GUEST' | 'STAFF' | 'WAITLIST' | 'UNKNOWN';
+
+/**
+ * Contexto legible para el personal. No contiene guestSessionId, staffUserId
+ * ni ningún otro identificador técnico que deba llegar a la pantalla.
+ */
+export interface ServiceParticipantDTO {
+  kind: ServiceParticipantKind;
+  label: string;
+}
+
+export interface ServiceTaskItemDTO {
+  itemId: string;
+  name: string;
+  quantity: number;
+  notes: string | null;
+  unitPriceMinor: number;
+  lineTotalMinor: number;
+  participant: ServiceParticipantDTO;
+}
+
+export interface ServiceReviewReasonDTO {
+  code: OrderReviewReasonCode;
+  label: string;
+  detail?: string | null;
+}
+
+export interface ServiceTaskDTO {
+  id: string;
+  taskKey: string;
+  kind: ServiceTaskKind;
+  source: 'CALL_REQUEST' | 'ORDER' | 'TABLE_SESSION';
+  targetId: string;
+  tableId: string;
+  tableLabel: string;
+  sector: string;
+  title: string;
+  summary: string;
+  status: string;
+  priority: number;
+  createdAt: string;
+  ageSeconds: number;
+  action: ServiceTaskAction;
+  claim: ServiceTaskClaimDTO | null;
+  payload: {
+    callType?: CallType;
+    callStatus?: CallStatus;
+    /** Medio de pago que el comensal eligió al pedir la cuenta. */
+    paymentMethod?: PaymentMethod;
+    /** Propina elegida al pedir la cuenta, en centavos. */
+    requestedTipMinor?: number;
+    orderStatus?: string;
+    itemCount?: number;
+    totalMinor?: number;
+    balanceMinor?: number;
+    items?: ServiceTaskItemDTO[];
+    participants?: ServiceParticipantDTO[];
+    notes?: string[];
+    /** Notas libres que mencionan una posible alergia/restricción declarada. */
+    allergenNotes?: string[];
+    reviewReason?: ServiceReviewReasonDTO;
+  };
+}
+
+export interface ServiceAccountDTO {
+  tableSessionId: string;
+  tableId: string;
+  tableLabel: string;
+  sector: string;
+  currentState: string;
+  /** Último medio elegido para pedir la cuenta dentro de esta ocupación. */
+  requestedPaymentMethod?: PaymentMethod;
+  /** Última propina elegida para pedir la cuenta dentro de esta ocupación, en centavos. */
+  requestedTipMinor?: number;
+  /** Mozo que atendió/reclamó la cuenta por defecto o asignado. */
+  responsibleStaffUserId?: string | null;
+  /** Nombre visible del mozo responsable. */
+  responsibleStaffName?: string | null;
+  account: {
+    version: string;
+    consumoMinor: number;
+    paidMinor: number;
+    tipMinor: number;
+    saldoMinor: number;
+    pendingValidation: Array<{ orderId: string; totalMinor: number; createdAt: string; updatedAt: string }>;
+    draft: { orderId: string; totalMinor: number; createdAt: string; updatedAt: string } | null;
+    tandas: Array<{
+      orderId: string;
+      status: string;
+      totalMinor: number;
+      createdAt: string;
+      updatedAt: string;
+      items: Array<{ itemId: string; name: string; quantity: number; unitPriceMinor: number; lineTotalMinor: number }>;
+    }>;
+  };
+}
+
+export interface ServiceWorkspaceDTO {
+  restaurantId: string;
+  generatedAt: string;
+  staleAfterSeconds: number;
+  floorPlan: FloorPlanResponseDTO;
+  tasks: ServiceTaskDTO[];
+  accounts: ServiceAccountDTO[];
+  summary: {
+    totalTasks: number;
+    pendingCalls: number;
+    ordersToValidate: number;
+    ordersInPreparation: number;
+    ordersToDeliver: number;
+    accountsToCollect: number;
+    activeClaims: number;
+  };
 }
 
 export interface FeedbackDTO {
@@ -154,6 +353,13 @@ export interface MetricsDTO {
   callsByType: Record<CallType, number>;
   callsByPaymentMethod: Record<PaymentMethod, number>;
   npsAverage: number;
+  /** Promedio real de rating 1–5; npsAverage se conserva por compatibilidad histórica. */
+  ratingAverage?: number;
+  ratingSampleSize?: number;
+  avgResponseSampleSize?: number;
+  npsSampleSize?: number;
+  quality?: import('./rtms-types').AnalyticsQualityDTO;
+  metrics?: Record<string, import('./rtms-types').AnalyticsMetricDTO>;
 }
 
 // ==========================================
@@ -369,6 +575,12 @@ export interface SommelierResponseDTO {
   suggestedDishes: MenuItemDTO[];
   suggestedPairing?: string;
   poweredBy: 'gemini' | 'heuristic-engine';
+  constraints?: {
+    availableOnly: true;
+    budgetMax?: number;
+    dietaryIntent?: 'allergy' | 'gluten' | 'vegan' | 'vegetarian';
+    pairing: 'catalog-aware' | 'generic-guidance' | 'abstained';
+  };
   // Contención etapa 04: true cuando la respuesta es degradada explícita
   // (abstención dietaria o IA no disponible) derivando al personal.
   degraded?: boolean;
@@ -386,8 +598,8 @@ export enum PaymentMode {
 
 export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = {
   [PaymentMode.WAITER_ONLY]: 'Solo Mozo Presencial (Efectivo / POS / QR Mozo)',
-  [PaymentMode.DIGITAL_MP]: 'Cobro Digital Autónomo (Mercado Pago / Split en Mesa)',
-  [PaymentMode.HYBRID]: 'Híbrido (Comensal elige Celular o Mozo)'
+  [PaymentMode.DIGITAL_MP]: 'Ofrecer Mercado Pago como opción (cobro presencial)',
+  [PaymentMode.HYBRID]: 'Híbrido: informar Mercado Pago + medios presenciales'
 };
 
 export enum CapabilityState {
@@ -399,7 +611,9 @@ export enum CapabilityState {
 
 export const CAPABILITY_STATE_LABELS: Record<CapabilityState, string> = {
   [CapabilityState.AVAILABLE]: 'Disponible',
-  [CapabilityState.PILOT_ONLY]: 'Sólo Piloto',
+  // Se conserva el valor por compatibilidad con instalaciones anteriores;
+  // las capacidades de la release actual usan AVAILABLE/COMING_SOON.
+  [CapabilityState.PILOT_ONLY]: 'Restringida',
   [CapabilityState.COMING_SOON]: 'Próximamente',
   [CapabilityState.MISCONFIGURED]: 'Requiere Configuración'
 };
@@ -442,6 +656,8 @@ export interface RestaurantModuleConfigDTO {
   allowOrdering: boolean;
   syncSocialCart: boolean;
   requireWaiterValidation: boolean;
+  /** Más de esta cantidad por línea genera revisión en modo automático. */
+  reviewQuantityThreshold?: number;
   enableUpsell: boolean;
   enableSmartTips: boolean;
   suggestedTipPercentages: number[];
@@ -461,6 +677,7 @@ export interface UpdateModuleConfigDTO {
   allowOrdering?: boolean;
   syncSocialCart?: boolean;
   requireWaiterValidation?: boolean;
+  reviewQuantityThreshold?: number;
   enableUpsell?: boolean;
   enableSmartTips?: boolean;
   suggestedTipPercentages?: number[];
@@ -472,6 +689,9 @@ export interface UpdateModuleConfigDTO {
   pointsPerHundredPesos?: number;
   changedBy?: string;
 }
+
+/** Valor inicial conservador: uno o dos productos iguales no interrumpen el flujo. */
+export const DEFAULT_REVIEW_QUANTITY_THRESHOLD = 6;
 
 export interface ModuleConfigAuditDTO {
   id: string;
@@ -506,10 +726,7 @@ export interface OrderItemDTO {
   quantity: number;
   unitPrice: number;
   notes?: string | null;
-  addedByGuest: string;
-  claimedByGuest?: string | null;
-  claimVersion: number;
-  isPaid: boolean;
+  guestName?: string | null;
 }
 
 export interface OrderDTO {
@@ -517,9 +734,13 @@ export interface OrderDTO {
   tableSessionId: string;
   status: OrderStatus;
   totalAmount: number;
+  source?: 'GUEST_QR' | 'STAFF_TERMINAL' | 'WAITLIST' | string | null;
   items: OrderItemDTO[];
   createdAt: string;
   updatedAt: string;
+  reviewReason?: ServiceReviewReasonDTO | null;
+  cancellationReason?: string | null;
+  cancelledAt?: string | null;
 }
 
 export interface AddOrderItemDTO {
@@ -528,6 +749,7 @@ export interface AddOrderItemDTO {
   menuItemId: string;
   quantity: number;
   notes?: string;
+  guestName?: string;
 }
 
 export interface RemoveOrderItemDTO {
@@ -624,7 +846,10 @@ export interface CustomerLoyaltyDTO {
   restaurantId: string;
   phone: string;
   points: number;
+  consentAt?: string | null;
   verifiedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface RewardItemDTO {
@@ -634,6 +859,32 @@ export interface RewardItemDTO {
   description?: string | null;
   pointsCost: number;
   isAvailable: boolean;
+}
+
+export interface RewardLedgerEntryDTO {
+  id: string;
+  customerLoyaltyId: string;
+  pointsDelta: number;
+  balanceAfter: number;
+  entryType: 'ACCRUAL' | 'REDEMPTION' | 'REVERSAL' | 'ADJUSTMENT' | 'EXPIRATION' | string;
+  reason: string;
+  referenceType?: string | null;
+  referenceId?: string | null;
+  ruleVersion: string;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+export interface RewardRedemptionDTO {
+  id: string;
+  customerLoyaltyId: string;
+  rewardItemId: string;
+  pointsCost: number;
+  status: 'PENDING' | 'REDEEMED' | 'CANCELLED' | string;
+  approvedBy?: string | null;
+  redeemedAt?: string | null;
+  cancelledAt?: string | null;
+  createdAt: string;
 }
 
 // ==========================================
@@ -736,3 +987,8 @@ export * from './security';
 // VALIDACIÓN Y LIMITES DE IA (Etapa 20)
 // ==========================================
 export * from './ai-schemas';
+
+// ==========================================
+// VENTAS, COBROS Y REPORTES (Etapas 1–5)
+// ==========================================
+export * from './sales-types';

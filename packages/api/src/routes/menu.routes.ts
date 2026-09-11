@@ -1,8 +1,11 @@
 import { FastifyInstance } from 'fastify';
+import { createHash } from 'node:crypto';
 import { prisma } from '../lib/prisma';
 import { BatchMenuImportDTO, AiMenuGenerateInputSchema, AiSommelierInputSchema } from '@mesaya/shared';
 import { requireManagedRestaurant } from '../middlewares/auth.middleware';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
+import { UpsellService } from '../services/upsell.service';
+import { isRestaurantInConfiguredInstance } from '../lib/environment';
 
 // Gestor en memoria de cuotas por sesión de mesa para Sommelier IA
 // Evita bucles infinitos y costos no controlados. Máximo 10 consultas por sesión de mesa.
@@ -75,7 +78,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
         }
       });
 
-      if (!restaurant) {
+      if (!restaurant || !isRestaurantInConfiguredInstance(restaurant.id)) {
         return reply.status(404).send({ error: 'Restaurante no encontrado' });
       }
 
@@ -131,14 +134,14 @@ export async function menuRoutes(fastify: FastifyInstance) {
   fastify.get('/restaurants/:slugOrId/upsell', async (request, reply) => {
     try {
       const { slugOrId } = request.params as { slugOrId: string };
-      const { itemId } = request.query as { itemId?: string };
+      const { itemId, sessionToken } = request.query as { itemId?: string; sessionToken?: string };
 
       const restaurant = await prisma.restaurant.findFirst({
         where: { OR: [{ id: slugOrId }, { slug: slugOrId }] },
         include: { moduleConfig: true }
       });
 
-      if (!restaurant) {
+      if (!restaurant || !isRestaurantInConfiguredInstance(restaurant.id)) {
         return reply.status(404).send({ error: 'Restaurante no encontrado' });
       }
 
@@ -147,45 +150,50 @@ export async function menuRoutes(fastify: FastifyInstance) {
         return reply.send({ enabled: false, suggestions: [] });
       }
 
-      let sourceItem = null;
-      if (itemId) {
-        sourceItem = await prisma.menuItem.findUnique({
-          where: { id: itemId },
-          include: { category: true }
-        });
+      const experimentGroup = sessionToken
+        ? (parseInt(createHash('sha256').update(`${restaurant.id}:${sessionToken}`).digest('hex').slice(0, 2), 16) % 5 === 0 ? 'CONTROL' : 'UPSELL')
+        : 'UNASSIGNED';
+      if (experimentGroup === 'CONTROL') {
+        return reply.send({ enabled: true, experimentGroup, sourceItem: null, suggestions: [] });
       }
 
-      const suggestions = await prisma.menuItem.findMany({
-        where: {
-          category: {
-            restaurantId: restaurant.id,
-            ...(sourceItem ? { id: { not: sourceItem.categoryId } } : {})
-          },
-          isAvailable: true,
-          ...(sourceItem ? { id: { not: sourceItem.id } } : {})
-        },
-        include: { category: true },
-        take: 3,
-        orderBy: [{ isFeatured: 'desc' }, { orderIndex: 'asc' }]
+      // E14: fuente = último ítem relevante; máx 2; excluye presentes/no disponibles/descartados; fallo cerrado.
+      const { sourceItem, suggestions } = await UpsellService.getSuggestions({
+        restaurantId: restaurant.id,
+        sessionToken: sessionToken || null,
+        lastItemId: itemId || null
       });
 
-      const formatted = suggestions.map((item) => ({
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        categoryName: item.category.name,
-        pairingReason: sourceItem
-          ? `Maridaje sugerido: Combina a la perfección con ${sourceItem.name}`
-          : 'Sugerencia especial de la casa'
-      }));
-
-      return reply.send({
-        enabled: true,
-        sourceItem: sourceItem ? { id: sourceItem.id, name: sourceItem.name } : null,
-        suggestions: formatted
-      });
+      return reply.send({ enabled: true, experimentGroup, sourceItem, suggestions });
     } catch (err: any) {
       return reply.status(500).send({ error: err.message });
+    }
+  });
+
+  // 1.2 Instrumentación de upsell: impresión, aceptación o descarte.
+  fastify.post('/restaurants/:slugOrId/upsell/events', async (request, reply) => {
+    try {
+      const { slugOrId } = request.params as { slugOrId: string };
+      const body = (request.body || {}) as {
+        sessionToken?: string;
+        eventType?: 'IMPRESSION' | 'ACCEPT' | 'DISMISS';
+        suggestionItemId?: string;
+        sourceItemId?: string;
+        idempotencyKey?: string;
+        experimentGroup?: 'UPSELL' | 'CONTROL' | 'UNASSIGNED';
+      };
+      const result = await UpsellService.recordEvent({
+        restaurantIdOrSlug: slugOrId,
+        sessionToken: body.sessionToken || '',
+        eventType: body.eventType as any,
+        suggestionItemId: body.suggestionItemId || '',
+        sourceItemId: body.sourceItemId,
+        idempotencyKey: body.idempotencyKey || '',
+        experimentGroup: body.experimentGroup
+      });
+      return reply.status(201).send(result);
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message, code: err.code });
     }
   });
 
@@ -253,12 +261,14 @@ export async function menuRoutes(fastify: FastifyInstance) {
       const category = await prisma.menuCategory.findFirst({ where: { id: categoryId, restaurantId: request.managedRestaurantId! }, select: { id: true } });
       if (!category) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Recurso no encontrado' });
 
+      const priceValue = Number(price) || 0;
       const item = await prisma.menuItem.create({
         data: {
           categoryId,
           name: name.trim(),
           description: description?.trim() || null,
-          price: Number(price) || 0,
+          price: priceValue,
+          priceMinor: Math.round(priceValue * 100), // C3: dual-write con el precio
           imageUrl: imageUrl?.trim() || null,
           isAvailable: isAvailable !== false,
           isFeatured: Boolean(isFeatured),
@@ -301,7 +311,10 @@ export async function menuRoutes(fastify: FastifyInstance) {
       const updateData: any = {};
       if (body.name !== undefined) updateData.name = body.name.trim();
       if (body.description !== undefined) updateData.description = body.description.trim() || null;
-      if (body.price !== undefined) updateData.price = Number(body.price);
+      if (body.price !== undefined) {
+        updateData.price = Number(body.price);
+        updateData.priceMinor = Math.round(Number(body.price) * 100); // C3: sincronizado con price
+      }
       if (body.imageUrl !== undefined) updateData.imageUrl = body.imageUrl.trim() || null;
       if (body.isAvailable !== undefined) updateData.isAvailable = Boolean(body.isAvailable);
       if (body.isFeatured !== undefined) updateData.isFeatured = Boolean(body.isFeatured);
@@ -416,6 +429,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
                 name: rawItem.name.trim(),
                 description: rawItem.description?.trim() || null,
                 price: Number(rawItem.price) || 0,
+                priceMinor: Math.round((Number(rawItem.price) || 0) * 100), // C3: dual-write
                 imageUrl: rawItem.imageUrl?.trim() || null,
                 isAvailable: true,
                 isFeatured: Boolean(rawItem.isFeatured),

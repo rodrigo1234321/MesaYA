@@ -8,7 +8,9 @@ export async function authRoutes(fastify: FastifyInstance) {
   // 1. List all restaurants for admin selector / platform directory
   fastify.get('/restaurants', async (request, reply) => {
     try {
+      const environment = getEnvironmentConfig();
       const restaurants = await prisma.restaurant.findMany({
+        where: environment.instanceRestaurantId ? { id: environment.instanceRestaurantId } : undefined,
         select: {
           id: true,
           name: true,
@@ -31,7 +33,14 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/auth/register-restaurant', async (request, reply) => {
     try {
       if (!getEnvironmentConfig().publicOnboardingEnabled) {
-        return reply.status(403).send({ error: 'PUBLIC_ONBOARDING_DISABLED', message: 'El alta pública de restaurantes no está habilitada para este piloto.' });
+        return reply.status(403).send({ error: 'PUBLIC_ONBOARDING_DISABLED', message: 'El alta pública de restaurantes no está habilitada en esta instalación.' });
+      }
+      const environment = getEnvironmentConfig();
+      if (environment.instanceMode === 'SINGLE_RESTAURANT') {
+        return reply.status(409).send({
+          error: 'SINGLE_RESTAURANT_INSTANCE',
+          message: 'Esta instalación está vinculada a un restaurante; la provisión se realiza mediante bootstrap administrativo.'
+        });
       }
       const {
         name,
@@ -133,6 +142,7 @@ export async function authRoutes(fastify: FastifyInstance) {
             name: `Plato Estrella ${name.trim()}`,
             description: 'Elaborado artesanalmente en el momento con ingredientes frescos de primera calidad.',
             price: 12500,
+            priceMinor: 1250000, // C3: dual-write
             imageUrl: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80',
             isAvailable: true,
             isFeatured: true,
@@ -156,6 +166,7 @@ export async function authRoutes(fastify: FastifyInstance) {
             name: 'Vino de Autor Reserva',
             description: 'Copa o botella seleccionada por el sommelier.',
             price: 6500,
+            priceMinor: 650000, // C3: dual-write
             imageUrl: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=800&q=80',
             isAvailable: true,
             isFeatured: false,
@@ -207,6 +218,10 @@ export async function authRoutes(fastify: FastifyInstance) {
       });
 
       if (!rest) {
+        return reply.status(404).send({ error: 'Restaurante no encontrado' });
+      }
+      const instanceRestaurantId = getEnvironmentConfig().instanceRestaurantId;
+      if (instanceRestaurantId && rest.id !== instanceRestaurantId) {
         return reply.status(404).send({ error: 'Restaurante no encontrado' });
       }
 

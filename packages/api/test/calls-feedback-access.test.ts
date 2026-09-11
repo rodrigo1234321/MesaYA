@@ -333,6 +333,38 @@ describe('Etapa 13 — Validación de llamados, feedback y lecturas privadas', (
       expect(res.statusCode).toBe(400);
     });
 
+    it('Acepta débito, crédito y QR como preferencias diferenciadas al pedir la cuenta (201)', async () => {
+      const methods = [PaymentMethod.CARD_DEBIT, PaymentMethod.CARD_CREDIT, PaymentMethod.MERCADO_PAGO];
+
+      for (const [index, paymentMethod] of methods.entries()) {
+        const table = await prisma.table.create({
+          data: { restaurantId: restA.id, label: `Mesa A-pago-${index + 1}` }
+        });
+        const session = await prisma.tableSession.create({
+          data: {
+            tableId: table.id,
+            shiftId: shiftA.id,
+            token: randomUUID(),
+            expiresAt: new Date(Date.now() + 3600000)
+          }
+        });
+
+        const res = await app.inject({
+          method: 'POST',
+          url: '/v1/calls',
+          payload: {
+            sessionToken: session.token,
+            type: CallType.BILL,
+            paymentMethod,
+            tipMinor: 0
+          }
+        });
+
+        expect(res.statusCode).toBe(201);
+        expect(res.json()).toMatchObject({ paymentMethod, tipMinor: 0 });
+      }
+    });
+
     it('Rechaza nota de comensal que exceda 500 caracteres (400)', async () => {
       const longNote = 'A'.repeat(501);
       const res = await app.inject({
@@ -948,7 +980,7 @@ describe('Etapa 13 — Validación de llamados, feedback y lecturas privadas', (
       expect(data.token).toBeUndefined();
     });
 
-    it('Transición posterior a AVAILABLE es idempotente: closedAt permanece cerrado y QR inactivo', async () => {
+    it('Transición posterior a AVAILABLE conserva el cierre previo y prepara el QR para una sesión nueva', async () => {
       const sessionBefore = await prisma.tableSession.findUnique({
         where: { token: sessionFsmTest.token }
       });
@@ -966,6 +998,17 @@ describe('Etapa 13 — Validación de llamados, feedback y lecturas privadas', (
         where: { token: sessionFsmTest.token }
       });
       expect(sessionAfter?.closedAt).toEqual(closedAtInitial);
+
+      const freshSession = await prisma.tableSession.findFirst({
+        where: {
+          tableId: tableFsmTest.id,
+          closedAt: null,
+          id: { not: sessionFsmTest.id }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+      expect(freshSession).not.toBeNull();
+      expect(freshSession?.token).not.toBe(sessionFsmTest.token);
 
       // Reintentar llamado sigue dando 410
       const resCall = await app.inject({
@@ -991,16 +1034,17 @@ describe('Etapa 13 — Validación de llamados, feedback y lecturas privadas', (
       expect(resFb.statusCode).toBe(410);
       expect(resFb.json().code).toBe('SESSION_CLOSED');
 
-      // QR sigue inactivo
+      // El token anterior sigue inactivo, pero el QR físico ya apunta a la
+      // sesión nueva preparada por `Mesa lista`.
       const resQr = await app.inject({
         method: 'GET',
         url: `/v1/sessions/${restA.slug}/${encodeURIComponent(tableFsmTest.label)}`
       });
       expect(resQr.statusCode).toBe(200);
       const qrData = resQr.json();
-      expect(qrData.valid).toBe(false);
-      expect(qrData.isActive).toBe(false);
-      expect(qrData.token).toBeUndefined();
+      expect(qrData.valid).toBe(true);
+      expect(qrData.isActive).toBe(true);
+      expect(qrData.token).toBe(freshSession?.token);
     });
   });
 });

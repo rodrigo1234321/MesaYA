@@ -34,6 +34,9 @@ import { waitlistRoutes } from './routes/waitlist.routes';
 import { floorPlanRoutes } from './routes/floorplan.routes';
 import { tableStateRoutes } from './routes/tablestate.routes';
 import { rtmsAnalyticsRoutes } from './routes/analytics.routes';
+import { rewardsRoutes } from './routes/rewards.routes';
+import { serviceRoutes } from './routes/service.routes';
+import { salesRoutes } from './routes/sales.routes';
 import { prisma } from './lib/prisma';
 import { getEnvironmentConfig } from './lib/environment';
 
@@ -58,6 +61,21 @@ export async function buildApp() {
 
   await app.register(jwt, {
     secret: environment.jwtSecret
+  });
+
+  // Headers mínimos de defensa para API y respuestas de error. El cliente web
+  // mantiene su propia política de assets; la API no necesita ejecutar ni
+  // embeberse en un navegador.
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'no-referrer');
+    reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+    if (process.env.NODE_ENV === 'production') {
+      reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    return payload;
   });
 
   // Content Type Parser para application/json con allowlist explícita de endpoints de acción
@@ -172,6 +190,9 @@ export async function buildApp() {
       await v1.register(floorPlanRoutes);
       await v1.register(tableStateRoutes);
       await v1.register(rtmsAnalyticsRoutes);
+      await v1.register(rewardsRoutes);
+      await v1.register(serviceRoutes);
+      await v1.register(salesRoutes);
     },
     { prefix: '/v1' }
   );

@@ -34,28 +34,44 @@
 
 ## 🚀 Inicio Rápido en Desarrollo Local
 
-### 1. Instalar dependencias y compilar
+### 1. Instalar dependencias, preparar SQLite local y compilar
 ```bash
-npm install
+npm ci
+npm run setup:local
 npm run build
 ```
+
+`setup:local` crea los archivos `.env` ignorados por Git sólo si no existen,
+genera el cliente Prisma SQLite, crea `packages/api/prisma/dev.db` y carga la
+demo únicamente si la base está vacía. Nunca usa Supabase ni borra una base
+remota. Para una base temporal de verificación se puede pasar
+`npm run setup:local -- --db .tmp/local-smoke.db`.
 
 ### 2. Base de datos y Seed
 ```bash
 npm --workspace=@mesaya/api run prisma:generate
 
-# Desarrollo local (SQLite dev.db con datos de prueba):
-npm --workspace=@mesaya/api run prisma:seed
+# La demo ya queda cargada por setup:local. El seed destructivo normal está
+# reservado al runner aislado de pruebas y no debe ejecutarse contra una base
+# habitual.
+npm test
 
 # Para inicializar un nuevo restaurante limpio en Staging/Producción (PostgreSQL):
 npm run bootstrap:restaurant -- --name "Mi Local" --slug "mi-local" --pin "9999"
 ```
 
 ### 3. Iniciar servicios en simultáneo
+- **Todo el entorno con una sola orden (recomendado para revisar la demo):** `npm run dev:clean`
 - **API Backend**: `npm run dev:api` (puerto 3000)
 - **Panel Mozo PWA**: `npm run dev:staff` (puerto 5174)
 - **Panel Admin / Encargado**: `npm run dev:admin` (puerto 5175)
 - **Web Comensal**: `npm --workspace=@mesaya/client-web run dev` (puerto 5173)
+
+`dev:clean` prepara `.tmp/live-local.db` (base aislada de Trattoria del Puerto) y
+levanta los cuatro servicios en una única terminal. Si la base ya existe,
+conserva sus datos; para empezar otra vez con el seed limpio, detén los
+servicios y elimina únicamente `.tmp/live-local.db` antes de volver a ejecutar
+el comando.
 
 ---
 
@@ -64,10 +80,10 @@ npm run bootstrap:restaurant -- --name "Mi Local" --slug "mi-local" --pin "9999"
 - **Restaurante Demo**: Trattoria del Puerto (`trattoria-del-puerto`)
 - **PIN Mozo Salón**: `1234`
 - **PIN Encargado Admin**: `9999`
-- **URL Comensal Demo (Mesa 1)**: `http://localhost:5173/?token=demo-token`
+- **URL Comensal / QR-NFC Demo (Mesa 1)**: `http://localhost:5173/?r=trattoria-del-puerto&m=Mesa%201`
+  - La URL es la canónica que luego se escribe en el QR o NFC. Si la mesa está `Disponible`, el cliente puede explorar la carta pero el mozo debe pulsar **Asignar Mesa** en `Mesas en vivo` para abrir la sesión de esa ocupación.
 
 ---
 
 ## 📄 Licencia
 Propiedad de Rodrigo (Mar del Plata, Argentina).
-

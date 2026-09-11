@@ -129,7 +129,7 @@ export const ShiftManager: React.FC<ShiftManagerProps> = ({ currentShift, restau
         </div>
         <div className="flex items-center space-x-2 text-slate-400">
           <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0" />
-          <span>Fallback WhatsApp: 100% garantizado</span>
+          <span>Fallback WhatsApp: disponible si está configurado y probado</span>
         </div>
       </div>
     </div>

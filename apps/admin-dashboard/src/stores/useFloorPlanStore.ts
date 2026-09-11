@@ -136,6 +136,14 @@ export const useFloorPlanStore = create<FloorPlanStoreState>((set, get) => {
           conflictDraft: tables.map((t) => ({ ...t })),
           error: 'Otro editor guardó el plano antes. Tu borrador se conserva: recargá el plano del servidor y reintentá de forma consciente.'
         });
+      } else {
+        // La respuesta de red no puede borrar una edición local ni dejarla
+        // marcada como guardada. El usuario conserva el borrador y puede
+        // reintentar desde el editor cuando el backend vuelva.
+        set({
+          hasUnsavedChanges: true,
+          error: e?.message || 'No se pudo guardar el plano; tu borrador local se conserva.'
+        });
       }
       throw e;
     }
@@ -198,7 +206,12 @@ export const useFloorPlanStore = create<FloorPlanStoreState>((set, get) => {
 
   handleSnapshot: (snapshotTables) =>
     set((state) => {
-      // Merge snapshot with existing positions
+      // Un snapshot de estados no puede pisar geometría editada localmente.
+      // La siguiente carga fresca se acepta después de guardar o de resolver
+      // conscientemente un conflicto de versión.
+      if (state.hasUnsavedChanges || state.floorPlanConflict) {
+        return { isConnected: true };
+      }
       return {
         tables: snapshotTables,
         isConnected: true
@@ -339,9 +352,10 @@ export const useFloorPlanStore = create<FloorPlanStoreState>((set, get) => {
   deleteTableDirect: async (restaurantSlug: string, tableId: string) => {
     try {
       await AdminApi.deleteTable(restaurantSlug, tableId);
-      set((state) => ({
-        selectedTableId: state.selectedTableId === tableId ? null : state.selectedTableId,
-        tables: state.tables
+    set((state) => ({
+      selectedTableId: state.selectedTableId === tableId ? null : state.selectedTableId,
+      hasUnsavedChanges: true,
+      tables: state.tables
           .filter((t) => t.id !== tableId)
           .map((t) =>
             t.mergedWithTableId === tableId
@@ -385,7 +399,7 @@ export const useFloorPlanStore = create<FloorPlanStoreState>((set, get) => {
       return t;
     });
 
-    set({ tables: updatedTables });
+    set({ tables: updatedTables, hasUnsavedChanges: true });
 
     try {
       await persistTables(restaurantSlug, updatedTables);
@@ -424,7 +438,7 @@ export const useFloorPlanStore = create<FloorPlanStoreState>((set, get) => {
       return t;
     });
 
-    set({ tables: updatedTables });
+    set({ tables: updatedTables, hasUnsavedChanges: true });
 
     try {
       await persistTables(restaurantSlug, updatedTables);
@@ -437,7 +451,7 @@ export const useFloorPlanStore = create<FloorPlanStoreState>((set, get) => {
   updateTableDirect: async (restaurantSlug: string, tableId: string, updates: Partial<FloorTableDTO>) => {
     const state = get();
     const updatedTables = state.tables.map((t) => (t.id === tableId ? { ...t, ...updates } : t));
-    set({ tables: updatedTables });
+    set({ tables: updatedTables, hasUnsavedChanges: true });
 
     try {
       await persistTables(restaurantSlug, updatedTables);

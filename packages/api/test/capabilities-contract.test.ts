@@ -38,19 +38,19 @@ async function appWithRoutes() {
 }
 
 describe('Etapa 00 — capabilities: stored flags ≠ effective availability', () => {
-  it('paymentMode DIGITAL_MP no produce AVAILABLE capability', async () => {
+  it('paymentMode DIGITAL_MP expone la opción informativa sin credenciales', async () => {
     mocks.getCapabilities.mockResolvedValue({
       restaurantId: 'restaurant-a',
       capabilities: {
-        digital_payment: { key: 'digital_payment', state: CapabilityState.COMING_SOON, reasonCode: 'DIGITAL_PAYMENTS_UNAVAILABLE', message: 'No disponible' }
+        digital_payment: { key: 'digital_payment', state: CapabilityState.AVAILABLE, reasonCode: 'DIGITAL_PAYMENT_OPTION_ACTIVE', message: 'Opción informativa; cobro presencial' }
       }
     });
     const app = await appWithRoutes();
     try {
       const res = await app.inject({ method: 'GET', url: '/restaurants/local/capabilities' });
       expect(res.statusCode).toBe(200);
-      expect(res.json().capabilities.digital_payment.state).toBe(CapabilityState.COMING_SOON);
-      expect(res.json().capabilities.digital_payment.reasonCode).toBe('DIGITAL_PAYMENTS_UNAVAILABLE');
+      expect(res.json().capabilities.digital_payment.state).toBe(CapabilityState.AVAILABLE);
+      expect(res.json().capabilities.digital_payment.reasonCode).toBe('DIGITAL_PAYMENT_OPTION_ACTIVE');
     } finally { await app.close(); }
   });
 
@@ -70,19 +70,19 @@ describe('Etapa 00 — capabilities: stored flags ≠ effective availability', (
     } finally { await app.close(); }
   });
 
-  it('reviews enabled without googlePlaceId → MISCONFIGURED', async () => {
+  it('reviews enabled without googlePlaceId → feedback interno disponible', async () => {
     mocks.getCapabilities.mockResolvedValue({
       restaurantId: 'restaurant-a',
       capabilities: {
-        reviews: { key: 'reviews', state: CapabilityState.MISCONFIGURED, reasonCode: 'REVIEWS_NO_PLACE_ID', message: 'Falta Google Place ID' }
+        reviews: { key: 'reviews', state: CapabilityState.AVAILABLE, reasonCode: 'REVIEWS_INTERNAL_ACTIVE_GOOGLE_UNCONFIGURED', message: 'Feedback interno activo' }
       }
     });
     const app = await appWithRoutes();
     try {
       const res = await app.inject({ method: 'GET', url: '/restaurants/local/capabilities' });
       expect(res.statusCode).toBe(200);
-      expect(res.json().capabilities.reviews.state).toBe(CapabilityState.MISCONFIGURED);
-      expect(res.json().capabilities.reviews.reasonCode).toBe('REVIEWS_NO_PLACE_ID');
+      expect(res.json().capabilities.reviews.state).toBe(CapabilityState.AVAILABLE);
+      expect(res.json().capabilities.reviews.reasonCode).toBe('REVIEWS_INTERNAL_ACTIVE_GOOGLE_UNCONFIGURED');
     } finally { await app.close(); }
   });
 
@@ -108,7 +108,7 @@ describe('Etapa 00 — capabilities: stored flags ≠ effective availability', (
     mocks.getCapabilities.mockResolvedValue({
       restaurantId: 'restaurant-a',
       capabilities: {
-        digital_payment: { key: 'digital_payment', state: CapabilityState.COMING_SOON, reasonCode: 'DIGITAL_PAYMENTS_UNAVAILABLE', message: 'Próximamente' }
+        digital_payment: { key: 'digital_payment', state: CapabilityState.AVAILABLE, reasonCode: 'DIGITAL_PAYMENT_OPTION_ACTIVE', message: 'Opción informativa; cobro presencial' }
       }
     });
     const app = await appWithRoutes();

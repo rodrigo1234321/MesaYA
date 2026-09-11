@@ -86,20 +86,32 @@ export class FeedbackService {
       throw error;
     }
 
-    const created = await prisma.feedback.create({
-      data: {
-        tableSessionId: session.id,
-        rating: dto.rating,
-        comment: dto.comment ? dto.comment.trim() : null
-      },
-      select: {
-        id: true,
-        rating: true,
-        comment: true,
-        createdAt: true
-      }
-    });
+    try {
+      const created = await prisma.feedback.create({
+        data: {
+          tableSessionId: session.id,
+          rating: dto.rating,
+          comment: dto.comment ? dto.comment.trim() : null
+        },
+        select: {
+          id: true,
+          rating: true,
+          comment: true,
+          createdAt: true
+        }
+      });
 
-    return created;
+      return created;
+    } catch (err: any) {
+      // Dos pestañas pueden enviar la valoración al mismo tiempo; la unicidad
+      // de tableSessionId es la autoridad y se traduce a un 409 accionable.
+      if (err?.code === 'P2002') {
+        const duplicate: any = new Error('Ya se ha enviado una valoración para esta visita');
+        duplicate.statusCode = 409;
+        duplicate.code = 'FEEDBACK_ALREADY_EXISTS';
+        throw duplicate;
+      }
+      throw err;
+    }
   }
 }

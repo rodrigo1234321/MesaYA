@@ -8,7 +8,7 @@ import { AdminApi } from '../lib/api';
  * Etapa 18: Wrapper delgado sobre PollingCoordinator que delega todo el scheduling,
  * secuenciación, abort y backoff al coordinador puro compartido.
  */
-export function useFloorPlanSSE(restaurantSlug: string) {
+export function useFloorPlanSSE(restaurantSlug: string, refreshKey = 0) {
   const { handleSnapshot, setIsConnected } = useFloorPlanStore();
   const handleSnapshotRef = useRef(handleSnapshot);
   const setIsConnectedRef = useRef(setIsConnected);
@@ -78,5 +78,5 @@ export function useFloorPlanSSE(restaurantSlug: string) {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       setIsConnectedRef.current(false);
     };
-  }, [restaurantSlug, coordinator]);
+  }, [restaurantSlug, coordinator, refreshKey]);
 }

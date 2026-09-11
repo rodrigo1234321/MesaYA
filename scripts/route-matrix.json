@@ -9,7 +9,7 @@
   { "method": "GET", "path": "/v1/analytics/:restaurantId/summary", "auth": "MANAGER", "note": "Manager + tenant (etapa 17)." },
   { "method": "GET", "path": "/v1/analytics/:restaurantId/table-performance", "auth": "MANAGER", "note": "Manager + tenant (etapa 17)." },
   { "method": "POST", "path": "/v1/auth/login-admin", "auth": "ANON", "note": "Login admin por PIN con rate-limit; por diseño público (etapa 07)." },
-  { "method": "POST", "path": "/v1/auth/register-restaurant", "auth": "ANON", "note": "403 salvo PILOT_PUBLIC_ONBOARDING_ENABLED=true; apagado en piloto (etapa 07)." },
+  { "method": "POST", "path": "/v1/auth/register-restaurant", "auth": "ANON", "note": "403 salvo PUBLIC_ONBOARDING_ENABLED=true; el alta pública está apagada por defecto." },
   { "method": "POST", "path": "/v1/calls/:id/cancel", "auth": "ANON", "note": "Comensal cancela su llamado con sessionToken rotativo (etapa 13)." },
   { "method": "PATCH", "path": "/v1/calls/:id", "auth": "STAFF", "note": "Acknowledge/resolve por staff del tenant (etapa 13/15)." },
   { "method": "GET", "path": "/v1/calls", "auth": "STAFF", "note": "Listado de llamados del tenant (etapa 13)." },
@@ -23,13 +23,13 @@
   { "method": "PUT", "path": "/v1/floor-plan/:restaurantId", "auth": "MANAGER", "note": "Manager + tenant; guardado atómico con versión/409 (etapa 26)." },
   { "method": "GET", "path": "/v1/health", "auth": "ANON", "note": "Infra: liveness sin datos." },
   { "method": "GET", "path": "/v1/metrics", "auth": "MANAGER", "note": "Métricas del tenant (etapa 08)." },
-  { "method": "POST", "path": "/v1/orders/:id/split-session", "auth": "ANON", "note": "Bloqueado en piloto: siempre 503 DIGITAL_PAYMENTS_UNAVAILABLE (etapa 03)." },
+  { "method": "POST", "path": "/v1/orders/:id/split-session", "auth": "ANON", "note": "No disponible en la release base: siempre 503 DIGITAL_PAYMENTS_UNAVAILABLE." },
   { "method": "GET", "path": "/v1/orders/active", "auth": "ANON", "note": "Comensal con x-session-token (etapa 14)." },
   { "method": "DELETE", "path": "/v1/orders/items/:id", "auth": "ANON", "note": "Comensal con sessionToken, sólo DRAFT (etapa 14)." },
-  { "method": "POST", "path": "/v1/orders/items/claim", "auth": "ANON", "note": "Bloqueado en piloto: siempre 503 (etapa 03)." },
+  { "method": "POST", "path": "/v1/orders/items/claim", "auth": "ANON", "note": "No disponible en la release base: siempre 503 DIGITAL_PAYMENTS_UNAVAILABLE." },
   { "method": "POST", "path": "/v1/orders/items", "auth": "ANON", "note": "Comensal con sessionToken, validado e idempotente (etapa 14)." },
   { "method": "GET", "path": "/v1/orders/session/:token", "auth": "ANON", "note": "Comensal con sessionToken (etapa 14)." },
-  { "method": "POST", "path": "/v1/orders/split-session/:id/pay-part", "auth": "ANON", "note": "Bloqueado en piloto: siempre 503 (etapa 03)." },
+  { "method": "POST", "path": "/v1/orders/split-session/:id/pay-part", "auth": "ANON", "note": "No disponible en la release base: siempre 503 DIGITAL_PAYMENTS_UNAVAILABLE." },
   { "method": "POST", "path": "/v1/orders/submit", "auth": "ANON", "note": "Comensal con sessionToken, idempotente (etapa 14)." },
   { "method": "GET", "path": "/v1/restaurants/:id/tables", "auth": "STAFF", "note": "Mesas del tenant (etapa 10)." },
   { "method": "POST", "path": "/v1/restaurants/:id/tables", "auth": "MANAGER", "note": "Alta de mesa del tenant (etapa 10)." },
@@ -48,6 +48,7 @@
   { "method": "GET", "path": "/v1/restaurants/:slugOrId/rewards/calculate", "auth": "ANON", "note": "Cálculo público de puntos, sin PII." },
   { "method": "PATCH", "path": "/v1/restaurants/:slugOrId/template", "auth": "MANAGER", "note": "Manager + tenant (etapa 09)." },
   { "method": "GET", "path": "/v1/restaurants/:slugOrId/upsell", "auth": "ANON", "note": "Recomendaciones públicas del local." },
+  { "method": "POST", "path": "/v1/restaurants/:slugOrId/upsell/events", "auth": "ANON", "note": "Instrumentación idempotente de impresión, aceptación y descarte; sesión activa y tenant validados dentro del body." },
   { "method": "GET", "path": "/v1/restaurants", "auth": "ANON", "note": "Listado público sin datos sensibles (etapa 07)." },
   { "method": "GET", "path": "/v1/sessions/:slug/:tableLabel", "auth": "ANON", "note": "Comensal vía QR estable, read-only (etapa 12)." },
   { "method": "GET", "path": "/v1/sessions/:token", "auth": "ANON", "note": "Comensal con token rotativo (etapa 12)." },
@@ -56,16 +57,29 @@
   { "method": "GET", "path": "/v1/shifts/current", "auth": "STAFF", "note": "Turno del tenant (etapa 10)." },
   { "method": "POST", "path": "/v1/shifts/open", "auth": "MANAGER", "note": "Manager + tenant; apertura atómica (etapa 24)." },
   { "method": "POST", "path": "/v1/staff/login", "auth": "ANON", "note": "Login staff por PIN (etapa 07)." },
-  { "method": "POST", "path": "/v1/staff/orders/:id/pay", "auth": "STAFF", "note": "Cobro manual presencial; manager decide por rol (etapa 15)." },
+  { "method": "POST", "path": "/v1/staff/orders/:id/pay", "auth": "STAFF", "note": "DEPRECADO E01: cobro por comanda sólo compat; camino normal por cuenta (etapa 15 + E01)." },
   { "method": "PATCH", "path": "/v1/staff/orders/:id/status", "auth": "STAFF", "note": "Transiciones de cocina/mesero por rol (etapa 15)." },
   { "method": "POST", "path": "/v1/staff/orders/:id/validate", "auth": "STAFF", "note": "Doble control en salón (etapa 15)." },
+  { "method": "POST", "path": "/v1/staff/orders/:id/reject", "auth": "STAFF", "note": "E05: rechazo auditable de revisión excepcional." },
   { "method": "GET", "path": "/v1/staff/restaurants/:id/kitchen-orders", "auth": "STAFF", "note": "KDS del tenant (etapa 15)." },
+  { "method": "GET", "path": "/v1/staff/restaurants/:id/cash-orders", "auth": "STAFF", "note": "Snapshot de caja presencial del tenant (etapa 09)." },
+  { "method": "GET", "path": "/v1/staff/restaurants/:id/service-workspace", "auth": "STAFF", "note": "Snapshot único de Servicio: pendientes, cocina, cuentas y mapa (S02/S04)." },
+  { "method": "POST", "path": "/v1/staff/service/tasks/:taskType/:targetId/claim", "auth": "STAFF", "note": "Toma atómica y auditable de una tarea del terminal compartido (S03)." },
+  { "method": "POST", "path": "/v1/staff/service/tasks/:taskType/:targetId/release", "auth": "STAFF", "note": "Reasignación controlada de una tarea tomada (S03)." },
+  { "method": "POST", "path": "/v1/staff/service/tasks/:taskType/:targetId/resolve", "auth": "STAFF", "note": "Cierre auditable de la toma después del hecho operativo (S03/S07)." },
+  { "method": "POST", "path": "/v1/staff/service/tasks/:taskType/:targetId/act", "auth": "STAFF", "note": "Intención operativa única: reclama y ejecuta la acción en una transacción (E06)." },
+  { "method": "GET", "path": "/v1/staff/restaurants/:id/rewards/customer", "auth": "STAFF", "note": "Consulta de saldo/ledger Rewards por teléfono desde la pantalla compartida (etapa 18)." },
+  { "method": "GET", "path": "/v1/staff/restaurants/:id/rewards/items", "auth": "STAFF", "note": "Catálogo de premios Rewards del tenant (etapa 18)." },
+  { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/accrual", "auth": "STAFF", "note": "Acreditación manual auditable con idempotencia (etapa 18)." },
+  { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/redeem", "auth": "STAFF", "note": "Canje atómico de puntos desde la pantalla compartida (etapa 18)." },
+  { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/redemptions/:redemptionId/cancel", "auth": "MANAGER", "note": "Reversión autorizada de un canje Rewards (etapa 18)." },
   { "method": "GET", "path": "/v1/staff/restaurants/:id/waitlist", "auth": "STAFF", "note": "Cola del tenant sin PII expuesta (etapa 16)." },
   { "method": "POST", "path": "/v1/staff/tables/:tableId/orders/items", "auth": "STAFF", "note": "Carga directa por mozo del tenant (etapa 15)." },
   { "method": "PATCH", "path": "/v1/staff/waitlist/:id/call", "auth": "STAFF", "note": "Aviso del tenant (etapa 16)." },
   { "method": "PATCH", "path": "/v1/staff/waitlist/:id/seat", "auth": "STAFF", "note": "Mesa destino validada del tenant (etapa 16)." },
   { "method": "GET", "path": "/v1/staff", "auth": "MANAGER", "note": "Plantel del tenant (etapa 07)." },
   { "method": "POST", "path": "/v1/staff", "auth": "MANAGER", "note": "Alta cerrada: sólo manager (etapa 07)." },
+  { "method": "POST", "path": "/v1/admin/restaurants/:id/rewards/items", "auth": "MANAGER", "note": "Alta de premio Rewards por encargado; catálogo aislado por tenant (etapa 18)." },
   { "method": "ALL", "path": "/v1/stream", "auth": "ANON", "note": "SSE deshabilitado: siempre 410 sin datos (etapa 17)." },
   { "method": "POST", "path": "/v1/tables/:id/close-session", "auth": "STAFF", "note": "Staff autenticado del tenant; force requiere MANAGER (etapa 12, plan integral etapa 00)." },
   { "method": "POST", "path": "/v1/tables/:id/new-session", "auth": "MANAGER", "note": "Manager + tenant; rota token (etapa 12)." },
@@ -76,4 +90,18 @@
   { "method": "POST", "path": "/v1/tables/:tableId/state/tap", "auth": "STAFF", "note": "Actor derivado del JWT; 409 ante carrera (etapas 11/24)." },
   { "method": "GET", "path": "/v1/tables/states/:restaurantId", "auth": "STAFF", "note": "Snapshot FSM del tenant (etapa 17)." },
   { "method": "POST", "path": "/v1/waitlist/join", "auth": "ANON", "note": "Público con rate-limit IP+tenant; sin PII en respuesta (etapas 16/25)." }
+  ,{ "method": "GET", "path": "/v1/waitlist/:id/status", "auth": "ANON", "note": "Estado del propio ticket validado por teléfono; no expone PII ni lista." }
+  ,{ "method": "POST", "path": "/v1/staff/sessions/:sessionId/settle", "auth": "MANAGER", "note": "B04: liquidación por cuenta; MANAGER + tenant + idempotencyKey + versión (C4)." }
+  ,{ "method": "POST", "path": "/v1/staff/sessions/:sessionId/settle-and-close", "auth": "MANAGER", "note": "E03: comando atómico Cobrar y cerrar; MANAGER + tenant + idempotencyKey + versión total + TO_CLEAN." }
+  ,{ "method": "POST", "path": "/v1/staff/tables/:tableId/orders", "auth": "STAFF", "note": "S05: pedido presencial por tanda atómica, origen y actor auditados." }
+  ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/sales/summary", "auth": "MANAGER", "note": "Resumen financiero de ventas y cobros por período del tenant (etapa 3)." }
+  ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/sales/summary/pdf", "auth": "MANAGER", "note": "Reporte resumen de ventas y cobros en formato A4 PDF informativo (etapa 4)." }
+  ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/sales/operations", "auth": "MANAGER", "note": "Detalle de operaciones con drill-down a tandas e ítems del tenant (etapa 3)." }
+  ,{ "method": "POST", "path": "/v1/admin/restaurants/:restaurantId/sales/settlements/:settlementId/adjustments", "auth": "MANAGER", "note": "Registro de ajuste o devolución parcial/total sobre cobro de settlement (etapa 2)." }
+  ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/sales/export/csv", "auth": "MANAGER", "note": "Exportación tabular CSV de operaciones y cobros del tenant (etapa 5)." }
+  ,{ "method": "POST", "path": "/v1/admin/restaurants/:restaurantId/receipts", "auth": "MANAGER", "note": "Generación o recuperación idempotente de snapshot de ticket (etapa 4)." }
+  ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/receipts/:receiptId", "auth": "MANAGER", "note": "Consulta de ticket snapshot del tenant (etapa 4)." }
+  ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/receipts/:receiptId/pdf", "auth": "MANAGER", "note": "Descarga del PDF térmico 80 mm informativo (etapa 4)." }
+  ,{ "method": "POST", "path": "/v1/admin/restaurants/:restaurantId/fiscal-documents", "auth": "MANAGER", "note": "Carga manual y asociación de comprobante fiscal externo (etapa 5)." }
+  ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/fiscal-documents", "auth": "MANAGER", "note": "Listado de comprobantes fiscales asociados del tenant (etapa 5)." }
 ]

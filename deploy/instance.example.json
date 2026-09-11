@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "instanceKey": "trattoria-del-puerto",
+  "restaurant": {
+    "name": "Trattoria del Puerto",
+    "slug": "trattoria-del-puerto",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "currency": "ARS"
+  },
+  "domains": {
+    "api": "https://api.example.com",
+    "client": "https://mesa.example.com",
+    "staff": "https://salon.example.com",
+    "admin": "https://admin.example.com"
+  },
+  "modules": {
+    "ordering": true,
+    "waiterValidation": true,
+    "manualPayment": true,
+    "digitalPayment": false,
+    "splitBill": false,
+    "waitlist": false,
+    "preOrder": false,
+    "rewards": false,
+    "sommelier": false,
+    "upsell": false,
+    "reviews": false,
+    "whatsappFallback": false
+  },
+  "deployment": {
+    "release": "0.1.0-reference",
+    "schema": "postgresql-v1",
+    "vercelProjects": {
+      "api": "trattoria-del-puerto-api",
+      "client": "trattoria-del-puerto-client",
+      "staff": "trattoria-del-puerto-staff",
+      "admin": "trattoria-del-puerto-admin"
+    }
+  },
+  "customization": {
+    "mode": "BASE_RELEASE",
+    "parentRelease": "0.1.0-reference",
+    "overrideBranch": "",
+    "overrideCommit": ""
+  }
+}

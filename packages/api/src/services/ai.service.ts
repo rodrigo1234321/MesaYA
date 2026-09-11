@@ -254,31 +254,44 @@ export class AIService {
       })
     );
 
+    const budgetMax = this.detectBudgetMax(sanitizedQuery);
+    const budgetItems = budgetMax === null
+      ? allActiveItems
+      : allActiveItems.filter((item) => item.price <= budgetMax);
+    if (budgetItems.length === 0) {
+      return this.abstainToStaff(`No encontré platos disponibles dentro del presupuesto indicado (${this.formatArs(budgetMax!)}).`);
+    }
+
     // Contención etapa 04: las restricciones dietarias se responden de forma
     // determinística sobre etiquetas del catálogo, sin confiar en garantías
     // de texto del modelo. Ante alergias o sin coincidencias verificadas
     // corresponde abstenerse y derivar al personal.
     const dietaryIntent = this.detectDietaryIntent(sanitizedQuery);
     if (dietaryIntent) {
-      return this.deterministicDietaryAnswer(restaurant, allActiveItems, dietaryIntent);
+      return this.deterministicDietaryAnswer(restaurant, budgetItems, dietaryIntent, budgetMax);
     }
 
     const apiKey = this.getGeminiApiKey();
 
-    if (this.isAiFeatureEnabled() && apiKey && allActiveItems.length > 0) {
+    if (this.isAiFeatureEnabled() && apiKey && budgetItems.length > 0) {
       try {
-        const geminiResult = await this.callGeminiForSommelier(restaurant, allActiveItems, sanitizedQuery, apiKey);
+        const geminiResult = await this.callGeminiForSommelier(restaurant, budgetItems, sanitizedQuery, apiKey);
         if (geminiResult && geminiResult.answer) {
-          const knownIds = new Set(allActiveItems.map((i) => i.id));
-          const validIds = geminiResult.recommendedDishIds;
-          if (validIds.length > 0 && validIds.every((id) => knownIds.has(id))) {
-            const suggestedDishes = allActiveItems.filter((i) => validIds.includes(i.id));
+          const knownIds = new Set(budgetItems.map((i) => i.id));
+          const validIds = geminiResult.recommendedDishIds.filter((id) => knownIds.has(id)).slice(0, 3);
+          if (validIds.length > 0 && validIds.length === geminiResult.recommendedDishIds.length) {
+            const suggestedDishes = budgetItems.filter((i) => validIds.includes(i.id));
             return {
               answer: geminiResult.answer,
               recommendedDishIds: validIds,
               suggestedDishes,
               suggestedPairing: geminiResult.suggestedPairing,
-              poweredBy: 'gemini'
+              poweredBy: 'gemini',
+              constraints: {
+                availableOnly: true,
+                ...(budgetMax === null ? {} : { budgetMax }),
+                pairing: geminiResult.suggestedPairing ? 'generic-guidance' : 'abstained'
+              }
             };
           }
           // IDs desconocidos o sin coincidencias válidas: no se sugiere nada
@@ -290,7 +303,7 @@ export class AIService {
     }
 
     // Smart Local Heuristic Sommelier (RAG local enriquecido sobre BD de platos)
-    return this.localHeuristicSommelier(restaurant, allActiveItems, sanitizedQuery);
+    return this.localHeuristicSommelier(restaurant, budgetItems, sanitizedQuery, budgetMax);
   }
 
   // --- CONTENCIÓN DIETARIA (determinística, sin garantías de seguridad) ---
@@ -316,6 +329,18 @@ export class AIService {
     return null;
   }
 
+  private static detectBudgetMax(query: string): number | null {
+    const match = query.match(/(?:hasta|max(?:imo)?|presupuesto(?:\s+de)?|gastar(?:\s+menos\s+de)?)\s*\$?\s*([0-9][0-9.,]*)/i);
+    if (!match) return null;
+    const raw = match[1].replace(/\./g, '').replace(',', '.');
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 && parsed <= 1_000_000 ? parsed : null;
+  }
+
+  private static formatArs(value: number): string {
+    return `$${Math.round(value).toLocaleString('es-AR')}`;
+  }
+
   private static abstainToStaff(reason: string): SommelierResponseDTO {
     return {
       answer: `${reason} Por seguridad no sugiero platos por este medio. Las etiquetas del catálogo no garantizan ausencia de alérgenos ni contaminación cruzada. Consultá al personal de salón antes de pedir.`,
@@ -323,6 +348,7 @@ export class AIService {
       suggestedDishes: [],
       suggestedPairing: undefined,
       poweredBy: 'heuristic-engine',
+      constraints: { availableOnly: true, pairing: 'abstained' },
       degraded: true
     };
   }
@@ -330,7 +356,8 @@ export class AIService {
   private static deterministicDietaryAnswer(
     restaurant: any,
     items: MenuItemDTO[],
-    intent: 'allergy' | 'gluten' | 'vegan' | 'vegetarian'
+    intent: 'allergy' | 'gluten' | 'vegan' | 'vegetarian',
+    budgetMax: number | null = null
   ): SommelierResponseDTO {
     if (intent === 'allergy') {
       return this.abstainToStaff('Ante alergias o restricciones estrictas me abstengo de recomendar.');
@@ -362,7 +389,13 @@ export class AIService {
       recommendedDishIds: matches.map((m) => m.id),
       suggestedDishes: matches,
       suggestedPairing: undefined,
-      poweredBy: 'heuristic-engine'
+      poweredBy: 'heuristic-engine',
+      constraints: {
+        availableOnly: true,
+        ...(budgetMax === null ? {} : { budgetMax }),
+        dietaryIntent: intent,
+        pairing: 'abstained'
+      }
     };
   }
 
@@ -509,7 +542,8 @@ Responde ÚNICAMENTE con este JSON:
   private static localHeuristicSommelier(
     restaurant: any,
     items: MenuItemDTO[],
-    query: string
+    query: string,
+    budgetMax: number | null = null
   ): SommelierResponseDTO {
     const q = query.toLowerCase();
     let matches: MenuItemDTO[] = [];
@@ -588,7 +622,7 @@ Responde ÚNICAMENTE con este JSON:
       matches = items.filter((i) => i.isFeatured || (i.tags && i.tags.includes('CHEF_PICK'))).slice(0, 3);
       if (matches.length === 0) matches = items.slice(0, 2);
       answer = `Como sugerencia destacada del día en ${restaurant.name}, te recomiendo ${formatDishList(matches)}.`;
-      pairing = 'Vino sugerido de la cava del chef';
+      pairing = 'Consultá al personal por el vino disponible para este plato';
     }
 
     const finalMatches = matches.slice(0, 3);
@@ -598,7 +632,12 @@ Responde ÚNICAMENTE con este JSON:
       recommendedDishIds: finalMatches.map((m) => m.id),
       suggestedDishes: finalMatches,
       suggestedPairing: pairing,
-      poweredBy: 'heuristic-engine'
+      poweredBy: 'heuristic-engine',
+      constraints: {
+        availableOnly: true,
+        ...(budgetMax === null ? {} : { budgetMax }),
+        pairing: pairing.toLowerCase().includes('consultá') ? 'generic-guidance' : 'generic-guidance'
+      }
     };
   }
 

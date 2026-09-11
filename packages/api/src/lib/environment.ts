@@ -15,6 +15,8 @@ const KNOWN_INSECURE_SECRETS = new Set([
 
 export type EnvironmentConfig = {
   isProduction: boolean;
+  instanceMode: 'MULTI_TENANT' | 'SINGLE_RESTAURANT';
+  instanceRestaurantId: string | undefined;
   jwtSecret: string;
   encryptionSecret: string;
   corsOrigins: string[];
@@ -39,7 +41,12 @@ function parseCorsOrigins(value: string | undefined, isProduction: boolean): str
     .filter(Boolean);
 
   if (!isProduction && origins.length === 0) {
-    return ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'];
+    return [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:5175',
+      'http://localhost:3000'
+    ];
   }
   if (origins.length === 0 || origins.includes('*')) {
     throw new Error('CORS_ORIGIN debe declarar una lista explícita de orígenes; "*" no está permitido.');
@@ -64,6 +71,14 @@ function parseCorsOrigins(value: string | undefined, isProduction: boolean): str
 /** Validates the environment before the API creates a listener. */
 export function getEnvironmentConfig(env: NodeJS.ProcessEnv = process.env): EnvironmentConfig {
   const isProduction = env.NODE_ENV === 'production';
+  const rawInstanceMode = (env.MESAYA_INSTANCE_MODE || 'MULTI_TENANT').trim().toUpperCase();
+  if (rawInstanceMode !== 'MULTI_TENANT' && rawInstanceMode !== 'SINGLE_RESTAURANT') {
+    throw new Error('MESAYA_INSTANCE_MODE debe ser MULTI_TENANT o SINGLE_RESTAURANT.');
+  }
+  const instanceRestaurantId = normalizeSecret(env.MESAYA_INSTANCE_RESTAURANT_ID);
+  if (rawInstanceMode === 'SINGLE_RESTAURANT' && !instanceRestaurantId) {
+    throw new Error('MESAYA_INSTANCE_RESTAURANT_ID es obligatorio en modo SINGLE_RESTAURANT.');
+  }
   const jwtSecret = normalizeSecret(env.JWT_SECRET);
   const encryptionSecret = normalizeSecret(env.ENCRYPTION_SECRET_KEY);
 
@@ -77,9 +92,28 @@ export function getEnvironmentConfig(env: NodeJS.ProcessEnv = process.env): Envi
 
   return {
     isProduction,
+    instanceMode: rawInstanceMode,
+    instanceRestaurantId,
     jwtSecret: jwtSecret || DEVELOPMENT_JWT_SECRET,
     encryptionSecret: encryptionSecret || DEVELOPMENT_ENCRYPTION_SECRET,
     corsOrigins: parseCorsOrigins(env.CORS_ORIGIN, isProduction),
-    publicOnboardingEnabled: env.PILOT_PUBLIC_ONBOARDING_ENABLED === 'true'
+    // `PILOT_PUBLIC_ONBOARDING_ENABLED` se conserva como alias para no romper
+    // instalaciones existentes; las nuevas usan el nombre neutral.
+    publicOnboardingEnabled: (env.PUBLIC_ONBOARDING_ENABLED ?? env.PILOT_PUBLIC_ONBOARDING_ENABLED) === 'true'
   };
+}
+
+/**
+ * Returns whether a tenant may be addressed by this API instance.
+ *
+ * Public QR/session routes use the same boundary as authenticated routes. In
+ * SINGLE_RESTAURANT mode the configured restaurant id is the only tenant that
+ * can be resolved; in MULTI_TENANT mode every tenant remains addressable.
+ */
+export function isRestaurantInConfiguredInstance(
+  restaurantId: string,
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  const config = getEnvironmentConfig(env);
+  return config.instanceMode === 'MULTI_TENANT' || config.instanceRestaurantId === restaurantId;
 }

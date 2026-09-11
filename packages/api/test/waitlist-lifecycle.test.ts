@@ -15,11 +15,15 @@ describe('Etapa 16 — Cerrar lista de espera y módulos incompletos', () => {
   let staffWaiterA: any;
   let tokenWaiterA: string;
 
-  // Tenant B: Bodegón Beta (para pruebas de aislamiento de tenant)
+  // Tenant B: Bodegón Beta (para pruebas de aislamiento de tenant y pre-pedido)
   let restB: any;
   let tableB1: any;
+  let tableB2: any;
   let staffWaiterB: any;
   let tokenWaiterB: string;
+  let preOrderItemB: any;
+  let publicTicketA: any;
+  let preOrderTicketB: any;
 
   // Tenant C: Restaurante con Fila Desactivada (enableWaitlist: false)
   let restC: any;
@@ -37,10 +41,10 @@ describe('Etapa 16 — Cerrar lista de espera y módulos incompletos', () => {
         slug: `alpha-waitlist-${Date.now()}`,
         templateId: 'GOURMET_OBSIDIAN',
         themeColor: '#3b82f6',
-        moduleConfig: {
+          moduleConfig: {
           create: {
             enableWaitlist: true,
-            enableWaitlistPreOrder: false,
+          enableWaitlistPreOrder: false,
             enableRewards: false,
             allowOrdering: true,
             requireWaiterValidation: true
@@ -98,7 +102,7 @@ describe('Etapa 16 — Cerrar lista de espera y módulos incompletos', () => {
         moduleConfig: {
           create: {
             enableWaitlist: true,
-            enableWaitlistPreOrder: false,
+            enableWaitlistPreOrder: true,
             enableRewards: false,
             allowOrdering: true,
             requireWaiterValidation: true
@@ -114,6 +118,28 @@ describe('Etapa 16 — Cerrar lista de espera y módulos incompletos', () => {
         sector: 'TERRAZA',
         currentState: TableFSMState.AVAILABLE,
         capacity: 4
+      }
+    });
+
+    tableB2 = await prisma.table.create({
+      data: {
+        restaurantId: restB.id,
+        label: 'Mesa B-2',
+        sector: 'TERRAZA',
+        currentState: TableFSMState.AVAILABLE,
+        capacity: 4
+      }
+    });
+
+    const categoryB = await prisma.menuCategory.create({
+      data: { restaurantId: restB.id, name: 'Cocina de prueba', orderIndex: 0 }
+    });
+    preOrderItemB = await prisma.menuItem.create({
+      data: {
+        categoryId: categoryB.id,
+        name: 'Plato de fila',
+        price: 4500,
+        isAvailable: true
       }
     });
 
@@ -280,6 +306,7 @@ describe('Etapa 16 — Cerrar lista de espera y módulos incompletos', () => {
       });
       expect(res.statusCode).toBe(201);
       const ticket = res.json();
+      publicTicketA = { ...ticket, phone: '223 555-1122' };
       expect(ticket.id).toBeDefined();
       expect(ticket.restaurantId).toBe(restA.id);
       expect(ticket.guestName).toBe('Familia Rossi');
@@ -292,6 +319,41 @@ describe('Etapa 16 — Cerrar lista de espera y módulos incompletos', () => {
       expect(ticket.phone).toBeUndefined();
       expect(ticket.queue).toBeUndefined();
       expect(ticket.entries).toBeUndefined();
+    });
+
+    it('permite consultar el propio ticket con teléfono y no lo revela con otro teléfono', async () => {
+      const ok = await app.inject({
+        method: 'GET',
+        url: `/v1/waitlist/${publicTicketA.id}/status?phone=2235551122`
+      });
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json().id).toBe(publicTicketA.id);
+      expect(ok.json().phone).toBeUndefined();
+
+      const wrongPhone = await app.inject({
+        method: 'GET',
+        url: `/v1/waitlist/${publicTicketA.id}/status?phone=2235559999`
+      });
+      expect(wrongPhone.statusCode).toBe(404);
+      expect(wrongPhone.json().code).toBe('WAITLIST_TICKET_NOT_FOUND');
+    });
+
+    it('valida el pre-pedido contra el menú del tenant y lo devuelve en el ticket', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/waitlist/join',
+        payload: {
+          restaurantSlug: restB.slug,
+          guestName: 'Grupo con pedido',
+          partySize: 2,
+          phone: '2235557788',
+          consent: true,
+          preOrderData: [{ menuItemId: preOrderItemB.id, quantity: 2, notes: 'Sin sal' }]
+        }
+      });
+      expect(res.statusCode).toBe(201);
+      preOrderTicketB = res.json();
+      expect(res.json().preOrderData).toEqual([{ menuItemId: preOrderItemB.id, quantity: 2, notes: 'Sin sal' }]);
     });
   });
 
@@ -597,6 +659,108 @@ describe('Etapa 16 — Cerrar lista de espera y módulos incompletos', () => {
       });
       expect(res.statusCode).toBe(409);
       expect(res.json().code).toBe('INVALID_WAITLIST_STATUS');
+    });
+
+    it('convierte el pre-pedido validado en una comanda de cocina al sentar', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/v1/staff/waitlist/${preOrderTicketB.id}/seat`,
+        headers: { authorization: `Bearer ${tokenWaiterB}` },
+        payload: { tableId: tableB1.id }
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().status).toBe(WaitlistStatus.SEATED);
+
+      const order = await prisma.order.findFirst({
+        where: { tableSession: { tableId: tableB1.id } },
+        include: { items: true }
+      });
+      expect(order?.status).toBe('IN_KITCHEN');
+      expect(order?.items).toHaveLength(1);
+      expect(order?.items[0].quantity).toBe(2);
+      expect(order?.items[0].unitPrice).toBe(4500);
+    });
+
+    it('no deja una comanda parcial si el stock cambia antes de promover el pre-pedido', async () => {
+      const atomicTable = await prisma.table.create({
+        data: {
+          restaurantId: restB.id,
+          label: `Mesa B-atomic-${Date.now()}`,
+          sector: 'TERRAZA',
+          currentState: TableFSMState.AVAILABLE,
+          capacity: 4
+        }
+      });
+      const secondItem = await prisma.menuItem.create({
+        data: {
+          categoryId: preOrderItemB.categoryId,
+          name: `Segundo plato ${Date.now()}`,
+          price: 3100,
+          isAvailable: true
+        }
+      });
+      const join = await app.inject({
+        method: 'POST',
+        url: '/v1/waitlist/join',
+        payload: {
+          restaurantSlug: restB.slug,
+          guestName: 'Grupo stock mutable',
+          partySize: 2,
+          phone: '2235559900',
+          consent: true,
+          preOrderData: [
+            { menuItemId: preOrderItemB.id, quantity: 1 },
+            { menuItemId: secondItem.id, quantity: 1 }
+          ]
+        }
+      });
+      expect(join.statusCode).toBe(201);
+      await prisma.menuItem.update({ where: { id: secondItem.id }, data: { isAvailable: false } });
+
+      const seat = await app.inject({
+        method: 'PATCH',
+        url: `/v1/staff/waitlist/${join.json().id}/seat`,
+        headers: { authorization: `Bearer ${tokenWaiterB}` },
+        payload: { tableId: atomicTable.id }
+      });
+      expect(seat.statusCode).toBe(409);
+      expect(seat.json().code).toBe('PREORDER_PROMOTION_FAILED');
+
+      const partialOrder = await prisma.order.findFirst({
+        where: { tableSession: { tableId: atomicTable.id } },
+        include: { items: true }
+      });
+      expect(partialOrder).toBeNull();
+    });
+
+    it('resuelve dos intentos simultáneos sobre el mismo turno con una sola asignación', async () => {
+      const concurrentEntry = await prisma.waitlistEntry.create({
+        data: {
+          restaurantId: restB.id,
+          guestName: 'Grupo concurrente',
+          partySize: 2,
+          phone: '+5492235559911',
+          status: WaitlistStatus.CALLED
+        }
+      });
+      const results = await Promise.all([
+        app.inject({
+          method: 'PATCH',
+          url: `/v1/staff/waitlist/${concurrentEntry.id}/seat`,
+          headers: { authorization: `Bearer ${tokenWaiterB}` },
+          payload: { tableId: tableB2.id }
+        }),
+        app.inject({
+          method: 'PATCH',
+          url: `/v1/staff/waitlist/${concurrentEntry.id}/seat`,
+          headers: { authorization: `Bearer ${tokenWaiterB}` },
+          payload: { tableId: tableB2.id }
+        })
+      ]);
+      expect(results.filter((result) => result.statusCode === 200)).toHaveLength(1);
+      expect(results.filter((result) => result.statusCode === 409)).toHaveLength(1);
+      const stored = await prisma.waitlistEntry.findUnique({ where: { id: concurrentEntry.id } });
+      expect(stored?.status).toBe(WaitlistStatus.SEATED);
     });
   });
 

@@ -370,9 +370,9 @@ describe('Etapa 28 — Ensayo integral del piloto (datos ficticios)', () => {
       });
       expect(close.statusCode).toBe(200);
 
-      // Contrato vigente: el QR informa inactivo (200 + valid:false)...
+      // Contrato vigente E02: token revocado → 410 + valid:false...
       const gone = await app.inject({ method: 'GET', url: `/v1/sessions/${sessionTokenA1}` });
-      expect(gone.statusCode).toBe(200);
+      expect(gone.statusCode).toBe(410);
       expect(gone.json().valid).toBe(false);
 
       // ...y cualquier acción con el token revocado es 410 Gone.

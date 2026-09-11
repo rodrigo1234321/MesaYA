@@ -176,4 +176,36 @@ describe('Etapa 26 (corrección) — action versionado del store usado por Floor
     expect(state.floorPlanConflict).toBeNull();
     expect(state.tables.find((t) => t.id === 't1')?.posX).toBe(500);
   });
+
+  it('4. un snapshot en vivo no pisa la geometría del borrador local', () => {
+    useFloorPlanStore.getState().updateTablePositionLocal('t1', 500, 500);
+
+    useFloorPlanStore.getState().handleSnapshot([
+      tableFixture({ posX: 99, posY: 99, currentState: TableFSMState.OCCUPIED_NO_ORDER })
+    ]);
+
+    const state = useFloorPlanStore.getState();
+    expect(state.tables.find((table) => table.id === 't1')).toMatchObject({
+      posX: 500,
+      posY: 500,
+      currentState: TableFSMState.AVAILABLE
+    });
+    expect(state.isConnected).toBe(true);
+    expect(state.hasUnsavedChanges).toBe(true);
+  });
+
+  it('5. un fallo no conflictivo conserva el borrador y deja el guardado reintentable', async () => {
+    useFloorPlanStore.getState().updateTablePositionLocal('t1', 700, 400);
+    vi.stubGlobal('fetch', vi.fn(async () => errJson(503, { message: 'Servidor temporalmente no disponible' })));
+
+    await expect(useFloorPlanStore.getState().saveFloorPlan('demo-slug')).rejects.toMatchObject({
+      statusCode: 503
+    });
+
+    const state = useFloorPlanStore.getState();
+    expect(state.tables.find((table) => table.id === 't1')).toMatchObject({ posX: 700, posY: 400 });
+    expect(state.hasUnsavedChanges).toBe(true);
+    expect(state.error).toContain('Servidor temporalmente no disponible');
+    expect(state.floorPlanConflict).toBeNull();
+  });
 });

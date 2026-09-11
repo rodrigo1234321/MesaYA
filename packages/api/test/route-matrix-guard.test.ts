@@ -18,5 +18,7 @@ describe('Etapa 27 — Gate de matriz de rutas', () => {
     if (res.stdout) console.log(res.stdout);
     if (res.status !== 0 && res.stderr) console.error(res.stderr);
     expect(res.status).toBe(0);
-  });
+  // The route scanner boots the TypeScript compiler in a child process. Its
+  // Windows cold start routinely exceeds five seconds on Node 24.
+  }, 30000);
 });

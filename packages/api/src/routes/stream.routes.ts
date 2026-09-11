@@ -3,12 +3,12 @@ import { FastifyInstance } from 'fastify';
 export async function streamRoutes(fastify: FastifyInstance) {
   /**
    * GET/ALL /stream
-   * Endpoint de Server-Sent Events (SSE) deshabilitado para el piloto presencial.
+    * Endpoint de Server-Sent Events (SSE) deshabilitado en la release base.
    *
    * Decisión de arquitectura (Etapa 17):
    * - En entornos de un solo nodo sin broker distribuido (Redis), SSE presentaba riesgos
    *   de conexiones colgadas, fugas de snapshots de salón a anónimos y JWTs expuestos en query strings.
-   * - El transporte autoritativo y resiliente para el piloto es el polling HTTP autenticado
+    * - El transporte autoritativo y resiliente es el polling HTTP autenticado
    *   sobre endpoints de snapshot dedicados por tenant (/calls, /floor-plan, /sessions/:token).
    * - Cualquier petición a /stream es rechazada de inmediato con 410 GONE, sin datos,
    *   cerrando la conexión HTTP de inmediato.

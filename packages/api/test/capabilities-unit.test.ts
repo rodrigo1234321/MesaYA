@@ -55,12 +55,18 @@ describe('Etapa 00 — ConfigService.buildCapabilities (unit)', () => {
     expect(optional.capabilities.waiter_validation.reasonCode).toBe('WAITER_VALIDATION_OPTIONAL');
   });
 
-  it('digital_payment always COMING_SOON regardless of paymentMode', () => {
-    for (const mode of [PaymentMode.DIGITAL_MP, PaymentMode.HYBRID, PaymentMode.WAITER_ONLY]) {
-      const caps = ConfigService.buildCapabilities(baseConfig({ paymentMode: mode }));
-      expect(caps.capabilities.digital_payment.state).toBe(CapabilityState.COMING_SOON);
-      expect(caps.capabilities.digital_payment.effectiveEnabled).toBe(false);
-      expect(caps.capabilities.digital_payment.reasonCode).toBe('DIGITAL_PAYMENTS_UNAVAILABLE');
+  it('digital_payment is an informational option, never an autonomous settlement', () => {
+    const waiterOnly = ConfigService.buildCapabilities(baseConfig({ paymentMode: PaymentMode.WAITER_ONLY })).capabilities.digital_payment;
+    expect(waiterOnly.state).toBe(CapabilityState.AVAILABLE);
+    expect(waiterOnly.effectiveEnabled).toBe(false);
+    expect(waiterOnly.reasonCode).toBe('DIGITAL_PAYMENT_OPTION_DISABLED');
+
+    for (const mode of [PaymentMode.DIGITAL_MP, PaymentMode.HYBRID]) {
+      const option = ConfigService.buildCapabilities(baseConfig({ paymentMode: mode })).capabilities.digital_payment;
+      expect(option.state).toBe(CapabilityState.AVAILABLE);
+      expect(option.effectiveEnabled).toBe(true);
+      expect(option.reasonCode).toBe('DIGITAL_PAYMENT_OPTION_ACTIVE');
+      expect(option.message).toMatch(/cobro se confirma presencialmente/);
     }
   });
 
@@ -74,52 +80,61 @@ describe('Etapa 00 — ConfigService.buildCapabilities (unit)', () => {
     }
   });
 
-  it('waitlist is pilot-only and effective only when enabled', () => {
+  it('waitlist is available and effective only when enabled', () => {
     const enabled = ConfigService.buildCapabilities(baseConfig({ enableWaitlist: true })).capabilities.waitlist;
     const disabled = ConfigService.buildCapabilities(baseConfig({ enableWaitlist: false })).capabilities.waitlist;
-    expect(enabled.state).toBe(CapabilityState.PILOT_ONLY);
+    expect(enabled.state).toBe(CapabilityState.AVAILABLE);
     expect(enabled.effectiveEnabled).toBe(true);
-    expect(disabled.state).toBe(CapabilityState.PILOT_ONLY);
+    expect(disabled.state).toBe(CapabilityState.AVAILABLE);
     expect(disabled.effectiveEnabled).toBe(false);
   });
 
-  it('waitlist_preorder always COMING_SOON', () => {
+  it('waitlist_preorder is available only when waitlist and pre-order are enabled', () => {
     const caps = ConfigService.buildCapabilities(baseConfig({ enableWaitlistPreOrder: true }));
-    expect(caps.capabilities.waitlist_preorder.state).toBe(CapabilityState.COMING_SOON);
+    expect(caps.capabilities.waitlist_preorder.state).toBe(CapabilityState.AVAILABLE);
     expect(caps.capabilities.waitlist_preorder.effectiveEnabled).toBe(false);
-    expect(caps.capabilities.waitlist_preorder.reasonCode).toBe('WAITLIST_PREORDER_UNAVAILABLE');
+    expect(caps.capabilities.waitlist_preorder.reasonCode).toBe('WAITLIST_DISABLED');
+
+    const active = ConfigService.buildCapabilities(baseConfig({ enableWaitlist: true, enableWaitlistPreOrder: true }));
+    expect(active.capabilities.waitlist_preorder.state).toBe(CapabilityState.AVAILABLE);
+    expect(active.capabilities.waitlist_preorder.effectiveEnabled).toBe(true);
+    expect(active.capabilities.waitlist_preorder.reasonCode).toBe('WAITLIST_PREORDER_ACTIVE');
   });
 
-  it('rewards always COMING_SOON (only calculator exists)', () => {
+  it('rewards is available only when the ledger-backed module is enabled', () => {
     const caps = ConfigService.buildCapabilities(baseConfig({ enableRewards: true }));
-    expect(caps.capabilities.rewards.state).toBe(CapabilityState.COMING_SOON);
-    expect(caps.capabilities.rewards.effectiveEnabled).toBe(false);
-    expect(caps.capabilities.rewards.reasonCode).toBe('REWARDS_NO_LEDGER');
+    expect(caps.capabilities.rewards.state).toBe(CapabilityState.AVAILABLE);
+    expect(caps.capabilities.rewards.effectiveEnabled).toBe(true);
+    expect(caps.capabilities.rewards.reasonCode).toBe('REWARDS_LEDGER_ACTIVE');
+    const disabled = ConfigService.buildCapabilities(baseConfig({ enableRewards: false })).capabilities.rewards;
+    expect(disabled.state).toBe(CapabilityState.AVAILABLE);
+    expect(disabled.effectiveEnabled).toBe(false);
+    expect(disabled.reasonCode).toBe('REWARDS_DISABLED');
   });
 
-  it('upsell remains PILOT_ONLY and ineffective without a client consumer', () => {
-    expect(ConfigService.buildCapabilities(baseConfig({ enableUpsell: true })).capabilities.upsell.state).toBe(CapabilityState.PILOT_ONLY);
-    expect(ConfigService.buildCapabilities(baseConfig({ enableUpsell: true })).capabilities.upsell.effectiveEnabled).toBe(false);
-    expect(ConfigService.buildCapabilities(baseConfig({ enableUpsell: false })).capabilities.upsell.state).toBe(CapabilityState.PILOT_ONLY);
+  it('upsell queda disponible cuando el restaurante lo habilita y se oculta al deshabilitarlo', () => {
+    expect(ConfigService.buildCapabilities(baseConfig({ enableUpsell: true })).capabilities.upsell.state).toBe(CapabilityState.AVAILABLE);
+    expect(ConfigService.buildCapabilities(baseConfig({ enableUpsell: true })).capabilities.upsell.effectiveEnabled).toBe(true);
+    expect(ConfigService.buildCapabilities(baseConfig({ enableUpsell: false })).capabilities.upsell.effectiveEnabled).toBe(false);
   });
 
-  it('smart_tips remains PILOT_ONLY and ineffective while payment integration is partial', () => {
-    expect(ConfigService.buildCapabilities(baseConfig({ enableSmartTips: true })).capabilities.smart_tips.state).toBe(CapabilityState.PILOT_ONLY);
-    expect(ConfigService.buildCapabilities(baseConfig({ enableSmartTips: true })).capabilities.smart_tips.effectiveEnabled).toBe(false);
-    expect(ConfigService.buildCapabilities(baseConfig({ enableSmartTips: false })).capabilities.smart_tips.state).toBe(CapabilityState.PILOT_ONLY);
+  it('smart_tips queda disponible para cobro manual y se oculta al deshabilitarlo', () => {
+    expect(ConfigService.buildCapabilities(baseConfig({ enableSmartTips: true })).capabilities.smart_tips.state).toBe(CapabilityState.AVAILABLE);
+    expect(ConfigService.buildCapabilities(baseConfig({ enableSmartTips: true })).capabilities.smart_tips.effectiveEnabled).toBe(true);
+    expect(ConfigService.buildCapabilities(baseConfig({ enableSmartTips: false })).capabilities.smart_tips.effectiveEnabled).toBe(false);
   });
 
-  it('reviews MISCONFIGURED when enabled without googlePlaceId', () => {
+  it('reviews mantiene feedback interno aunque Google Place ID no esté configurado', () => {
     const caps = ConfigService.buildCapabilities(baseConfig({ enableReviews: true, googlePlaceId: null }));
-    expect(caps.capabilities.reviews.state).toBe(CapabilityState.MISCONFIGURED);
-    expect(caps.capabilities.reviews.reasonCode).toBe('REVIEWS_NO_PLACE_ID');
-    expect(caps.capabilities.reviews.effectiveEnabled).toBe(false);
+    expect(caps.capabilities.reviews.state).toBe(CapabilityState.AVAILABLE);
+    expect(caps.capabilities.reviews.reasonCode).toBe('REVIEWS_INTERNAL_ACTIVE_GOOGLE_UNCONFIGURED');
+    expect(caps.capabilities.reviews.effectiveEnabled).toBe(true);
   });
 
-  it('reviews PILOT_ONLY when enabled with googlePlaceId', () => {
+  it('reviews habilita Google además del feedback interno cuando hay Place ID', () => {
     const caps = ConfigService.buildCapabilities(baseConfig({ enableReviews: true, googlePlaceId: 'ChIJ123' }));
-    expect(caps.capabilities.reviews.state).toBe(CapabilityState.PILOT_ONLY);
-    expect(caps.capabilities.reviews.reasonCode).toBe('REVIEWS_PILOT_ONLY');
+    expect(caps.capabilities.reviews.state).toBe(CapabilityState.AVAILABLE);
+    expect(caps.capabilities.reviews.reasonCode).toBe('REVIEWS_INTERNAL_AND_GOOGLE_ACTIVE');
     expect(caps.capabilities.reviews.effectiveEnabled).toBe(true);
   });
 
@@ -129,11 +144,11 @@ describe('Etapa 00 — ConfigService.buildCapabilities (unit)', () => {
     expect(caps.capabilities.reviews.effectiveEnabled).toBe(false);
   });
 
-  it('manual_payment is pilot-only and not effective until its staff UI exists', () => {
+  it('manual_payment is available when the shared-screen cash UI exists', () => {
     const caps = ConfigService.buildCapabilities(baseConfig());
-    expect(caps.capabilities.manual_payment.state).toBe(CapabilityState.PILOT_ONLY);
-    expect(caps.capabilities.manual_payment.effectiveEnabled).toBe(false);
-    expect(caps.capabilities.manual_payment.reasonCode).toBe('MANUAL_PAYMENT_API_ONLY');
+    expect(caps.capabilities.manual_payment.state).toBe(CapabilityState.AVAILABLE);
+    expect(caps.capabilities.manual_payment.effectiveEnabled).toBe(true);
+    expect(caps.capabilities.manual_payment.reasonCode).toBe('MANUAL_PAYMENT_ACTIVE');
   });
 
   it('all capability messages are in Spanish (no English fragments)', () => {
@@ -169,6 +184,6 @@ describe('Etapa 00 — ConfigService.buildCapabilities (unit)', () => {
       expect(typeof entry.effectiveEnabled).toBe('boolean');
     }
     expect(caps.capabilities.digital_payment.configuredEnabled).toBe(true);
-    expect(caps.capabilities.digital_payment.effectiveEnabled).toBe(false);
+    expect(caps.capabilities.digital_payment.effectiveEnabled).toBe(true);
   });
 });

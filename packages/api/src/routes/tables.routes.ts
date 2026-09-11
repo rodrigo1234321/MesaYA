@@ -85,7 +85,7 @@ export async function tableRoutes(fastify: FastifyInstance) {
   fastify.post('/tables/:id/close-session', { preHandler: [verifyStaffToken] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const { force } = (request.body as any) || {};
+      const { force, reason } = (request.body as any) || {};
 
       const table = await prisma.table.findUnique({ where: { id } });
       if (!table || table.restaurantId !== request.staffUser!.restaurantId) {
@@ -101,11 +101,16 @@ export async function tableRoutes(fastify: FastifyInstance) {
       }
 
       const { SessionService } = await import('../services/session.service');
-      const result = await SessionService.closeTableSession(id, { force: Boolean(force) });
+      // B05: force exige motivo explícito en el servicio; solo viaja si viene en el body.
+      const closeOptions: { force: boolean; reason?: string } = { force: Boolean(force) };
+      if (closeOptions.force && typeof reason === 'string' && reason.trim()) {
+        closeOptions.reason = reason.trim();
+      }
+      const result = await SessionService.closeTableSession(id, closeOptions);
       return reply.send(result);
     } catch (err: any) {
       const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message, code: err.code });
+      return reply.status(code).send({ error: err.message, code: err.code, details: err.details });
     }
   });
 
@@ -122,7 +127,7 @@ export async function tableRoutes(fastify: FastifyInstance) {
       return reply.send({ success: true, token });
     } catch (err: any) {
       const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message });
+      return reply.status(code).send({ error: err.message, code: err.code, details: err.details });
     }
   });
 

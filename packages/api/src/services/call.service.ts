@@ -1,7 +1,9 @@
 import { prisma } from '../lib/prisma';
 import { eventBus } from '../lib/eventBus';
-import { CreateCallDTO, CallStatus, CallOrigin, CallEventData, Sector, CallType, PaymentMethod } from '@mesaya/shared';
+import { fsmService } from './fsm.service';
+import { CreateCallDTO, CallStatus, CallOrigin, CallEventData, Sector, CallType, PaymentMethod, TableFSMState, SignalSource } from '@mesaya/shared';
 import { AbuseControlService, AbusePolicies } from './abuse-control.service';
+import { isRestaurantInConfiguredInstance } from '../lib/environment';
 
 // Helper: Haversine distance in meters
 function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -26,7 +28,7 @@ export class CallService {
    * Requisitos de seguridad:
    * - La sesión debe existir, no estar cerrada y no haber expirado.
    * - El turno del restaurante debe estar abierto.
-   * - Límite de 1 llamado activo por sesión.
+   * - Límite de 1 llamado activo por motivo y sesión; motivos distintos pueden convivir.
    * - Geofence contextual: señal heurística no bloqueante si no hay permisos GPS en el cliente;
    *   el geofence NUNCA autoriza sesiones vencidas o cerradas.
    */
@@ -41,7 +43,10 @@ export class CallService {
         },
         shift: true,
         calls: {
+          // Un mismo motivo no se duplica, pero la mesa puede tener necesidades
+          // distintas en paralelo (por ejemplo, mozo + insumos).
           where: {
+            type: dto.type,
             status: { in: ['PENDING', 'IN_PROGRESS'] }
           }
         }
@@ -49,6 +54,13 @@ export class CallService {
     });
 
     if (!session) {
+      const error: any = new Error('Sesión de mesa no encontrada');
+      error.statusCode = 404;
+      error.code = 'SESSION_NOT_FOUND';
+      throw error;
+    }
+
+    if (!isRestaurantInConfiguredInstance(session.table.restaurantId)) {
       const error: any = new Error('Sesión de mesa no encontrada');
       error.statusCode = 404;
       error.code = 'SESSION_NOT_FOUND';
@@ -66,6 +78,13 @@ export class CallService {
       const error: any = new Error('La sesión de esta mesa ha expirado. Por favor volvé a escanear el QR de la mesa.');
       error.statusCode = 410;
       error.code = 'SESSION_EXPIRED';
+      throw error;
+    }
+
+    if (!session.shift || session.shift.restaurantId !== session.table.restaurantId) {
+      const error: any = new Error('El turno de la sesión no está activo para el restaurante de esta mesa.');
+      error.statusCode = 410;
+      error.code = 'SHIFT_INACTIVE';
       throw error;
     }
 
@@ -116,9 +135,9 @@ export class CallService {
       throw error;
     }
 
-    // Fast path informativo; la garantía real está en activeKey + índice único.
+    // Fast path informativo por motivo; la garantía real está en activeKey + índice único.
     if (session.calls.length > 0) {
-      const error: any = new Error('Ya tienes un llamado activo en curso. Tu mozo ya fue notificado y está en camino.');
+      const error: any = new Error('Ya tienes un llamado activo para este motivo. El personal ya fue notificado.');
       error.statusCode = 429;
       error.code = 'ACTIVE_CALL_LIMIT';
       error.retryAfterSeconds = 1;
@@ -134,16 +153,57 @@ export class CallService {
       throw error;
     }
 
+    const tipMinor = dto.type === CallType.BILL ? (dto.tipMinor ?? 0) : 0;
+    if (!Number.isSafeInteger(tipMinor) || tipMinor < 0 || tipMinor > 2147483647) {
+      const error: any = new Error('La propina debe ser un importe entero válido en centavos');
+      error.statusCode = 400;
+      error.code = 'INVALID_TIP';
+      throw error;
+    }
+    if (dto.type !== CallType.BILL && dto.tipMinor !== undefined && dto.tipMinor !== 0) {
+      const error: any = new Error('La propina solo se puede enviar al pedir la cuenta');
+      error.statusCode = 400;
+      error.code = 'TIP_REQUIRES_BILL';
+      throw error;
+    }
+
+    // Cobrar la cuenta no cierra la ocupación: el contrato permite otra ronda
+    // mientras el grupo siga sentado. Solo una mesa marcada PAID (cierre
+    // operativo explícito/legado) debe rechazar nuevas necesidades.
+    if (session.table.currentState === TableFSMState.PAID) {
+      const error: any = new Error(
+        'Esta cuenta ya fue cobrada. Liberá la mesa y escaneá el QR de una nueva ocupación.'
+      );
+      error.statusCode = 409;
+      error.code = 'TABLE_NOT_ORDERABLE';
+      throw error;
+    }
+
+    // La necesidad nace ya acompañada por la señal operativa de la mesa. Así
+    // el mapa no puede mostrar Disponible mientras el cliente espera atención.
+    await fsmService.ensureOperationalState({
+      tableId: session.table.id,
+      toState: dto.type === CallType.BILL
+        ? TableFSMState.BILL_REQUESTED
+        : TableFSMState.OCCUPIED_NO_ORDER,
+      source: SignalSource.CUSTOMER_APP,
+      trigger: dto.type === CallType.BILL
+        ? `Comensal solicitó la cuenta (${paymentMethod})`
+        : `Comensal solicitó asistencia (${dto.type})`
+    });
+
     // La creación compite contra otras instancias mediante el índice único de
-    // activeKey. No se usa count-then-create dentro de una transacción.
+    // activeKey. La clave es por sesión y tipo: evita doble toque del mismo
+    // motivo sin ocultar una necesidad distinta de la misma mesa.
     let call;
     try {
       call = await prisma.callRequest.create({
         data: {
           tableSessionId: session.id,
-          activeKey: session.id,
+          activeKey: `${session.id}:${dto.type}`,
           type: dto.type,
           paymentMethod: paymentMethod,
+          tipMinor,
           note: dto.note ? dto.note.trim() : null,
           origin: dto.origin || CallOrigin.WEB_DIRECT,
           status: CallStatus.PENDING
@@ -151,7 +211,7 @@ export class CallService {
       });
     } catch (err: any) {
       if (err?.code === 'P2002') {
-        const error: any = new Error('Ya tienes un llamado activo en curso. Tu mozo ya fue notificado y está en camino.');
+        const error: any = new Error('Ya tienes un llamado activo para este motivo. El personal ya fue notificado.');
         error.statusCode = 429;
         error.code = 'ACTIVE_CALL_LIMIT';
         error.retryAfterSeconds = 1;
@@ -168,6 +228,7 @@ export class CallService {
       sector: session.table.sector as Sector,
       type: call.type as CallType,
       paymentMethod: call.paymentMethod as PaymentMethod,
+      tipMinor: call.tipMinor,
       note: call.note,
       origin: call.origin as CallOrigin,
       status: CallStatus.PENDING,
@@ -176,22 +237,6 @@ export class CallService {
 
     // Broadcast SSE / Event Bus
     eventBus.broadcastCall(eventPayload, 'call.created');
-
-    // RTMS: If diner requested bill, auto-transition table state to BILL_REQUESTED
-    if (call.type === CallType.BILL) {
-      try {
-        const { fsmService } = await import('./fsm.service');
-        const { TableFSMState, SignalSource } = await import('@mesaya/shared');
-        await fsmService.attemptTransition({
-          tableId: session.table.id,
-          toState: TableFSMState.BILL_REQUESTED,
-          source: SignalSource.CUSTOMER_APP,
-          trigger: `Comensal solicitó la cuenta (${paymentMethod})`
-        });
-      } catch (err) {
-        console.warn('FSM auto-transition to BILL_REQUESTED skipped or failed:', err);
-      }
-    }
 
     return eventPayload;
   }
@@ -231,7 +276,8 @@ export class CallService {
       throw error;
     }
 
-    // State machine protection: Do not resurrect cancelled or already resolved calls
+    // State machine protection: preserve explicit final-state diagnostics and
+    // never resurrect a cancelled or resolved request.
     if (existing.status === CallStatus.CANCELLED && status !== CallStatus.CANCELLED) {
       const error: any = new Error('Este llamado fue cancelado por el comensal.');
       error.statusCode = 409;
@@ -245,13 +291,28 @@ export class CallService {
       throw error;
     }
 
+    const allowedTransitions: Record<CallStatus, CallStatus[]> = {
+      [CallStatus.PENDING]: [CallStatus.PENDING, CallStatus.IN_PROGRESS, CallStatus.RESOLVED, CallStatus.CANCELLED],
+      [CallStatus.IN_PROGRESS]: [CallStatus.IN_PROGRESS, CallStatus.RESOLVED, CallStatus.CANCELLED],
+      [CallStatus.RESOLVED]: [CallStatus.RESOLVED],
+      [CallStatus.CANCELLED]: [CallStatus.CANCELLED]
+    };
+    if (!allowedTransitions[existing.status as CallStatus]?.includes(status)) {
+      const error: any = new Error(`Transición de llamado no permitida: ${existing.status} -> ${status}`);
+      error.statusCode = 409;
+      error.code = 'CALL_INVALID_TRANSITION';
+      throw error;
+    }
+
     const now = new Date();
     const updated = await prisma.callRequest.update({
       where: { id: callId },
       data: {
         status,
         activeKey: status === CallStatus.RESOLVED || status === CallStatus.CANCELLED ? null : existing.activeKey,
-        acknowledgedAt: status === CallStatus.IN_PROGRESS ? now : existing.acknowledgedAt,
+        acknowledgedAt: status === CallStatus.IN_PROGRESS
+          ? (existing.acknowledgedAt || now)
+          : existing.acknowledgedAt,
         resolvedAt: status === CallStatus.RESOLVED ? now : existing.resolvedAt
       }
     });
@@ -264,6 +325,7 @@ export class CallService {
       sector: existing.tableSession.table.sector as Sector,
       type: updated.type as CallType,
       paymentMethod: updated.paymentMethod as PaymentMethod,
+      tipMinor: updated.tipMinor,
       note: updated.note,
       origin: updated.origin as CallOrigin,
       status: updated.status as CallStatus,
@@ -295,6 +357,13 @@ export class CallService {
     });
 
     if (!existing || existing.tableSession.token !== sessionToken) {
+      const error: any = new Error('Llamado no encontrado para esta sesión');
+      error.statusCode = 404;
+      error.code = 'CALL_NOT_FOUND';
+      throw error;
+    }
+
+    if (!isRestaurantInConfiguredInstance(existing.tableSession.table.restaurant.id)) {
       const error: any = new Error('Llamado no encontrado para esta sesión');
       error.statusCode = 404;
       error.code = 'CALL_NOT_FOUND';
@@ -348,6 +417,7 @@ export class CallService {
       sector: existing.tableSession.table.sector as Sector,
       type: updated.type as CallType,
       paymentMethod: updated.paymentMethod as PaymentMethod,
+      tipMinor: updated.tipMinor,
       note: updated.note,
       origin: updated.origin as CallOrigin,
       status: CallStatus.CANCELLED,
@@ -388,6 +458,7 @@ export class CallService {
       sector: c.tableSession.table.sector as Sector,
       type: c.type as CallType,
       paymentMethod: c.paymentMethod as PaymentMethod,
+      tipMinor: c.tipMinor,
       note: c.note,
       origin: c.origin as CallOrigin,
       status: c.status as CallStatus,

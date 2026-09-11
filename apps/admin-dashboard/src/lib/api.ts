@@ -57,7 +57,15 @@ export class AdminApi {
 
   static getSavedRestaurant(): RestaurantItem | null {
     const raw = localStorage.getItem('mesaya_active_restaurant');
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && typeof parsed.slug === 'string' ? parsed : null;
+    } catch {
+      localStorage.removeItem('mesaya_active_restaurant');
+      localStorage.removeItem('mesaya_admin_token');
+      return null;
+    }
   }
 
   static setSavedRestaurant(restaurant: Partial<RestaurantItem>) {
@@ -315,6 +323,25 @@ export class AdminApi {
     return res.json();
   }
 
+  static async getRewardItems(restaurantId: string) {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/rewards/items`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    if (!res.ok) throw new Error('Error al cargar premios Rewards');
+    return res.json();
+  }
+
+  static async createRewardItem(restaurantId: string, data: { name: string; description?: string; pointsCost: number }) {
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/rewards/items`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(data)
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.message || payload.error || 'Error al crear premio Rewards');
+    return payload;
+  }
+
   static async getModuleConfigAudit(restaurantId: string) {
     const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/config/audit`, {
       headers: this.getAuthHeaders({ isJson: false })
@@ -490,5 +517,172 @@ export class AdminApi {
     await this.requireAuthorized(res, 'Error al consultar rendimiento de mesas');
     return res.json();
   }
-}
 
+  // ==========================================
+  // VENTAS Y COBROS (Etapas 1–5)
+  // ==========================================
+  static async getSalesSummary(
+    restaurantId: string,
+    options: {
+      period?: 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM';
+      dateFrom?: string;
+      dateTo?: string;
+      paymentMethod?: string;
+      responsibleStaffUserId?: string;
+      hasFiscalDocument?: boolean;
+    } = {}
+  ): Promise<import('@mesaya/shared').SalesSummaryDTO> {
+    const params = new URLSearchParams();
+    if (options.period) params.append('period', options.period);
+    if (options.dateFrom) params.append('dateFrom', options.dateFrom);
+    if (options.dateTo) params.append('dateTo', options.dateTo);
+    if (options.paymentMethod) params.append('paymentMethod', options.paymentMethod);
+    if (options.responsibleStaffUserId) params.append('responsibleStaffUserId', options.responsibleStaffUserId);
+    if (options.hasFiscalDocument !== undefined) params.append('hasFiscalDocument', String(options.hasFiscalDocument));
+
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/sales/summary?${params.toString()}`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    await this.requireAuthorized(res, 'Error al consultar resumen de ventas');
+    return res.json();
+  }
+
+  static async getSalesOperations(
+    restaurantId: string,
+    options: {
+      period?: 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM';
+      dateFrom?: string;
+      dateTo?: string;
+      paymentMethod?: string;
+      responsibleStaffUserId?: string;
+      hasFiscalDocument?: boolean;
+    } = {}
+  ): Promise<{ operations: import('@mesaya/shared').SalesOperationDTO[] }> {
+    const params = new URLSearchParams();
+    if (options.period) params.append('period', options.period);
+    if (options.dateFrom) params.append('dateFrom', options.dateFrom);
+    if (options.dateTo) params.append('dateTo', options.dateTo);
+    if (options.paymentMethod) params.append('paymentMethod', options.paymentMethod);
+    if (options.responsibleStaffUserId) params.append('responsibleStaffUserId', options.responsibleStaffUserId);
+    if (options.hasFiscalDocument !== undefined) params.append('hasFiscalDocument', String(options.hasFiscalDocument));
+
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/sales/operations?${params.toString()}`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    await this.requireAuthorized(res, 'Error al consultar operaciones de ventas');
+    return res.json();
+  }
+
+  static async exportSalesCsv(
+    restaurantId: string,
+    options: {
+      period?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      paymentMethod?: string;
+      responsibleStaffUserId?: string;
+      hasFiscalDocument?: boolean;
+    } = {}
+  ): Promise<Blob> {
+    const params = new URLSearchParams();
+    if (options.period) params.append('period', options.period);
+    if (options.dateFrom) params.append('dateFrom', options.dateFrom);
+    if (options.dateTo) params.append('dateTo', options.dateTo);
+    if (options.paymentMethod) params.append('paymentMethod', options.paymentMethod);
+    if (options.responsibleStaffUserId) params.append('responsibleStaffUserId', options.responsibleStaffUserId);
+    if (options.hasFiscalDocument !== undefined) params.append('hasFiscalDocument', String(options.hasFiscalDocument));
+
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/sales/export/csv?${params.toString()}`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    await this.requireAuthorized(res, 'Error al exportar CSV de ventas');
+    return res.blob();
+  }
+
+  static async downloadSalesSummaryPdf(
+    restaurantId: string,
+    options: { period?: string; dateFrom?: string; dateTo?: string; paymentMethod?: string; responsibleStaffUserId?: string } = {}
+  ): Promise<Blob> {
+    const params = new URLSearchParams();
+    if (options.period) params.append('period', options.period);
+    if (options.dateFrom) params.append('dateFrom', options.dateFrom);
+    if (options.dateTo) params.append('dateTo', options.dateTo);
+    if (options.paymentMethod) params.append('paymentMethod', options.paymentMethod);
+    if (options.responsibleStaffUserId) params.append('responsibleStaffUserId', options.responsibleStaffUserId);
+
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/sales/summary/pdf?${params.toString()}`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    await this.requireAuthorized(res, 'Error al descargar PDF de resumen de ventas');
+    return res.blob();
+  }
+
+  static async createPaymentAdjustment(
+    restaurantId: string,
+    settlementId: string,
+    data: { amountMinor: number; tipMinor?: number; reason: string }
+  ): Promise<import('@mesaya/shared').PaymentAdjustmentDTO> {
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/sales/settlements/${settlementId}/adjustments`, {
+      method: 'POST',
+      headers: this.getAuthHeaders({ isJson: true }),
+      body: JSON.stringify(data)
+    });
+    await this.requireAuthorized(res, 'Error al registrar devolución / ajuste');
+    return res.json();
+  }
+
+  static async createReceiptSnapshot(
+    restaurantId: string,
+    data: { tableSessionId: string; settlementId?: string; receiptType: 'PRE_BILL_DETAIL' | 'PAYMENT_RECEIPT'; idempotencyKey?: string }
+  ): Promise<import('@mesaya/shared').ReceiptSnapshotDTO> {
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/receipts`, {
+      method: 'POST',
+      headers: this.getAuthHeaders({ isJson: true }),
+      body: JSON.stringify(data)
+    });
+    await this.requireAuthorized(res, 'Error al generar comprobante');
+    return res.json();
+  }
+
+  static async getReceipt(
+    restaurantId: string,
+    receiptId: string
+  ): Promise<import('@mesaya/shared').ReceiptSnapshotDTO> {
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/receipts/${receiptId}`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    await this.requireAuthorized(res, 'Error al consultar comprobante');
+    return res.json();
+  }
+
+  static async downloadReceiptPdf(restaurantId: string, receiptId: string): Promise<Blob> {
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/receipts/${receiptId}/pdf`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    await this.requireAuthorized(res, 'Error al descargar comprobante');
+    return res.blob();
+  }
+
+  static async createFiscalAssociation(
+    restaurantId: string,
+    data: any
+  ): Promise<import('@mesaya/shared').FiscalDocumentDTO> {
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/fiscal-documents`, {
+      method: 'POST',
+      headers: this.getAuthHeaders({ isJson: true }),
+      body: JSON.stringify(data)
+    });
+    await this.requireAuthorized(res, 'Error al asociar comprobante fiscal');
+    return res.json();
+  }
+
+  static async getFiscalDocuments(
+    restaurantId: string
+  ): Promise<{ documents: import('@mesaya/shared').FiscalDocumentDTO[] }> {
+    const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/fiscal-documents`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    await this.requireAuthorized(res, 'Error al listar comprobantes fiscales');
+    return res.json();
+  }
+}

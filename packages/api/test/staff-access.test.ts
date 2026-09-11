@@ -36,6 +36,8 @@ import { StaffService } from '../src/services/staff.service';
 
 const SECRET = 'jwt-secret-for-staff-access-tests-which-is-long-enough';
 const originalOnboarding = process.env.PILOT_PUBLIC_ONBOARDING_ENABLED;
+const originalInstanceMode = process.env.MESAYA_INSTANCE_MODE;
+const originalInstanceRestaurantId = process.env.MESAYA_INSTANCE_RESTAURANT_ID;
 
 function identityFor(id: string) {
   const restaurantId = id.endsWith('-a') ? 'restaurant-a' : 'restaurant-b';
@@ -52,13 +54,20 @@ async function staffApp() {
 
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
+  vi.mocked(StaffService.login).mockReset();
   mocks.findStaff.mockImplementation(({ where }: any) => Promise.resolve(identityFor(where.id)));
   delete process.env.PILOT_PUBLIC_ONBOARDING_ENABLED;
+  delete process.env.MESAYA_INSTANCE_MODE;
+  delete process.env.MESAYA_INSTANCE_RESTAURANT_ID;
 });
 
 afterEach(() => {
   if (originalOnboarding === undefined) delete process.env.PILOT_PUBLIC_ONBOARDING_ENABLED;
   else process.env.PILOT_PUBLIC_ONBOARDING_ENABLED = originalOnboarding;
+  if (originalInstanceMode === undefined) delete process.env.MESAYA_INSTANCE_MODE;
+  else process.env.MESAYA_INSTANCE_MODE = originalInstanceMode;
+  if (originalInstanceRestaurantId === undefined) delete process.env.MESAYA_INSTANCE_RESTAURANT_ID;
+  else process.env.MESAYA_INSTANCE_RESTAURANT_ID = originalInstanceRestaurantId;
 });
 
 describe('Etapa 07 — personal y login administrativo', () => {
@@ -149,5 +158,20 @@ describe('Etapa 07 — personal y login administrativo', () => {
       expect(success.json().staffUser.role).toBe('WAITER');
     } finally { await app.close(); }
   });
-});
 
+  it('login de staff respeta el límite de una instancia single-restaurant', async () => {
+    process.env.MESAYA_INSTANCE_MODE = 'SINGLE_RESTAURANT';
+    process.env.MESAYA_INSTANCE_RESTAURANT_ID = 'restaurant-root';
+    mocks.findRestaurant.mockResolvedValue({ id: 'restaurant-foreign', slug: 'otro-local' });
+    const app = await staffApp();
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/staff/login',
+        payload: { restaurantSlug: 'otro-local', pin: '1234' }
+      });
+      expect(response.statusCode).toBe(404);
+      expect((StaffService.login as any)).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+});

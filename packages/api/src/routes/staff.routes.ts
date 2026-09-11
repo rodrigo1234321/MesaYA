@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { StaffService } from '../services/staff.service';
 import { StaffLoginDTO } from '@mesaya/shared';
-import { STAFF_JWT_EXPIRES_IN } from '../lib/environment';
+import { getEnvironmentConfig, STAFF_JWT_EXPIRES_IN } from '../lib/environment';
 import { verifyManagerRole } from '../middlewares/auth.middleware';
 import { prisma } from '../lib/prisma';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
@@ -9,7 +9,7 @@ import { AbuseControlService, AbusePolicies } from '../services/abuse-control.se
 export async function staffRoutes(fastify: FastifyInstance) {
   fastify.post('/staff/login', async (request, reply) => {
     try {
-      const body = request.body as StaffLoginDTO;
+      const body = request.body as StaffLoginDTO & { terminalId?: string };
       if (
         !body ||
         typeof body.restaurantSlug !== 'string' ||
@@ -17,7 +17,8 @@ export async function staffRoutes(fastify: FastifyInstance) {
         !body.restaurantSlug.trim() ||
         !body.pin.trim() ||
         body.pin.length > 32 ||
-        body.restaurantSlug.length > 100
+        body.restaurantSlug.length > 100 ||
+        (body.terminalId !== undefined && (typeof body.terminalId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(body.terminalId)))
       ) {
         return reply.status(400).send({ error: 'restaurantSlug y pin son requeridos y deben ser válidos' });
       }
@@ -29,6 +30,10 @@ export async function staffRoutes(fastify: FastifyInstance) {
       });
 
       if (!restaurant) {
+        return reply.status(404).send({ error: 'Restaurante no encontrado' });
+      }
+      const environment = getEnvironmentConfig();
+      if (environment.instanceMode === 'SINGLE_RESTAURANT' && restaurant.id !== environment.instanceRestaurantId) {
         return reply.status(404).send({ error: 'Restaurante no encontrado' });
       }
 
@@ -52,7 +57,8 @@ export async function staffRoutes(fastify: FastifyInstance) {
         sub: staffUser.id,
         role: staffUser.role,
         restaurantId: staffUser.restaurantId,
-        assignedSector: staffUser.assignedSector
+        assignedSector: staffUser.assignedSector,
+        terminalId: body.terminalId
       }, { expiresIn: STAFF_JWT_EXPIRES_IN });
 
       return reply.send({

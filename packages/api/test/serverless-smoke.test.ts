@@ -10,7 +10,12 @@ import { buildApp } from '../src/index';
  * PostgreSQL efímero + cliente generado desde `schema.supabase.prisma`).
  * NO pertenece al runner SQLite: `SELECT version()` exige PostgreSQL.
  */
-describe('Etapa 27 — Smoke serverless con cliente PG', () => {
+const isPostgresRuntime = /^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL ?? '');
+
+// Esta suite valida el cliente generado desde schema.supabase.prisma y no es
+// aplicable al runner SQLite local. Con scripts/test-postgres.mjs DATABASE_URL
+// apunta explícitamente a PostgreSQL y la suite vuelve a estar activa.
+describe.skipIf(!isPostgresRuntime)('Etapa 27 — Smoke serverless con cliente PG', () => {
   afterAll(async () => {
     await prisma.$disconnect();
   });

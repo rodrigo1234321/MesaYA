@@ -4,6 +4,7 @@ import { verifyStaffToken } from '../middlewares/auth.middleware';
 import { JoinWaitlistDTO } from '@mesaya/shared';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
 import { prisma } from '../lib/prisma';
+import { isRestaurantInConfiguredInstance } from '../lib/environment';
 
 export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
   /**
@@ -34,16 +35,18 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
           where: { OR: [{ id: slug }, { slug }] },
           select: { id: true }
         });
-        const decision = await AbuseControlService.consume(
-          `waitlist:tenant:${tenant?.id || slug}:ip:${ip}`,
-          AbusePolicies.WAITLIST_BY_IP_TENANT
-        );
-        if (!decision.allowed) {
-          reply.header('Retry-After', String(decision.retryAfterSeconds));
-          return reply.status(429).send({
-            error: 'Demasiadas solicitudes para este restaurante desde esta red. Por favor aguardá unos minutos.',
-            code: 'RATE_LIMIT_EXCEEDED'
-          });
+        if (tenant && isRestaurantInConfiguredInstance(tenant.id)) {
+          const decision = await AbuseControlService.consume(
+            `waitlist:tenant:${tenant.id}:ip:${ip}`,
+            AbusePolicies.WAITLIST_BY_IP_TENANT
+          );
+          if (!decision.allowed) {
+            reply.header('Retry-After', String(decision.retryAfterSeconds));
+            return reply.status(429).send({
+              error: 'Demasiadas solicitudes para este restaurante desde esta red. Por favor aguardá unos minutos.',
+              code: 'RATE_LIMIT_EXCEEDED'
+            });
+          }
         }
       }
 
@@ -52,6 +55,24 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.status(201).send(entry);
       } catch (err: any) {
         const status = err.statusCode || 400;
+        return reply.status(status).send({ error: err.message, code: err.code });
+      }
+    }
+  );
+
+  /**
+   * GET /v1/waitlist/:id/status?phone=...
+   * Consulta pública del propio ticket. El teléfono normalizado evita que un
+   * id enumerado revele nombre, tamaño o estado a terceros.
+   */
+  fastify.get<{ Params: { id: string }; Querystring: { phone?: string } }>(
+    '/waitlist/:id/status',
+    async (request, reply) => {
+      try {
+        const entry = await WaitlistService.getPublicStatus(request.params.id, request.query.phone || '');
+        return reply.send(entry);
+      } catch (err: any) {
+        const status = err.statusCode || 404;
         return reply.status(status).send({ error: err.message, code: err.code });
       }
     }

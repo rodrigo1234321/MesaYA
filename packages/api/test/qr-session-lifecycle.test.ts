@@ -225,7 +225,7 @@ describe('Etapa 12 — Ciclo de vida de QR estable y sesiones operativas', () =>
       expect(tokenData.token).toBe(sessionToken1);
     });
 
-    it('Al cambiar ocupación a TO_CLEAN o AVAILABLE, la sesión anterior es revocada inmediatamente', async () => {
+    it('Al cambiar ocupación a TO_CLEAN o AVAILABLE, revoca la sesión anterior y prepara una nueva', async () => {
       // Mesa avanza en el ciclo FSM hasta limpiarse
       await fsmService.attemptTransition({
         tableId: table1.id,
@@ -234,12 +234,12 @@ describe('Etapa 12 — Ciclo de vida de QR estable y sesiones operativas', () =>
         trigger: 'Comensales se retiraron'
       });
 
-      // El token anterior ahora retorna isClosed: true y valid: false
+      // El token anterior ahora retorna 410 + isClosed: true y valid: false (E02)
       const checkRes = await app.inject({
         method: 'GET',
         url: `/sessions/${sessionToken1}`
       });
-      expect(checkRes.statusCode).toBe(200);
+      expect(checkRes.statusCode).toBe(410);
       const checkData = checkRes.json();
       expect(checkData.valid).toBe(false);
       expect(checkData.isClosed).toBe(true);
@@ -252,16 +252,28 @@ describe('Etapa 12 — Ciclo de vida de QR estable y sesiones operativas', () =>
         trigger: 'Mesa desinfectada y lista'
       });
 
-      // El QR físico vuelve a devolver estado inactivo sin token
+      // `Mesa lista` prepara una sesión nueva. La consulta QR sigue siendo
+      // read-only: sólo resuelve la sesión creada por la acción física.
+      const activeBeforeQr = await prisma.tableSession.count({
+        where: { tableId: table1.id, closedAt: null }
+      });
+      const freshSession = await prisma.tableSession.findFirstOrThrow({
+        where: { tableId: table1.id, closedAt: null },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
+      });
+      expect(activeBeforeQr).toBe(1);
+      expect(freshSession.token).not.toBe(sessionToken1);
+
       const qrRes = await app.inject({
         method: 'GET',
         url: `/sessions/${restaurant.slug}/${encodeURIComponent(table1.label)}`
       });
       expect(qrRes.statusCode).toBe(200);
       const qrData = qrRes.json();
-      expect(qrData.valid).toBe(false);
-      expect(qrData.isActive).toBe(false);
-      expect(qrData.token).toBeUndefined();
+      expect(qrData.valid).toBe(true);
+      expect(qrData.isActive).toBe(true);
+      expect(qrData.token).toBe(freshSession.token);
+      expect(await prisma.tableSession.count({ where: { tableId: table1.id, closedAt: null } })).toBe(activeBeforeQr);
     });
 
     it('Al reabrir la mesa para nuevos comensales, se emite un nuevo token y el token anterior NO vuelve a servir', async () => {
@@ -295,12 +307,12 @@ describe('Etapa 12 — Ciclo de vida de QR estable y sesiones operativas', () =>
       expect(newRes.statusCode).toBe(200);
       expect(newRes.json().valid).toBe(true);
 
-      // CRÍTICO: El token de la ocupación anterior sigue inválido / cerrado
+      // CRÍTICO: El token de la ocupación anterior sigue inválido / cerrado (410 E02)
       const oldRes = await app.inject({
         method: 'GET',
         url: `/sessions/${sessionToken1}`
       });
-      expect(oldRes.statusCode).toBe(200);
+      expect(oldRes.statusCode).toBe(410);
       const oldData = oldRes.json();
       expect(oldData.valid).toBe(false);
       expect(oldData.isClosed).toBe(true);
@@ -322,7 +334,7 @@ describe('Etapa 12 — Ciclo de vida de QR estable y sesiones operativas', () =>
         method: 'GET',
         url: `/sessions/${expiredSession.token}`
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(410);
       const data = res.json();
       expect(data.valid).toBe(false);
       expect(data.isExpired).toBe(true);

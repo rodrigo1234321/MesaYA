@@ -16,7 +16,11 @@ export function buildStaffStreamUrl(restaurantId: string): string {
 }
 
 
-export function useSSE(restaurantId: string | null, onNewCall?: (call: CallEventData) => void) {
+export function useSSE(
+  restaurantId: string | null,
+  onNewCall?: (call: CallEventData) => void,
+  enabled: boolean = true
+) {
   const [connected, setConnected] = useState<boolean>(false);
   const [calls, setCalls] = useState<CallEventData[]>([]);
   const knownCallsRef = useRef<Map<string, string>>(new Map());
@@ -80,7 +84,7 @@ export function useSSE(restaurantId: string | null, onNewCall?: (call: CallEvent
 
   // Manejo del ciclo de vida del restaurante, reconexión y foco
   useEffect(() => {
-    if (!restaurantId) {
+    if (!restaurantId || !enabled) {
       coordinator.stop();
       knownCallsRef.current.clear();
       setCalls([]);
@@ -115,7 +119,7 @@ export function useSSE(restaurantId: string | null, onNewCall?: (call: CallEvent
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       setConnected(false);
     };
-  }, [restaurantId, coordinator]);
+  }, [restaurantId, coordinator, enabled]);
 
   return { connected, calls, setCalls, refresh: () => coordinator.triggerNow() };
 }

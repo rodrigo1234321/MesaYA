@@ -9,7 +9,7 @@ interface LoginModalProps {
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
-  const [slug, setSlug] = useState('trattoria-del-puerto');
+  const [slug, setSlug] = useState('');
   const [restaurantsList, setRestaurantsList] = useState<{ id: string; name: string; slug: string }[]>([]);
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +25,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
           if (saved && data.some(r => r.slug === saved.restaurantId || r.id === saved.restaurantId)) {
             const found = data.find(r => r.slug === saved.restaurantId || r.id === saved.restaurantId);
             if (found) setSlug(found.slug);
+          } else {
+            setSlug(data[0].slug);
           }
         }
       })
@@ -117,7 +119,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
           </div>
           <h2 className="text-xl font-black text-white tracking-tight">Panel Mozo / Staff</h2>
           <p className="text-xs text-slate-400">
-            Ingresá tu PIN de 4 dígitos (teclado en pantalla o físico)
+            Terminal compartido · ingresá tu PIN de 4 dígitos
           </p>
         </div>
 
@@ -202,8 +204,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
           </button>
         </div>
 
-        {/* 1-Click Fast Login for Demo */}
-        <div className="pt-2 border-t border-slate-800/80 space-y-2">
+        {/* Demo shortcuts stay hidden in a normal customer deployment. */}
+        {import.meta.env.VITE_DEMO_MODE === 'true' && <div className="pt-2 border-t border-slate-800/80 space-y-2">
           <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold px-1">
             <span className="flex items-center gap-1 text-slate-400">
               <Sparkles className="w-3 h-3 text-indigo-400" /> Acceso Rápido Demo
@@ -231,7 +233,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
               <span>Admin (9999)</span>
             </button>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

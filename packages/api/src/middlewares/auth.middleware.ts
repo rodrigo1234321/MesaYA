@@ -1,11 +1,14 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../lib/prisma';
+import { getEnvironmentConfig } from '../lib/environment';
 
 export interface StaffJwtPayload {
   sub: string;
+  name?: string;
   role: string;
   restaurantId: string;
   assignedSector?: string | null;
+  terminalId?: string;
 }
 
 type CurrentStaffIdentity = StaffJwtPayload & { name?: string };
@@ -35,7 +38,9 @@ export async function verifyStaffToken(request: FastifyRequest, reply: FastifyRe
       where: { id: decoded.sub },
       select: { id: true, name: true, role: true, restaurantId: true, assignedSector: true }
     });
-    if (!currentUser || currentUser.restaurantId !== decoded.restaurantId) {
+    const environment = getEnvironmentConfig();
+    if (!currentUser || currentUser.restaurantId !== decoded.restaurantId ||
+      (environment.instanceMode === 'SINGLE_RESTAURANT' && currentUser.restaurantId !== environment.instanceRestaurantId)) {
       return reply.status(401).send({ error: 'UNAUTHORIZED', message: 'La identidad de personal ya no está vigente.' });
     }
 
@@ -44,7 +49,8 @@ export async function verifyStaffToken(request: FastifyRequest, reply: FastifyRe
       name: currentUser.name,
       role: currentUser.role,
       restaurantId: currentUser.restaurantId,
-      assignedSector: currentUser.assignedSector
+      assignedSector: currentUser.assignedSector,
+      terminalId: decoded.terminalId
     } as CurrentStaffIdentity;
   } catch (err: any) {
     return reply.status(401).send({
@@ -78,7 +84,9 @@ export function requireRestaurantAccess(getRestaurantId: (request: FastifyReques
     await verifyStaffToken(request, reply);
     if (reply.sent) return;
     const restaurantId = getRestaurantId(request);
-    if (!restaurantId || request.staffUser?.restaurantId !== restaurantId) {
+    const instanceRestaurantId = getEnvironmentConfig().instanceRestaurantId;
+    if (!restaurantId || request.staffUser?.restaurantId !== restaurantId ||
+      (instanceRestaurantId && restaurantId !== instanceRestaurantId)) {
       return reply.status(404).send({
         error: 'NOT_FOUND',
         message: 'Recurso no encontrado.'
@@ -97,7 +105,9 @@ export function requireManagedRestaurant(getIdentifier: (request: FastifyRequest
       where: { OR: [{ id: identifier }, { slug: identifier }] },
       select: { id: true }
     });
-    if (!restaurant || restaurant.id !== request.staffUser!.restaurantId) {
+    const instanceRestaurantId = getEnvironmentConfig().instanceRestaurantId;
+    if (!restaurant || restaurant.id !== request.staffUser!.restaurantId ||
+      (instanceRestaurantId && restaurant.id !== instanceRestaurantId)) {
       return reply.status(404).send({ error: 'NOT_FOUND', message: 'Recurso no encontrado.' });
     }
     request.managedRestaurantId = restaurant.id;

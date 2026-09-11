@@ -29,6 +29,10 @@ export async function callRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: 'Método de pago inválido' });
       }
 
+      if (body.tipMinor !== undefined && (!Number.isInteger(body.tipMinor) || body.tipMinor < 0 || body.tipMinor > 2147483647)) {
+        return reply.status(400).send({ error: 'La propina debe ser un importe entero válido en centavos' });
+      }
+
       if (body.origin && !Object.values(CallOrigin).includes(body.origin)) {
         return reply.status(400).send({ error: 'Origen de llamado inválido' });
       }

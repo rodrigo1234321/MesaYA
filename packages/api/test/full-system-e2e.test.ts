@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { buildApp } from '../src/index';
 import { prisma } from '../src/lib/prisma';
 import { FastifyInstance } from 'fastify';
@@ -11,6 +12,8 @@ describe('MesaYA (RTMS) Full System End-to-End Test Suite', () => {
   let adminToken: string;
   let table1: any;
   let sessionToken: string;
+  let stateTable: any;
+  let stateSessionToken: string;
   let activeCallId: string;
   let menuItem: any;
   let activeOrderId: string;
@@ -28,6 +31,19 @@ describe('MesaYA (RTMS) Full System End-to-End Test Suite', () => {
     expect(restaurant).toBeDefined();
     expect(restaurant.slug).toBe('trattoria-del-puerto');
 
+    // El rate limit es persistente para soportar varias instancias. Limpiar
+    // sólo el bucket de login de esta fixture mantiene la suite repetible sin
+    // tocar buckets de otros restaurantes ni relajar la política productiva.
+    await prisma.rateLimitBucket.deleteMany({
+      where: {
+        OR: [
+          { key: { startsWith: `login:tenant:${restaurant.id}:ip:` } },
+          { key: { startsWith: 'call:session:' } },
+          { key: { startsWith: `waitlist:tenant:${restaurant.id}:ip:` } }
+        ]
+      }
+    });
+
     table1 = restaurant.tables.find((t: any) => t.label === 'Mesa 1') || restaurant.tables[0];
     expect(table1).toBeDefined();
 
@@ -44,6 +60,37 @@ describe('MesaYA (RTMS) Full System End-to-End Test Suite', () => {
       where: { id: table1.id },
       data: { currentState: TableFSMState.AVAILABLE, stateChangedAt: new Date() }
     });
+
+    // The state-engine/QR-revocation checks need an independent clean table.
+    // table1 is intentionally used by the ordering/account scenarios above;
+    // after those scenarios it has an unpaid balance and must be rejected by
+    // the production safety guard instead of being reused for a positive FSM
+    // transition test.
+    const stateShift = await prisma.shift.findFirst({
+      where: { restaurantId: restaurant.id, closedAt: null }
+    }) || await prisma.shift.create({
+      data: { restaurantId: restaurant.id, openedAt: new Date() }
+    });
+    stateTable = await prisma.table.create({
+      data: {
+        restaurantId: restaurant.id,
+        label: `E2E State ${randomUUID().slice(0, 8)}`,
+        sector: 'SALON_PRINCIPAL',
+        currentState: TableFSMState.AVAILABLE,
+        stateChangedAt: new Date(),
+        capacity: 4
+      }
+    });
+    const stateSession = await prisma.tableSession.create({
+      data: {
+        tableId: stateTable.id,
+        shiftId: stateShift.id,
+        token: randomUUID(),
+        activeKey: stateTable.id,
+        expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000)
+      }
+    });
+    stateSessionToken = stateSession.token;
 
     await prisma.restaurantModuleConfig.upsert({
       where: { restaurantId: restaurant.id },
@@ -737,7 +784,9 @@ describe('MesaYA (RTMS) Full System End-to-End Test Suite', () => {
       const tempTable = await prisma.table.create({
         data: {
           restaurantId: restaurant.id,
-          label: 'Mesa Temp Delete',
+          // La base demo es persistente cuando Vitest se ejecuta directamente.
+          // Mantener la fixture única evita colisiones entre corridas.
+          label: `Mesa Temp Delete ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           posX: 999,
           posY: 999,
           currentState: TableFSMState.AVAILABLE
@@ -785,7 +834,7 @@ describe('MesaYA (RTMS) Full System End-to-End Test Suite', () => {
     it('POST /v1/tables/:tableId/state/tap advances state with action=next', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: `/v1/tables/${table1.id}/state/tap`,
+        url: `/v1/tables/${stateTable.id}/state/tap`,
         headers: { authorization: `Bearer ${staffToken}` },
         payload: {
           action: 'next'
@@ -800,7 +849,7 @@ describe('MesaYA (RTMS) Full System End-to-End Test Suite', () => {
     it('POST /v1/tables/:tableId/state/tap with action=skip_to jumps directly to TO_CLEAN and closes active session', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: `/v1/tables/${table1.id}/state/tap`,
+        url: `/v1/tables/${stateTable.id}/state/tap`,
         headers: { authorization: `Bearer ${staffToken}` },
         payload: {
           action: 'skip_to',
@@ -846,7 +895,7 @@ describe('MesaYA (RTMS) Full System End-to-End Test Suite', () => {
     it('POST /v1/tables/:id/close-session closes session and revokes QR', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: `/v1/tables/${table1.id}/close-session`,
+        url: `/v1/tables/${stateTable.id}/close-session`,
         headers: {
           Authorization: `Bearer ${adminToken}`
         }
@@ -859,7 +908,7 @@ describe('MesaYA (RTMS) Full System End-to-End Test Suite', () => {
     it('GET /v1/sessions/:token returns isClosed: true after manager closes table', async () => {
       const res = await app.inject({
         method: 'GET',
-        url: `/v1/sessions/${sessionToken}`
+        url: `/v1/sessions/${stateSessionToken}`
       });
       const data = res.json();
       expect(data.valid).toBe(false);

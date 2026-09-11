@@ -87,7 +87,18 @@ export const configRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.send(updated);
       } catch (err: any) {
         request.log.error(err);
-        return reply.status(500).send({ error: err.message || 'Error al actualizar la configuración modular' });
+        if (err?.code === 'CAPABILITY_NOT_AVAILABLE' && err?.statusCode === 409) {
+          return reply.status(409).send({
+            error: err.message,
+            code: err.code,
+            field: err.field,
+            capability: err.capability
+          });
+        }
+        return reply.status(err?.statusCode || 500).send({
+          error: err.message || 'Error al actualizar la configuración modular',
+          code: err.code
+        });
       }
     }
   );
@@ -147,4 +158,3 @@ export const configRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 };
-

@@ -3,7 +3,7 @@ import { CryptoService } from '../src/lib/crypto';
 import { getEnvironmentConfig, STAFF_JWT_EXPIRES_IN } from '../src/lib/environment';
 import { buildApp } from '../src/index';
 
-const ENV_KEYS = ['NODE_ENV', 'JWT_SECRET', 'ENCRYPTION_SECRET_KEY', 'CORS_ORIGIN'] as const;
+const ENV_KEYS = ['NODE_ENV', 'JWT_SECRET', 'ENCRYPTION_SECRET_KEY', 'CORS_ORIGIN', 'MESAYA_INSTANCE_MODE', 'MESAYA_INSTANCE_RESTAURANT_ID'] as const;
 let saved: Record<string, string | undefined> = {};
 
 const secureEnv = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
@@ -27,6 +27,23 @@ afterEach(() => {
 });
 
 describe('Etapa 05 — entorno, JWT y CORS', () => {
+  it('single-restaurant exige un restaurante raíz y normaliza el modo', () => {
+    expect(() => getEnvironmentConfig(secureEnv({ MESAYA_INSTANCE_MODE: 'SINGLE_RESTAURANT' })))
+      .toThrow(/MESAYA_INSTANCE_RESTAURANT_ID/);
+    expect(getEnvironmentConfig(secureEnv({
+      MESAYA_INSTANCE_MODE: 'single_restaurant',
+      MESAYA_INSTANCE_RESTAURANT_ID: 'restaurant-a'
+    }))).toMatchObject({
+      instanceMode: 'SINGLE_RESTAURANT',
+      instanceRestaurantId: 'restaurant-a'
+    });
+  });
+
+  it('rechaza modos de instancia desconocidos', () => {
+    expect(() => getEnvironmentConfig(secureEnv({ MESAYA_INSTANCE_MODE: 'GLOBAL' })))
+      .toThrow(/MESAYA_INSTANCE_MODE/);
+  });
+
   it('producción rechaza secretos ausentes, conocidos, cortos o iguales antes de iniciar', () => {
     expect(() => getEnvironmentConfig(secureEnv({ JWT_SECRET: undefined }))).toThrow(/JWT_SECRET/);
     expect(() => getEnvironmentConfig(secureEnv({ JWT_SECRET: 'mesaya_jwt_secret_dev_key' }))).toThrow(/JWT_SECRET/);
@@ -73,6 +90,21 @@ describe('Etapa 05 — entorno, JWT y CORS', () => {
 
       const denied = await app.inject({ method: 'OPTIONS', url: '/v1/health', headers: { origin: 'https://denied.example.test', 'access-control-request-method': 'GET' } });
       expect(denied.headers['access-control-allow-origin']).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('respuestas de API incluyen headers de defensa y no permiten framing', async () => {
+    Object.assign(process.env, secureEnv({ NODE_ENV: 'test', CORS_ORIGIN: 'https://allowed.example.test' }));
+    const app = await buildApp();
+    try {
+      const response = await app.inject({ method: 'GET', url: '/v1/health' });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['x-frame-options']).toBe('DENY');
+      expect(response.headers['referrer-policy']).toBe('no-referrer');
+      expect(response.headers['content-security-policy']).toContain("default-src 'none'");
     } finally {
       await app.close();
     }

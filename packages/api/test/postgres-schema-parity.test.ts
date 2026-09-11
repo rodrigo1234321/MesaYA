@@ -81,5 +81,8 @@ describe('Etapa 22 — Paridad SQLite/PostgreSQL y sincronizador seguro', () => 
       });
       expect(result.status, result.stderr || result.stdout).toBe(0);
     }
-  });
+  // Prisma's Windows CLI cold start can take >20s on Node 24 even though
+  // `validate` never opens a database connection. Keep this gate strict
+  // enough to catch a hang while allowing a normal local cold start.
+  }, 60000);
 });

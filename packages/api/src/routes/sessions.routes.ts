@@ -17,6 +17,13 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       return reply.status(404).send(sessionData);
     }
 
+    // E02: token viejo (cerrado/expirado/TO_CLEAN) → 410 para que ningún cliente
+    // reutilice una ocupación anterior. Vigente → 200. M2: se preservan code y
+    // details coherentes (SESSION_CLOSED/SESSION_EXPIRED/SHIFT_CLOSED).
+    if (!sessionData.valid && ((sessionData as any).isClosed || (sessionData as any).isExpired)) {
+      return reply.status(410).send(sessionData);
+    }
+
     return reply.send(sessionData);
   });
 
@@ -31,6 +38,8 @@ export async function sessionRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       return reply.status(err.statusCode || 404).send({
         error: err.message || 'Restaurante o mesa no encontrados',
+        code: err.code || 'NOT_FOUND',
+        details: err.details,
         valid: false
       });
     }

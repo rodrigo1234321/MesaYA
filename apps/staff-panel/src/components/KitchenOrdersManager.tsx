@@ -7,8 +7,8 @@ interface KitchenItem {
   name: string;
   quantity: number;
   notes?: string | null;
+  guestName?: string | null;
   unitPrice: number;
-  addedByGuest?: string | null;
 }
 
 interface KitchenOrder {
@@ -41,12 +41,13 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
   const [selectedItems, setSelectedItems] = useState<{ menuItemId: string; name: string; quantity: number; notes: string }[]>([]);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (signal?: AbortSignal) => {
     try {
-      const data = await StaffApi.getKitchenOrders(restaurantId);
+      const data = await StaffApi.getKitchenOrders(restaurantId, signal);
       setOrders(data.orders || []);
       setError(null);
     } catch (err: any) {
+      if (err?.name === 'AbortError') return;
       setError(err.message || 'Error al cargar comandas');
     } finally {
       setLoading(false);
@@ -54,9 +55,52 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
   };
 
   useEffect(() => {
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 4000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let controller: AbortController | null = null;
+    let failures = 0;
+
+    const schedule = (delay: number) => {
+      if (!cancelled) timer = setTimeout(tick, delay);
+    };
+
+    const tick = async () => {
+      if (cancelled) return;
+      controller = new AbortController();
+      try {
+        await fetchOrders(controller.signal);
+        failures = 0;
+        schedule(typeof document !== 'undefined' && document.hidden ? 10000 : 4000);
+      } catch (_) {
+        failures += 1;
+        schedule(Math.min(4000 * Math.pow(1.5, failures), 15000));
+      } finally {
+        controller = null;
+      }
+    };
+
+    tick();
+    const handleOnline = () => {
+      if (timer) clearTimeout(timer);
+      failures = 0;
+      tick();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        if (timer) clearTimeout(timer);
+        tick();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      controller?.abort();
+      window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [restaurantId]);
 
   const openNewOrderModal = async () => {
@@ -95,9 +139,15 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
     if (!selectedTableId || selectedItems.length === 0) return;
     setSubmitting(true);
     try {
-      for (const it of selectedItems) {
-        await StaffApi.addItemByStaff(selectedTableId, it.menuItemId, it.quantity, it.notes);
-      }
+      // Una comanda presencial es una tanda única y atómica. El endpoint
+      // legado por ítem queda disponible para compatibilidad, pero no debe
+      // convertir una selección de varias líneas en varias escrituras que se
+      // mezclen con una ronda existente.
+      await StaffApi.addManualOrderByStaff(selectedTableId, selectedItems.map((it) => ({
+        menuItemId: it.menuItemId,
+        quantity: it.quantity,
+        notes: it.notes
+      })));
       setIsModalOpen(false);
       setSelectedItems([]);
       await fetchOrders();
@@ -214,6 +264,9 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
                         <span className="font-black text-amber-400 text-xs">{item.quantity}x</span>
                         <span className="font-bold text-xs text-white">{item.name}</span>
                       </div>
+                      {item.guestName && (
+                        <p className="text-[10px] text-indigo-300 pl-4 mt-0.5">Agregó: {item.guestName}</p>
+                      )}
                       {item.notes && (
                         <p className="text-[11px] text-slate-400 italic pl-4 mt-0.5">
                           "{item.notes}"

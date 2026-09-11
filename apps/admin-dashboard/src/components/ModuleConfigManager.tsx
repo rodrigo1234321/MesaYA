@@ -4,7 +4,9 @@ import {
   PaymentMode,
   PAYMENT_MODE_LABELS,
   RestaurantModuleConfigDTO,
-  ModuleConfigAuditDTO
+  ModuleConfigAuditDTO,
+  CapabilityKey,
+  CapabilityState
 } from '@mesaya/shared';
 import {
   Sliders,
@@ -35,6 +37,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<'modules' | 'audit'>('modules');
+  const [rewardItems, setRewardItems] = useState<Array<{ id: string; name: string; pointsCost: number; isAvailable: boolean }>>([]);
+  const [newRewardName, setNewRewardName] = useState('');
+  const [newRewardCost, setNewRewardCost] = useState('');
 
   const loadConfig = async () => {
     setLoading(true);
@@ -44,6 +49,8 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
       setConfig(data);
       const logs = await AdminApi.getModuleConfigAudit(restaurantId).catch(() => []);
       setAuditLogs(logs);
+      const rewards = await AdminApi.getRewardItems(restaurantId).catch(() => ({ items: [] }));
+      setRewardItems(rewards.items || []);
     } catch (err: any) {
       setErrorMsg(err.message || 'Error al cargar configuración de módulos');
     } finally {
@@ -57,6 +64,19 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
 
   const handleToggle = (key: keyof RestaurantModuleConfigDTO) => {
     if (!config) return;
+    const capabilityByField: Partial<Record<keyof RestaurantModuleConfigDTO, CapabilityKey>> = {
+      allowSplitBill: 'split_bill',
+      enableUpsell: 'upsell',
+      enableSmartTips: 'smart_tips',
+      enableWaitlistPreOrder: 'waitlist_preorder',
+      enableRewards: 'rewards'
+    };
+    const capabilityKey = capabilityByField[key];
+    const capability = capabilityKey ? config.capabilities?.[capabilityKey] : undefined;
+    if (capability && !capability.effectiveEnabled && !config[key]) {
+      setErrorMsg(capability.message || 'Esta capacidad todavía no está disponible.');
+      return;
+    }
     setConfig({
       ...config,
       [key]: !config[key]
@@ -82,6 +102,24 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
       setErrorMsg(err.message || 'Error al guardar configuración');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCreateRewardItem = async () => {
+    const name = newRewardName.trim();
+    const pointsCost = Number(newRewardCost);
+    if (!name || !Number.isInteger(pointsCost) || pointsCost <= 0) {
+      setErrorMsg('Definí un nombre y un costo de puntos válido para el premio.');
+      return;
+    }
+    try {
+      const item = await AdminApi.createRewardItem(restaurantId, { name, pointsCost });
+      setRewardItems((current) => [...current, item]);
+      setNewRewardName('');
+      setNewRewardCost('');
+      setSuccessMsg('Premio Rewards agregado.');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'No se pudo crear el premio Rewards');
     }
   };
 
@@ -116,6 +154,22 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
       </div>
     );
   }
+
+  const capabilityStatus = (key: CapabilityKey) => {
+    const capability = config.capabilities?.[key];
+    if (!capability) return null;
+    if (capability.state === CapabilityState.AVAILABLE && capability.effectiveEnabled) return null;
+    return (
+      <p className="mt-1 text-[10px] leading-relaxed text-amber-300/90">
+        {capability.message}
+      </p>
+    );
+  };
+
+  const capabilityBlocked = (key: CapabilityKey) => {
+    const capability = config.capabilities?.[key];
+    return Boolean(capability && !capability.effectiveEnabled && !capability.configuredEnabled);
+  };
 
   return (
     <div className="space-y-6">
@@ -216,6 +270,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                     {PAYMENT_MODE_LABELS[PaymentMode.HYBRID]}
                   </option>
                 </select>
+                {capabilityStatus('digital_payment')}
               </div>
 
               <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
@@ -225,8 +280,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 </div>
                 <button
                   type="button"
+                  disabled={capabilityBlocked('split_bill') && !config.allowSplitBill}
                   onClick={() => handleToggle('allowSplitBill')}
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     config.allowSplitBill ? 'bg-emerald-500' : 'bg-slate-700'
                   }`}
                 >
@@ -236,6 +292,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                     }`}
                   />
                 </button>
+                {capabilityStatus('split_bill')}
               </div>
             </div>
           </div>
@@ -277,8 +334,8 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
 
               <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
                 <div>
-                  <p className="text-xs font-bold text-slate-200">Doble Control Mozo</p>
-                  <p className="text-[11px] text-slate-400">Mozo valida comanda en mesa antes de enviar a cocina</p>
+                  <p className="text-xs font-bold text-slate-200">Modo manual de revisión</p>
+                  <p className="text-[11px] text-slate-400">Si se activa, todas las comandas esperan al mozo; si se apaga, sólo pasan a revisión las excepciones identificadas.</p>
                 </div>
                 <button
                   type="button"
@@ -293,6 +350,24 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                     }`}
                   />
                 </button>
+              </div>
+
+              <div className="rounded-2xl bg-slate-950/60 border border-slate-800/80 p-3">
+                <label className="block text-xs font-bold text-slate-200" htmlFor="review-quantity-threshold">Umbral de revisión por cantidad</label>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-400">Más de esta cantidad de un mismo plato queda pendiente para revisar stock e intención. Las alertas de alergia ya contempladas por la carta sólo quedan visibles como contexto.</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    id="review-quantity-threshold"
+                    type="number"
+                    min={2}
+                    max={50}
+                    step={1}
+                    value={config.reviewQuantityThreshold ?? 6}
+                    onChange={(event) => setConfig({ ...config, reviewQuantityThreshold: Number(event.target.value) })}
+                    className="w-24 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500"
+                  />
+                  <span className="text-[11px] text-slate-500">unidades por línea · 2 a 50</span>
+                </div>
               </div>
             </div>
           </div>
@@ -311,8 +386,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </div>
               <button
                 type="button"
+                disabled={capabilityBlocked('upsell') && !config.enableUpsell}
                 onClick={() => handleToggle('enableUpsell')}
-                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                   config.enableUpsell ? 'bg-amber-500' : 'bg-slate-700'
                 }`}
               >
@@ -324,8 +400,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </button>
             </div>
             <p className="text-xs text-slate-400">
-              Ofrece al comensal sugerencias no invasivas (ej. vino sugerido, papas especiales) al agregar un plato, elevando el ticket promedio de un 12% a un 22%.
+              Ofrece al comensal sugerencias no invasivas (ej. vino sugerido, papas especiales) al agregar un plato. El impacto debe medirse con datos del local; este módulo no promete un aumento.
             </p>
+            {capabilityStatus('upsell')}
           </div>
 
           {/* MÓDULO 4: Smart Tipping & Reseñas Éticas */}
@@ -350,8 +427,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 </div>
                 <button
                   type="button"
+                  disabled={capabilityBlocked('smart_tips') && !config.enableSmartTips}
                   onClick={() => handleToggle('enableSmartTips')}
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     config.enableSmartTips ? 'bg-purple-600' : 'bg-slate-700'
                   }`}
                 >
@@ -362,6 +440,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                   />
                 </button>
               </div>
+              {capabilityStatus('smart_tips')}
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-400 mb-1">
@@ -403,8 +482,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </div>
               <button
                 type="button"
+                disabled={capabilityBlocked('waitlist') && !config.enableWaitlist}
                 onClick={() => handleToggle('enableWaitlist')}
-                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                   config.enableWaitlist ? 'bg-cyan-500' : 'bg-slate-700'
                 }`}
               >
@@ -415,6 +495,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 />
               </button>
             </div>
+            {capabilityStatus('waitlist')}
 
             <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
               <div>
@@ -436,6 +517,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 />
               </button>
             </div>
+            {capabilityStatus('waitlist_preorder')}
           </div>
 
           {/* MÓDULO 6: Fidelización (Rewards) */}
@@ -452,8 +534,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </div>
               <button
                 type="button"
+                disabled={capabilityBlocked('rewards') && !config.enableRewards}
                 onClick={() => handleToggle('enableRewards')}
-                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                   config.enableRewards ? 'bg-rose-500' : 'bg-slate-700'
                 }`}
               >
@@ -464,6 +547,8 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 />
               </button>
             </div>
+
+            {capabilityStatus('rewards')}
 
             <div>
               <label className="block text-[11px] font-bold text-slate-400 mb-1">
@@ -478,6 +563,21 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 onChange={(e) => setConfig({ ...config, pointsPerHundredPesos: Number(e.target.value) || 1 })}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-rose-500 disabled:opacity-40"
               />
+            </div>
+            <div className="rounded-2xl bg-slate-950/70 border border-slate-800 p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-slate-200">Catálogo de premios</p>
+                  <p className="text-[10px] text-slate-500">El canje se confirma desde la pantalla del personal.</p>
+                </div>
+                <span className="text-[10px] text-slate-500">{rewardItems.length} activos</span>
+              </div>
+              {rewardItems.length > 0 && <div className="space-y-1">{rewardItems.map((item) => <div key={item.id} className="flex justify-between text-[11px] text-slate-300"><span>{item.name}</span><span className="text-rose-300">{item.pointsCost} pts</span></div>)}</div>}
+              <div className="grid grid-cols-[1fr_90px_auto] gap-2 items-end">
+                <label className="text-[10px] text-slate-400">Nombre<input value={newRewardName} onChange={(e) => setNewRewardName(e.target.value)} disabled={!config.enableRewards} className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white disabled:opacity-40" placeholder="Postre" /></label>
+                <label className="text-[10px] text-slate-400">Puntos<input value={newRewardCost} onChange={(e) => setNewRewardCost(e.target.value)} disabled={!config.enableRewards} type="number" min="1" className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white disabled:opacity-40" placeholder="100" /></label>
+                <button type="button" onClick={handleCreateRewardItem} disabled={!config.enableRewards} className="px-2.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white text-[10px] font-bold">Agregar</button>
+              </div>
             </div>
           </div>
         </div>

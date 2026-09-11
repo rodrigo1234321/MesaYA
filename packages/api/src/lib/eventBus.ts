@@ -11,10 +11,10 @@ class EventBus {
   private clients: Map<string, SSEClient> = new Map();
 
   /**
-   * Deshabilitado en piloto: /stream no acepta suscripciones SSE abiertas.
+   * Deshabilitado en la release base: /stream no acepta suscripciones SSE abiertas.
    */
   addClient(_id: string, _restaurantId: string, _reply: FastifyReply) {
-    // No-op: stream SSE cerrado en piloto
+    // No-op: el transporte autoritativo de la release base es polling autenticado.
   }
 
   removeClient(id: string) {

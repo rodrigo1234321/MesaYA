@@ -10,10 +10,12 @@
   ],
   "scripts": {
     "dev": "node scripts/start_dev_ip.js",
+    "dev:clean": "node scripts/start-local-clean.mjs",
     "dev:api": "npm --workspace=@mesaya/api run dev",
     "dev:client": "npm --workspace=@mesaya/client-web run dev",
     "dev:staff": "npm --workspace=@mesaya/staff-panel run dev",
     "dev:admin": "npm --workspace=@mesaya/admin-dashboard run dev",
+    "setup:local": "node scripts/setup-local.mjs",
     "prisma:seed": "npm --workspace=@mesaya/api run prisma:seed",
     "build": "node scripts/build.mjs",
     "build:shared": "npm --workspace=@mesaya/shared run build",
@@ -28,7 +30,12 @@
     "deploy:supabase:push": "npm --workspace=@mesaya/api run prisma:supabase:push",
     "deploy:supabase:seed": "npm --workspace=@mesaya/api run prisma:supabase:seed",
     "qr:generate": "npm --workspace=@mesaya/qr-generator run generate",
-    "bootstrap:restaurant": "npx tsx scripts/bootstrap-restaurant.ts",
+    "bootstrap:restaurant": "node scripts/run-tsx.mjs scripts/bootstrap-restaurant.ts",
+    "instance:validate": "node scripts/validate-instance-manifest.mjs",
+    "instance:provision:plan": "node scripts/provision-instance-plan.mjs",
+    "instance:test": "node --test scripts/instance-manifest.test.mjs",
+    "test:local": "node scripts/test-local.mjs",
+    "test": "npm --workspace=@mesaya/api run test",
     "test:isolated": "node scripts/test-isolated.mjs"
   },
   "dependencies": {

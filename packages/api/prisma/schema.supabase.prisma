@@ -37,9 +37,14 @@ model Restaurant {
   waitlist      WaitlistEntry[]
   loyaltyUsers  CustomerLoyalty[]
   rewardItems   RewardItem[]
+  rewardLedgerEntries RewardLedgerEntry[]
   floorZones    FloorZone[]
   floorLayouts  FloorPlanLayout[]
   occupancySessions OccupancySession[]
+  upsellEvents UpsellEvent[]
+  settlements AccountSettlement[]
+  receipts    ReceiptSnapshot[]
+  fiscalDocuments FiscalDocumentAssociation[]
 }
 
 // ==========================================
@@ -57,7 +62,9 @@ model RestaurantModuleConfig {
   // Módulo 2: Comandas & Carrito Colaborativo
   allowOrdering           Boolean     @default(true)
   syncSocialCart          Boolean     @default(true)
-  requireWaiterValidation Boolean     @default(true)
+  requireWaiterValidation Boolean     @default(false)
+  // En modo automático, más de esta cantidad por línea requiere revisión.
+  reviewQuantityThreshold Int         @default(6)
   
   // Módulo 3: Smart Upselling
   enableUpsell            Boolean     @default(true)
@@ -130,6 +137,7 @@ model MenuItem {
   name         String       // ej: "Sorrentinos de Salmón & Ciboulette"
   description  String?      // ej: "Con crema de puerros y crocante de nuez"
   price        Float        // ej: 14500
+  priceMinor   Int?         // centavos (C3/B04, backfill); catálogo histórico intacto
   imageUrl     String?
   isAvailable  Boolean      @default(true) // Hay stock / pausado
   isFeatured   Boolean      @default(false)
@@ -180,6 +188,7 @@ model TableSession {
   shiftId       String?
   shift         Shift?       @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   activeKey     String?      @unique // tableId mientras la sesión está activa; null al revocar
+  mutationSeq   Int          @default(0) // serie de mutación (B06): toda tx que escribe la cuenta la incrementa primero para serializar
   expiresAt     DateTime     // TTL: 3 horas
   closedAt      DateTime?
   createdAt     DateTime     @default(now())
@@ -187,6 +196,10 @@ model TableSession {
   calls         CallRequest[]
   feedback      Feedback?
   orders        Order[]
+  settlements   AccountSettlement[]
+  submitReceipts SubmitReceipt[]
+  receipts      ReceiptSnapshot[]
+  coveredFiscalDocs FiscalDocumentCoverage[]
 }
 
 model Shift {
@@ -205,14 +218,37 @@ model CallRequest {
   tableSessionId  String
   tableSession    TableSession  @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
   type            String        // BILL | WAITER | SUPPLIES | CUSTOM
-  paymentMethod   String        @default("NOT_APPLICABLE") // CASH | MERCADO_PAGO | CARD | NOT_APPLICABLE
+  paymentMethod   String        @default("NOT_APPLICABLE") // CASH | CARD_DEBIT | CARD_CREDIT | MERCADO_PAGO (QR) | CARD (compatibilidad) | NOT_APPLICABLE
+  tipMinor        Int           @default(0) // centavos de propina elegida al pedir la cuenta
   note            String?
   origin          String        @default("WEB_DIRECT") // WEB_DIRECT | WHATSAPP_FALLBACK
   status          String        @default("PENDING") // PENDING | IN_PROGRESS | RESOLVED | CANCELLED
-  activeKey       String?       @unique // tableSessionId mientras el llamado está activo; null al resolver/cancelar
+  activeKey       String?       @unique // tableSessionId+type mientras ese motivo está activo; null al resolver/cancelar
   createdAt       DateTime      @default(now())
   acknowledgedAt  DateTime?
   resolvedAt      DateTime?
+}
+
+// Toma auditable de trabajo en el terminal compartido (S03). La clave activa
+// es nullable para conservar el historial sin permitir dos responsables
+// simultáneos sobre la misma tarea lógica.
+model ServiceTaskClaim {
+  id          String    @id @default(cuid())
+  taskKey     String
+  activeKey   String?   @unique
+  taskType    String
+  targetId    String
+  restaurantId String
+  staffUserId String
+  terminalId  String?
+  status      String    @default("ACTIVE") // ACTIVE | RELEASED | RESOLVED
+  claimedAt  DateTime  @default(now())
+  releasedAt DateTime?
+  resolvedAt DateTime?
+
+  @@index([taskKey, claimedAt])
+  @@index([restaurantId, status, claimedAt])
+  @@index([staffUserId, status])
 }
 
 model RateLimitBucket {
@@ -233,12 +269,24 @@ model Order {
   tableSession   TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
   status         String       @default("DRAFT") // DRAFT | PENDING_VALIDATION | CONFIRMED | IN_KITCHEN | SERVED | CANCELLED
   totalAmount    Float        @default(0.0)
+  totalAmountMinor Int?       // centavos (C3/B04, backfill); total legado intacto
+  draftKey       String?      @unique // tableSessionId mientras es DRAFT (un solo carrito); null al enviar
+  source         String?      // GUEST_QR | STAFF_TERMINAL | WAITLIST
+  createdByStaffUserId String? // actor de carga presencial, si corresponde
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+  cancellationReason String?  // motivo obligatorio al pasar a CANCELLED (C05)
+  cancelledBy    String?      // staffUser.id autenticado que canceló/rechazó
+  cancelledAt    DateTime?    // instante de la cancelación/rechazo
+  // Motivo persistido de una revisión excepcional (E05); nullable para histórico.
+  reviewReasonCode   String?
+  reviewReasonDetail String?
 
   items          OrderItem[]
   payments       PaymentTransaction[]
   splitSessions  SplitBillSession[]
+  allocations    SettlementAllocation[]
+  submitReceipts SubmitReceipt[]
 }
 
 model OrderItem {
@@ -249,8 +297,10 @@ model OrderItem {
   menuItem       MenuItem    @relation(fields: [menuItemId], references: [id])
   quantity       Int         @default(1)
   unitPrice      Float
+  unitPriceMinor Int?         // centavos (C3/B04, backfill); snapshot legado intacto
   notes          String?
-  addedByGuest   String      // guest session id
+  guestName      String?
+  addedByGuest   String      // guest session id (técnico, no exponer al cliente)
   
   // Bloqueo optimista para Split Bill por Ítem
   claimedByGuest String?     // identificador de comensal
@@ -268,8 +318,11 @@ model SplitBillSession {
   totalParts      Int          @default(1) // Para EQUAL_PARTS (ej: 4 personas)
   paidParts       Int          @default(0)
   partAmount      Float?       // Monto por persona
+  partAmountMinor Int?         // centavos (C3/B04, backfill)
   totalAmount     Float
+  totalAmountMinor Int?        // centavos (C3/B04, backfill)
   remainingAmount Float
+  remainingAmountMinor Int?    // centavos (C3/B04, backfill)
   status          String       @default("OPEN") // OPEN | FULLY_PAID | CANCELLED
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -284,13 +337,158 @@ model PaymentTransaction {
   splitSessionId String?  // Vínculo opcional a SplitBillSession
   method         String   // WAITER_CASH | WAITER_CARD | WAITER_MP_QR | DIGITAL_MP_FULL | DIGITAL_MP_SPLIT
   amount         Float
+  amountMinor    Int?       // centavos (C3/B04, backfill)
   tipAmount      Float    @default(0.0)
+  tipAmountMinor Int?       // centavos (C3/B04, backfill)
   applicationFee Float?   // Comisión de MesaYA descontada por MP
+  applicationFeeMinor Int? // centavos (C3/B04, backfill)
   mpPaymentId    String?  // ID devuelto por MP para reconciliación
   status         String   @default("PENDING") // PENDING | APPROVED | REJECTED | REFUNDED
   idempotencyKey String   @unique
   createdAt      DateTime @default(now())
   resolvedAt     DateTime?
+}
+
+// ==========================================
+// 4b. LIQUIDACIONES DE CUENTA POR SESIÓN (B04, C4)
+// Vía nueva de cobro: una liquidación por sesión con asignaciones por tanda.
+// La vía legada PaymentTransaction(orderId) se conserva intacta (solo lectura
+// histórica); la cuenta agrega ambas vías sin sumar dos veces (tablas disjuntas).
+// ==========================================
+model AccountSettlement {
+  id               String   @id @default(cuid())
+  tableSessionId   String
+  tableSession     TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  restaurantId     String
+  restaurant       Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  method           String   // WAITER_CASH | WAITER_CARD_DEBIT | WAITER_CARD_CREDIT | WAITER_MP_QR (presencial)
+  amountMinor      Int      // centavos de consumo (propina excluida)
+  tipMinor         Int      @default(0) // centavos de propina, siempre separados
+  status           String   @default("SETTLED") // SETTLED (VOID reservado a B05+)
+  accountVersion   String   // fingerprint B03 contra el que se liquidó
+  idempotencyKey   String   @unique
+  createdBy        String   // staffUser.id que cobró (auditoría)
+  responsibleStaffUserId String? // mozo/staff responsable del servicio (por defecto el que atendió, editable)
+  createdAt        DateTime @default(now())
+  // Presencia exacta de `allocations` en el request original (omitido ≠ []).
+  // Aditivo con default false: filas legadas = camino FIFO sin allocations.
+  allocationsProvided Boolean @default(false)
+
+  allocations      SettlementAllocation[]
+  receipts         ReceiptSnapshot[]
+  adjustments      PaymentAdjustment[]
+
+  @@unique([tableSessionId, accountVersion])
+  @@index([tableSessionId, createdAt])
+  @@index([restaurantId, createdAt])
+}
+
+model SettlementAllocation {
+  id            String   @id @default(cuid())
+  settlementId  String
+  settlement    AccountSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  amountMinor  Int // centavos asignados a esta tanda
+  createdAt    DateTime @default(now())
+
+  @@unique([settlementId, orderId])
+  @@index([settlementId])
+  @@index([orderId])
+}
+
+// ==========================================
+// 4c. RECIBOS DE ENVÍO IDEMPOTENTE (B06).
+// Una clave de envío aceptada apunta a exactamente una tanda. Sin PII.
+// ==========================================
+model SubmitReceipt {
+  id               String   @id @default(cuid())
+  tableSessionId   String
+  tableSession     TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  orderId          String
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  idempotencyKey   String   @unique
+  createdAt        DateTime @default(now())
+
+  @@index([tableSessionId, createdAt])
+}
+
+// ==========================================
+// 4d. TICKETS E INSTANTÁNEAS DE CUENTA/PAGO (Etapa 4)
+// ==========================================
+model ReceiptSnapshot {
+  id             String            @id @default(cuid())
+  restaurantId   String
+  restaurant     Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  tableSessionId String
+  tableSession   TableSession      @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  settlementId   String?
+  settlement     AccountSettlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+  receiptType    String            // PRE_BILL_DETAIL | PAYMENT_RECEIPT
+  receiptNumber  String
+  snapshotData   String            // JSON completo congelado con líneas, precios, leyenda no fiscal
+  contentHash    String?           // SHA-256 del snapshot canónico
+  pdfVersion     Int               @default(1) // versión del renderer persistido
+  pdfData        Bytes?            // PDF canónico generado; no se expone en el DTO
+  pdfPath        String?
+  status         String            @default("PENDING") // PENDING | GENERATED | FAILED
+  idempotencyKey String            @unique
+  createdAt      DateTime          @default(now())
+
+  @@unique([restaurantId, receiptNumber])
+  @@index([restaurantId, createdAt])
+  @@index([tableSessionId, createdAt])
+}
+
+model PaymentAdjustment {
+  id           String            @id @default(cuid())
+  settlementId String
+  settlement   AccountSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  restaurantId String
+  amountMinor  Int               // monto ajustado/reversado de consumo (positivo)
+  tipMinor     Int               @default(0) // propina ajustada (positivo)
+  reason       String
+  adjustedBy   String            // staffUser.id
+  createdAt    DateTime          @default(now())
+
+  @@index([settlementId])
+  @@index([restaurantId, createdAt])
+}
+
+// ==========================================
+// 4e. COMPROBANTES FISCALES EXTERNOS / CARGA MANUAL (Etapa 5)
+// ==========================================
+model FiscalDocumentAssociation {
+  id           String                   @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant               @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  docType      String                   // FACTURA_A | FACTURA_B | FACTURA_C | TICKET_FISCAL | OTRO
+  pointOfSale  Int
+  docNumber    String
+  docDate      DateTime
+  emitter      String
+  totalMinor   Int
+  notes        String?
+  fileRef      String?
+  source       String                   @default("MANUAL") // Carga manual, sin simular ARCA
+  coverages    FiscalDocumentCoverage[]
+  createdAt    DateTime                 @default(now())
+
+  @@unique([restaurantId, pointOfSale, docNumber, docType])
+  @@index([restaurantId, docDate])
+}
+
+model FiscalDocumentCoverage {
+  id               String                    @id @default(cuid())
+  fiscalDocumentId String
+  fiscalDocument   FiscalDocumentAssociation @relation(fields: [fiscalDocumentId], references: [id], onDelete: Cascade)
+  tableSessionId   String
+  tableSession     TableSession              @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  coveredMinor     Int                       // centavos cubiertos por este comprobante
+  createdAt        DateTime                  @default(now())
+
+  @@unique([fiscalDocumentId, tableSessionId])
+  @@index([tableSessionId])
 }
 
 // ==========================================
@@ -322,13 +520,37 @@ model CustomerLoyalty {
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   phone        String     // E.164 (+549...)
   points       Int        @default(0)
+  version      Int        @default(0)
+  consentAt    DateTime?
   verifiedAt   DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  ledgerEntries RewardLedgerEntry[]
   redemptions  RewardRedemption[]
 
   @@unique([restaurantId, phone])
+}
+
+model RewardLedgerEntry {
+  id                String          @id @default(cuid())
+  restaurantId      String
+  restaurant        Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customerLoyaltyId String
+  customerLoyalty   CustomerLoyalty @relation(fields: [customerLoyaltyId], references: [id], onDelete: Cascade)
+  pointsDelta       Int
+  balanceAfter      Int
+  entryType         String          // ACCRUAL | REDEMPTION | REVERSAL | ADJUSTMENT | EXPIRATION
+  reason            String
+  referenceType     String?
+  referenceId       String?
+  ruleVersion       String          @default("rewards-v1")
+  idempotencyKey    String          @unique
+  createdAt         DateTime        @default(now())
+
+  @@index([restaurantId, createdAt])
+  @@index([customerLoyaltyId, createdAt])
+  @@index([restaurantId, referenceType, referenceId])
 }
 
 model RewardItem {
@@ -340,6 +562,8 @@ model RewardItem {
   pointsCost   Int
   isAvailable  Boolean    @default(true)
   createdAt    DateTime   @default(now())
+
+  redemptions  RewardRedemption[]
 }
 
 model RewardRedemption {
@@ -347,7 +571,13 @@ model RewardRedemption {
   customerLoyaltyId String
   customerLoyalty   CustomerLoyalty @relation(fields: [customerLoyaltyId], references: [id], onDelete: Cascade)
   rewardItemId      String
+  rewardItem        RewardItem      @relation(fields: [rewardItemId], references: [id], onDelete: Restrict)
+  pointsCost        Int
   status            String          @default("PENDING") // PENDING | REDEEMED | CANCELLED
+  idempotencyKey    String          @unique
+  approvedBy        String?
+  redeemedAt        DateTime?
+  cancelledAt       DateTime?
   createdAt         DateTime        @default(now())
 }
 
@@ -370,6 +600,22 @@ model Feedback {
   rating          Int           // 1 a 5
   comment         String?
   createdAt       DateTime      @default(now())
+}
+
+model UpsellEvent {
+  id               String   @id @default(cuid())
+  restaurantId     String
+  restaurant       Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  sessionHash      String
+  idempotencyKey   String   @unique
+  eventType        String   // IMPRESSION | ACCEPT | DISMISS
+  experimentGroup  String   @default("UPSELL") // UPSELL | CONTROL | UNASSIGNED
+  sourceItemId     String?
+  suggestionItemId String
+  createdAt        DateTime @default(now())
+
+  @@index([restaurantId, eventType, createdAt])
+  @@index([restaurantId, suggestionItemId, createdAt])
 }
 
 model Subscription {
@@ -450,6 +696,7 @@ model OccupancySession {
   vacatedAt            DateTime?
   cleanedAt            DateTime?
   totalRevenue         Float?
+  totalRevenueMinor    Int?       // centavos (C3/B04, backfill); métrica legada intacta
 
   // Métricas denormalizadas (calculadas al cerrar sesión)
   durationMinutes      Int?

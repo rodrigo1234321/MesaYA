@@ -4,7 +4,9 @@ import {
   PhaseMetricsDTO,
   HeatmapHourCellDTO,
   TablePerformanceDTO,
-  TableShape
+  TableShape,
+  AnalyticsMetricDTO,
+  AnalyticsQualityDTO
 } from '@mesaya/shared';
 
 export class RTMSAnalyticsService {
@@ -34,6 +36,79 @@ export class RTMSAnalyticsService {
     return restaurant;
   }
 
+  private static async resolvePeriod(
+    restaurantId: string,
+    from: Date,
+    to: Date,
+    timezone: string
+  ): Promise<{ operatingHours: number; quality: AnalyticsQualityDTO }> {
+    const shifts = await prisma.shift.findMany({
+      where: {
+        restaurantId,
+        openedAt: { lt: to },
+        OR: [{ closedAt: null }, { closedAt: { gt: from } }]
+      },
+      select: { openedAt: true, closedAt: true }
+    });
+
+    let operatingMs = 0;
+    for (const shift of shifts) {
+      const start = Math.max(shift.openedAt.getTime(), from.getTime());
+      const end = Math.min((shift.closedAt || to).getTime(), to.getTime());
+      if (end > start) operatingMs += end - start;
+    }
+
+    const warnings: string[] = [];
+    if (shifts.length === 0) warnings.push('No hay turnos operativos medidos en el período.');
+    return {
+      operatingHours: operatingMs / (1000 * 60 * 60),
+      quality: {
+        timezone,
+        period: { from: from.toISOString(), to: to.toISOString() },
+        measuredRecords: shifts.length,
+        warnings
+      }
+    };
+  }
+
+  private static metric(
+    value: number,
+    unit: string,
+    from: Date,
+    to: Date,
+    timezone: string,
+    sampleSize: number,
+    source: string
+  ): AnalyticsMetricDTO {
+    return {
+      value,
+      unit,
+      period: { from: from.toISOString(), to: to.toISOString(), timezone },
+      sampleSize,
+      source,
+      quality: sampleSize > 0 ? 'MEASURED' : 'NO_DATA'
+    };
+  }
+
+  private static async getMeasuredPayments(
+    restaurantId: string,
+    from: Date,
+    to: Date
+  ) {
+    return prisma.paymentTransaction.findMany({
+      where: {
+        status: { in: ['APPROVED', 'MANUAL_SETTLED'] },
+        createdAt: { gte: from, lte: to },
+        order: { tableSession: { table: { restaurantId } } }
+      },
+      select: {
+        amount: true,
+        createdAt: true,
+        order: { select: { tableSession: { select: { tableId: true } } } }
+      }
+    });
+  }
+
   /**
    * 1. Resumen Global de Rendimiento & RevPASH
    */
@@ -47,16 +122,16 @@ export class RTMSAnalyticsService {
     const now = new Date();
     const to = toDate || now;
     const from = fromDate || new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 días atrás por defecto
-
-    // Calcular horas operativas del período
-    const diffHours = Math.max(1, Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60)));
-    // Estimación de horas de servicio reales (aprox. 8h por día de servicio)
-    const daysInPeriod = Math.max(1, Math.round(diffHours / 24));
-    const operatingHours = Math.min(diffHours, daysInPeriod * 8);
+    const { operatingHours, quality: periodQuality } = await this.resolvePeriod(
+      restaurant.id,
+      from,
+      to,
+      restaurant.timezone
+    );
 
     // Sumar capacidad total de asientos
     const totalSeats = restaurant.tables.reduce((acc, t) => acc + (t.capacity || 4), 0);
-    const totalSeatHours = Math.max(1, totalSeats * operatingHours);
+    const totalSeatHours = totalSeats * operatingHours;
 
     // Consultar sesiones de permanencia en el rango
     const sessions = await prisma.occupancySession.findMany({
@@ -67,7 +142,8 @@ export class RTMSAnalyticsService {
     });
 
     const totalSessions = sessions.length;
-    let totalRevenue = 0;
+    const payments = await this.getMeasuredPayments(restaurant.id, from, to);
+    const totalRevenue = payments.reduce((sum, payment) => sum + payment.amount, 0);
     let turnTimeSum = 0;
     let turnTimeCount = 0;
     let durationSum = 0;
@@ -75,11 +151,6 @@ export class RTMSAnalyticsService {
     let occupiedSeatMinutesSum = 0;
 
     for (const s of sessions) {
-      // Si la sesión no tiene revenue registrado, estimamos $9.500 ARS por comensal
-      const estimatedRev = (s.partySize || 2) * 9500;
-      const rev = s.totalRevenue !== null && s.totalRevenue > 0 ? s.totalRevenue : estimatedRev;
-      totalRevenue += rev;
-
       if (s.turnTimeMinutes !== null && s.turnTimeMinutes > 0) {
         turnTimeSum += s.turnTimeMinutes;
         turnTimeCount++;
@@ -92,25 +163,34 @@ export class RTMSAnalyticsService {
       }
     }
 
-    const averageTurnTimeMinutes =
-      turnTimeCount > 0 ? Math.round(turnTimeSum / turnTimeCount) : 65;
-    const averageDurationMinutes =
-      durationCount > 0 ? Math.round(durationSum / durationCount) : 55;
+    const averageTurnTimeMinutes = turnTimeCount > 0 ? Math.round(turnTimeSum / turnTimeCount) : 0;
+    const averageDurationMinutes = durationCount > 0 ? Math.round(durationSum / durationCount) : 0;
 
     // RevPASH = Total Revenue / Total Available Seat Hours
-    const revPASH = Math.round((totalRevenue / totalSeatHours) * 100) / 100;
+    const revPASH = totalSeatHours > 0 ? Math.round((totalRevenue / totalSeatHours) * 100) / 100 : 0;
 
     // Tasa de ocupación de asientos en %
     const totalAvailableSeatMinutes = totalSeatHours * 60;
     const occupancyRatePercentage = Math.min(
       100,
-      Math.round((occupiedSeatMinutesSum / totalAvailableSeatMinutes) * 100)
+      totalAvailableSeatMinutes > 0
+        ? Math.round((occupiedSeatMinutesSum / totalAvailableSeatMinutes) * 100)
+        : 0
     );
 
     const turnsPerTableAverage =
       restaurant.tables.length > 0
         ? Math.round((totalSessions / restaurant.tables.length) * 10) / 10
         : 0;
+
+    const qualityWarnings = [...periodQuality.warnings];
+    if (payments.length === 0) qualityWarnings.push('No hay pagos conciliados en el período; revenue queda en cero.');
+    if (turnTimeCount === 0) qualityWarnings.push('No hay turnos cerrados con duración medida.');
+    const quality: AnalyticsQualityDTO = {
+      ...periodQuality,
+      measuredRecords: periodQuality.measuredRecords + sessions.length + payments.length,
+      warnings: qualityWarnings
+    };
 
     return {
       restaurantId: restaurant.id,
@@ -128,7 +208,15 @@ export class RTMSAnalyticsService {
       averageTurnTimeMinutes,
       averageDurationMinutes,
       occupancyRatePercentage,
-      turnsPerTableAverage
+      turnsPerTableAverage,
+      quality,
+      metrics: {
+        totalRevenue: this.metric(totalRevenue, 'ARS', from, to, restaurant.timezone, payments.length, 'payment_transactions.amount'),
+        revPASH: this.metric(revPASH, 'ARS_per_seat_hour', from, to, restaurant.timezone, payments.length, 'payment_transactions.amount / shifts'),
+        occupancyRatePercentage: this.metric(occupancyRatePercentage, 'percent', from, to, restaurant.timezone, durationCount, 'occupancy_sessions.durationMinutes'),
+        averageTurnTimeMinutes: this.metric(averageTurnTimeMinutes, 'minutes', from, to, restaurant.timezone, turnTimeCount, 'occupancy_sessions.turnTimeMinutes'),
+        averageDurationMinutes: this.metric(averageDurationMinutes, 'minutes', from, to, restaurant.timezone, durationCount, 'occupancy_sessions.durationMinutes')
+      }
     };
   }
 
@@ -196,12 +284,32 @@ export class RTMSAnalyticsService {
       }
     }
 
+    const phase = (sum: number, count: number) => count > 0 ? Math.max(0, Math.round(sum / count)) : 0;
+    const warnings: string[] = [];
+    if (toOrderCount === 0) warnings.push('Sin fase medida: sentado a pedido.');
+    if (prepCount === 0) warnings.push('Sin fase medida: pedido a servido.');
+    if (dwellCount === 0) warnings.push('Sin fase medida: servido a cuenta.');
+    if (vacateCount === 0) warnings.push('Sin fase medida: pago a desocupación.');
+    if (cleanCount === 0) warnings.push('Sin fase medida: desocupación a limpieza.');
     return {
-      timeToOrderAvgMinutes: toOrderCount > 0 ? Math.max(1, Math.round(toOrderSum / toOrderCount)) : 8,
-      kitchenPrepAvgMinutes: prepCount > 0 ? Math.max(1, Math.round(prepSum / prepCount)) : 22,
-      eatingDwellAvgMinutes: dwellCount > 0 ? Math.max(1, Math.round(dwellSum / dwellCount)) : 38,
-      paymentToVacateAvgMinutes: vacateCount > 0 ? Math.max(1, Math.round(vacateSum / vacateCount)) : 12,
-      cleaningTurnaroundAvgMinutes: cleanCount > 0 ? Math.max(1, Math.round(cleanSum / cleanCount)) : 6
+      timeToOrderAvgMinutes: phase(toOrderSum, toOrderCount),
+      kitchenPrepAvgMinutes: phase(prepSum, prepCount),
+      eatingDwellAvgMinutes: phase(dwellSum, dwellCount),
+      paymentToVacateAvgMinutes: phase(vacateSum, vacateCount),
+      cleaningTurnaroundAvgMinutes: phase(cleanSum, cleanCount),
+      quality: {
+        timezone: restaurant.timezone,
+        period: { from: from.toISOString(), to: to.toISOString() },
+        measuredRecords: sessions.length,
+        warnings
+      },
+      metrics: {
+        timeToOrderAvgMinutes: this.metric(phase(toOrderSum, toOrderCount), 'minutes', from, to, restaurant.timezone, toOrderCount, 'occupancy_sessions.seatedAt/orderedAt'),
+        kitchenPrepAvgMinutes: this.metric(phase(prepSum, prepCount), 'minutes', from, to, restaurant.timezone, prepCount, 'occupancy_sessions.orderedAt/servedAt'),
+        eatingDwellAvgMinutes: this.metric(phase(dwellSum, dwellCount), 'minutes', from, to, restaurant.timezone, dwellCount, 'occupancy_sessions.servedAt/billAt'),
+        paymentToVacateAvgMinutes: this.metric(phase(vacateSum, vacateCount), 'minutes', from, to, restaurant.timezone, vacateCount, 'occupancy_sessions.paidAt/vacatedAt'),
+        cleaningTurnaroundAvgMinutes: this.metric(phase(cleanSum, cleanCount), 'minutes', from, to, restaurant.timezone, cleanCount, 'occupancy_sessions.vacatedAt/cleanedAt')
+      }
     };
   }
 
@@ -225,7 +333,8 @@ export class RTMSAnalyticsService {
     });
 
     const dayLabels = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-    const totalCapacity = restaurant.tables.reduce((acc, t) => acc + (t.capacity || 4), 0);
+    const totalCapacity = restaurant.tables.reduce((acc, t) => acc + (t.capacity || 0), 0);
+    const payments = await this.getMeasuredPayments(restaurant.id, from, to);
 
     // Inicializar matriz 7 días x 24 horas
     const grid: Record<string, { sessions: number; revenue: number; diners: number }> = {};
@@ -242,8 +351,13 @@ export class RTMSAnalyticsService {
       if (grid[key]) {
         grid[key].sessions++;
         grid[key].diners += s.partySize || 2;
-        grid[key].revenue += s.totalRevenue || (s.partySize || 2) * 9500;
       }
+    }
+    for (const payment of payments) {
+      const d = payment.createdAt.getDay();
+      const h = payment.createdAt.getHours();
+      const key = `${d}-${h}`;
+      if (grid[key]) grid[key].revenue += payment.amount;
     }
 
     const cells: HeatmapHourCellDTO[] = [];
@@ -260,7 +374,11 @@ export class RTMSAnalyticsService {
           hour: h,
           occupancyPercentage,
           sessionsCount: item.sessions,
-          revenue: item.revenue
+          revenue: item.revenue,
+          metrics: {
+            occupancyPercentage: this.metric(occupancyPercentage, 'percent', from, to, restaurant.timezone, item.sessions, 'occupancy_sessions.partySize'),
+            revenue: this.metric(item.revenue, 'ARS', from, to, restaurant.timezone, payments.filter((payment) => payment.createdAt.getDay() === d && payment.createdAt.getHours() === h).length, 'payment_transactions.amount')
+          }
         });
       }
     }
@@ -287,18 +405,22 @@ export class RTMSAnalyticsService {
       }
     });
 
-    const diffHours = Math.max(1, Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60)));
-    const daysInPeriod = Math.max(1, Math.round(diffHours / 24));
-    const operatingHours = Math.min(diffHours, daysInPeriod * 8);
+    const { operatingHours, quality: periodQuality } = await this.resolvePeriod(
+      restaurant.id,
+      from,
+      to,
+      restaurant.timezone
+    );
+    const payments = await this.getMeasuredPayments(restaurant.id, from, to);
 
     const performanceList: TablePerformanceDTO[] = restaurant.tables.map((table) => {
       const tableSessions = sessions.filter((s) => s.tableId === table.id);
       const totalTurns = tableSessions.length;
-      let revenue = 0;
+      const tablePayments = payments.filter((payment) => payment.order.tableSession.tableId === table.id);
+      const revenue = tablePayments.reduce((sum, payment) => sum + payment.amount, 0);
       let durationMinutesSum = 0;
 
       for (const s of tableSessions) {
-        revenue += s.totalRevenue || (s.partySize || 2) * 9500;
         if (s.turnTimeMinutes) {
           durationMinutesSum += s.turnTimeMinutes;
         } else if (s.durationMinutes) {
@@ -307,7 +429,7 @@ export class RTMSAnalyticsService {
       }
 
       const avgTurn = totalTurns > 0 ? Math.round(durationMinutesSum / totalTurns) : 0;
-      const seatHours = (table.capacity || 4) * operatingHours;
+      const seatHours = (table.capacity || 0) * operatingHours;
       const revPASH = seatHours > 0 ? Math.round((revenue / seatHours) * 100) / 100 : 0;
 
       const totalOccupiedMinutes = durationMinutesSum;
@@ -327,7 +449,22 @@ export class RTMSAnalyticsService {
         totalRevenue: revenue,
         averageTurnTimeMinutes: avgTurn,
         revPASH,
-        utilizationPercentage
+        utilizationPercentage,
+        quality: {
+          ...periodQuality,
+          measuredRecords: tableSessions.length + tablePayments.length,
+          warnings: [
+            ...periodQuality.warnings,
+            ...(tablePayments.length === 0 ? ['No hay pagos conciliados para esta mesa en el período.'] : []),
+            ...(durationMinutesSum === 0 ? ['No hay duración medida para esta mesa en el período.'] : [])
+          ]
+        },
+        metrics: {
+          totalRevenue: this.metric(revenue, 'ARS', from, to, restaurant.timezone, tablePayments.length, 'payment_transactions.amount'),
+          averageTurnTimeMinutes: this.metric(avgTurn, 'minutes', from, to, restaurant.timezone, tableSessions.filter((s) => Boolean(s.turnTimeMinutes || s.durationMinutes)).length, 'occupancy_sessions.turnTimeMinutes/durationMinutes'),
+          revPASH: this.metric(revPASH, 'ARS_per_seat_hour', from, to, restaurant.timezone, tablePayments.length, 'payment_transactions.amount / shifts'),
+          utilizationPercentage: this.metric(utilizationPercentage, 'percent', from, to, restaurant.timezone, tableSessions.filter((s) => Boolean(s.durationMinutes)).length, 'occupancy_sessions.durationMinutes')
+        }
       };
     });
 

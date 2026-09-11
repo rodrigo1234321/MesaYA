@@ -8,16 +8,18 @@ import { StaffManager } from './components/StaffManager';
 import { ModuleConfigManager } from './components/ModuleConfigManager';
 import { FloorPlanManager } from './components/FloorPlan/FloorPlanManager';
 import { RTMSAnalyticsView } from './components/RTMSAnalyticsView';
-import { Utensils, LayoutGrid, BookOpen, Users, BarChart3, RefreshCw, Plus, Store, ChevronDown, Sliders, Map } from 'lucide-react';
+import { SalesManager } from './components/SalesManager';
+import { Utensils, LayoutGrid, BookOpen, Users, BarChart3, RefreshCw, Plus, Store, ChevronDown, Sliders, Map, DollarSign } from 'lucide-react';
 
 export const App: React.FC = () => {
+  const publicOnboardingEnabled = import.meta.env.VITE_PUBLIC_ONBOARDING_ENABLED === 'true';
   const [restaurants, setRestaurants] = useState<RestaurantItem[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string>(() => {
     const saved = AdminApi.getSavedRestaurant();
     return saved?.slug || '';
   });
 
-  const [activeTab, setActiveTab] = useState<'floorplan' | 'tables' | 'menu' | 'staff' | 'modules' | 'metrics'>('floorplan');
+  const [activeTab, setActiveTab] = useState<'floorplan' | 'tables' | 'menu' | 'staff' | 'modules' | 'metrics' | 'sales'>('floorplan');
   const [tables, setTables] = useState<TableItem[]>([]);
   const [currentShift, setCurrentShift] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -25,6 +27,7 @@ export const App: React.FC = () => {
   const [loginPin, setLoginPin] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [floorPlanRefreshKey, setFloorPlanRefreshKey] = useState(0);
 
   // New Restaurant Onboarding Modal State
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -94,6 +97,9 @@ export const App: React.FC = () => {
       await AdminApi.loginAdmin(selectedSlug, loginPin.trim());
       setLoginPin('');
       setAuthRequired(false);
+      // El plano y su polling pueden haber fallado antes del PIN; fuerza un
+      // nuevo ciclo autenticado sin depender de cambiar de pestaña.
+      setFloorPlanRefreshKey((value) => value + 1);
       await loadData();
     } catch (err: any) {
       setLoginError(err.message || 'No se pudo iniciar sesión');
@@ -183,13 +189,15 @@ export const App: React.FC = () => {
             </div>
           )}
 
-          <button
-            onClick={() => setShowRegisterModal(true)}
-            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/20 active:scale-95 transition-all"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Nuevo Local</span>
-          </button>
+          {publicOnboardingEnabled && (
+            <button
+              onClick={() => setShowRegisterModal(true)}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/20 active:scale-95 transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Nuevo Local</span>
+            </button>
+          )}
 
           <button
             onClick={loadData}
@@ -282,12 +290,24 @@ export const App: React.FC = () => {
           <BarChart3 className="w-4 h-4" />
           <span>Métricas & Rendimiento</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('sales')}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            activeTab === 'sales'
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+          }`}
+        >
+          <DollarSign className="w-4 h-4 text-emerald-300" />
+          <span>Ventas y cobros</span>
+        </button>
       </div>
 
       {/* Active Tab Content */}
       <main className="pb-12">
         {activeTab === 'floorplan' && (
-          <FloorPlanManager restaurantSlug={selectedSlug} />
+          <FloorPlanManager restaurantSlug={selectedSlug} refreshKey={floorPlanRefreshKey} />
         )}
         {activeTab === 'tables' && (
           <TablesManager
@@ -322,6 +342,9 @@ export const App: React.FC = () => {
               <MetricsView restaurantId={activeRestaurant.id} />
             </div>
           </div>
+        )}
+        {activeTab === 'sales' && (
+          <SalesManager restaurantId={activeRestaurant.id} />
         )}
       </main>
 
@@ -364,7 +387,7 @@ export const App: React.FC = () => {
       )}
 
       {/* SaaS Register New Restaurant Modal */}
-      {showRegisterModal && (
+      {publicOnboardingEnabled && showRegisterModal && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleRegisterSubmit} className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
             <div className="flex items-center space-x-2.5">

@@ -16,12 +16,82 @@ const API_BASE = (() => {
 let currentSession = null;
 let currentToken = null;
 let activeCall = null;
+let activeCalls = [];
 let pollTimer = null;
 let pollAbortController = null;
 let isPollingBusy = false;
 let pollFailures = 0;
 let callTimerInterval = null;
 let lastCallType = 'WAITER';
+let activeOrder = null;
+let orderHistory = [];
+// El camino normal va directo a cocina. Sólo una excepción persistida o el
+// modo manual explícito del local debe poner una comanda delante del mozo.
+let activeOrderPolicy = { allowOrdering: true, requireWaiterValidation: false };
+let isCartSubmitting = false;
+let cartSubmitIdempotencyKey = null;
+let networkState = 'unknown';
+let networkStatusTimer = null;
+let modalFocusStack = [];
+let suppressModalFocusRestore = false;
+
+function getCartSubmitStorageKey() {
+  try {
+    const token = (currentToken || getToken() || '').trim();
+    const orderId = activeOrder?.id ? String(activeOrder.id).trim() : '';
+    const orderPart = orderId ? orderId.slice(0, 64) : 'draft';
+    const tokenPart = token ? token.slice(0, 16) : 'notoken';
+    const safeTokenPart = tokenPart.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 16) || 'notoken';
+    const safeOrderPart = orderPart.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'draft';
+    return `mesaya_cart_submit_${safeTokenPart}_${safeOrderPart}`.slice(0, 200);
+  } catch (_) {
+    return 'mesaya_cart_submit_fallback';
+  }
+}
+
+function readPersistedCartSubmitKey(storageKey) {
+  const key = storageKey || getCartSubmitStorageKey();
+  try {
+    const existing = sessionStorage.getItem(key);
+    if (existing && typeof existing === 'string' && existing.trim()) return existing.trim().slice(0, 200);
+  } catch (_) {}
+  return null;
+}
+
+function getOrCreateCartSubmitIdempotencyKey() {
+  const storageKey = getCartSubmitStorageKey();
+  const existing = readPersistedCartSubmitKey(storageKey);
+  if (existing) {
+    cartSubmitIdempotencyKey = existing;
+    return existing;
+  }
+  const orderIdPartRaw = activeOrder?.id ? String(activeOrder.id) : (currentToken || getToken() || 'draft').slice(0, 12);
+  const orderIdPart = orderIdPartRaw.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'draft';
+  let newKey = null;
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      newKey = `cart_${orderIdPart}_${crypto.randomUUID()}`;
+    }
+  } catch (_) { newKey = null; }
+  if (!newKey) {
+    const tokenPart = (currentToken || getToken() || '').trim().slice(0, 16).replace(/[^A-Za-z0-9_-]/g, '') || 'notoken';
+    const base = `${orderIdPart}:${tokenPart}`;
+    let hash = 0;
+    for (let i = 0; i < base.length; i++) hash = ((hash << 5) - hash + base.charCodeAt(i)) | 0;
+    const hex = Math.abs(hash).toString(36);
+    newKey = `cart_${orderIdPart}_${tokenPart}_${hex}_fallback`;
+  }
+  newKey = newKey.slice(0, 200);
+  cartSubmitIdempotencyKey = newKey;
+  try { sessionStorage.setItem(storageKey, newKey); } catch (_) {}
+  return newKey;
+}
+
+function clearPersistedCartSubmitKey(storageKey) {
+  const key = storageKey || getCartSubmitStorageKey();
+  try { sessionStorage.removeItem(key); } catch (_) {}
+  cartSubmitIdempotencyKey = null;
+}
 
 // ==========================================
 // SEGURIDAD Y SANITIZACIÓN CONTEXTUAL (Etapa 19)
@@ -181,10 +251,12 @@ const el = {
   restaurantName: document.getElementById('restaurantName'),
   tableBadge: document.getElementById('tableBadge'),
   sectorBadge: document.getElementById('sectorBadge'),
-  btnOpenMenuHeader: document.getElementById('btnOpenMenuHeader'),
+  btnOpenCartHeader: document.getElementById('btnOpenCartHeader'),
+  headerCartCount: document.getElementById('headerCartCount'),
   btnOpenMenuHero: document.getElementById('btnOpenMenuHero'),
   heroCoverImage: document.getElementById('heroCoverImage'),
   stateLoading: document.getElementById('stateLoading'),
+  networkStatus: document.getElementById('networkStatus'),
   stateExpired: document.getElementById('stateExpired'),
   expiredMessageText: document.getElementById('expiredMessageText'),
   actionsContainer: document.getElementById('actionsContainer'),
@@ -193,6 +265,7 @@ const el = {
   activeCallTitle: document.getElementById('activeCallTitle'),
   activeCallSubtitle: document.getElementById('activeCallSubtitle'),
   activeCallBadge: document.getElementById('activeCallBadge'),
+  activeCallList: document.getElementById('activeCallList'),
   activeCallDetailText: document.getElementById('activeCallDetailText'),
   activeCallTimer: document.getElementById('activeCallTimer'),
   btnCancelCall: document.getElementById('btnCancelCall'),
@@ -203,6 +276,13 @@ const el = {
   modalBill: document.getElementById('modalBill'),
   modalBillTotal: document.getElementById('modalBillTotal'),
   modalBillStatusText: document.getElementById('modalBillStatusText'),
+  modalBillPaid: document.getElementById('modalBillPaid'),
+  modalBillTip: document.getElementById('modalBillTip'),
+  modalBillRequestedTip: document.getElementById('modalBillRequestedTip'),
+  modalBillBalance: document.getElementById('modalBillBalance'),
+  modalBillPayableTotal: document.getElementById('modalBillPayableTotal'),
+  modalBillPending: document.getElementById('modalBillPending'),
+  billTipSelection: document.getElementById('billTipSelection'),
   btnToggleBillDetails: document.getElementById('btnToggleBillDetails'),
   modalBillItemsContainer: document.getElementById('modalBillItemsContainer'),
   modalBillItemsList: document.getElementById('modalBillItemsList'),
@@ -212,30 +292,96 @@ const el = {
   modalWaiter: document.getElementById('modalWaiter'),
   modalSupplies: document.getElementById('modalSupplies'),
   modalMenu: document.getElementById('modalMenu'),
+  modalCart: document.getElementById('modalCart'),
+  btnCloseModalCart: document.getElementById('btnCloseModalCart'),
+  cartItemsList: document.getElementById('cartItemsList'),
+  cartEmptyState: document.getElementById('cartEmptyState'),
+  cartTotal: document.getElementById('cartTotal'),
+  cartOrderStatus: document.getElementById('cartOrderStatus'),
+  orderHistorySection: document.getElementById('orderHistorySection'),
+  orderHistoryList: document.getElementById('orderHistoryList'),
+  orderHistoryEmpty: document.getElementById('orderHistoryEmpty'),
+  btnSubmitCart: document.getElementById('btnSubmitCart'),
+  btnCartCallWaiter: document.getElementById('btnCartCallWaiter'),
   menuImage: document.getElementById('menuImage'),
   heroCategoryPillsContainer: document.getElementById('heroCategoryPillsContainer'),
   dynamicMenuCategoriesContainer: document.getElementById('dynamicMenuCategoriesContainer'),
   btnCloseModalBill: document.getElementById('btnCloseModalBill'),
+  btnOpenReviewFromBill: document.getElementById('btnOpenReviewFromBill'),
+  btnSubmitReview: document.getElementById('btnSubmitReview'),
   btnCloseModalWaiter: document.getElementById('btnCloseModalWaiter'),
   btnCloseModalSupplies: document.getElementById('btnCloseModalSupplies'),
   btnCloseModalMenu: document.getElementById('btnCloseModalMenu'),
   btnOrderFromMenu: document.getElementById('btnOrderFromMenu'),
+  dishOrderQuantity: document.getElementById('dishOrderQuantity'),
+  dishOrderQuantityDisplay: document.getElementById('dishOrderQuantityDisplay'),
+  btnDishOrderQuantityMinus: document.getElementById('btnDishOrderQuantityMinus'),
+  btnDishOrderQuantityPlus: document.getElementById('btnDishOrderQuantityPlus'),
+  dishOrderNote: document.getElementById('dishOrderNote'),
   customSupplyNote: document.getElementById('customSupplyNote'),
-  btnSubmitCustomSupply: document.getElementById('btnSubmitCustomSupply')
+  btnSubmitCustomSupply: document.getElementById('btnSubmitCustomSupply'),
+  waitlistPublicRoot: document.getElementById('waitlistPublicRoot'),
+  waitlistRestaurantName: document.getElementById('waitlistRestaurantName'),
+  waitlistJoinView: document.getElementById('waitlistJoinView'),
+  waitlistTicketView: document.getElementById('waitlistTicketView'),
+  waitlistUnavailableView: document.getElementById('waitlistUnavailableView'),
+  waitlistJoinForm: document.getElementById('waitlistJoinForm'),
+  waitlistGuestName: document.getElementById('waitlistGuestName'),
+  waitlistPartySize: document.getElementById('waitlistPartySize'),
+  waitlistPhone: document.getElementById('waitlistPhone'),
+  waitlistConsent: document.getElementById('waitlistConsent'),
+  waitlistJoinButton: document.getElementById('waitlistJoinButton'),
+  waitlistJoinError: document.getElementById('waitlistJoinError'),
+  waitlistPreOrderSection: document.getElementById('waitlistPreOrderSection'),
+  waitlistPreOrderList: document.getElementById('waitlistPreOrderList'),
+  waitlistTicketGuest: document.getElementById('waitlistTicketGuest'),
+  waitlistTicketPosition: document.getElementById('waitlistTicketPosition'),
+  waitlistTicketWait: document.getElementById('waitlistTicketWait'),
+  waitlistTicketStatus: document.getElementById('waitlistTicketStatus'),
+  waitlistTicketMeta: document.getElementById('waitlistTicketMeta'),
+  waitlistNewTicketButton: document.getElementById('waitlistNewTicketButton'),
+  waitlistUnavailableText: document.getElementById('waitlistUnavailableText')
 };
+
+function bindImageResilience(image) {
+  if (!image || image.dataset.resilienceBound === 'true') return;
+  image.dataset.resilienceBound = 'true';
+  image.addEventListener('error', () => {
+    image.classList.add('hidden');
+    image.setAttribute('aria-hidden', 'true');
+  });
+  image.addEventListener('load', () => {
+    image.classList.remove('hidden');
+    image.removeAttribute('aria-hidden');
+  });
+}
+
+bindImageResilience(el.heroCoverImage);
+bindImageResilience(document.getElementById('dishSheetImage'));
+
+let publicWaitlistSlug = null;
+let publicWaitlistTimer = null;
+let publicWaitlistTicket = null;
+let publicWaitlistPreOrderEnabled = false;
+let publicWaitlistMenuItems = [];
 
 // Unified Table Params Extraction (supports /r/:slug/mesa/:label, /mesa/:label, and query params)
 function getTableParams() {
   const parsed = {
     token: null,
     restaurantSlug: null,
-    tableLabel: null
+    tableLabel: null,
+    queueSlug: null
   };
   if (typeof window === 'undefined') return parsed;
 
   const pathname = decodeURIComponent(window.location.pathname || '');
   const search = window.location.search || '';
   const params = new URLSearchParams(search);
+
+  const queueMatch = pathname.match(/\/fila\/([^\/]+)/i);
+  if (queueMatch) parsed.queueSlug = queueMatch[1];
+  if (params.get('fila') || params.get('queue')) parsed.queueSlug = params.get('fila') || params.get('queue');
 
   // 1. Pathname: /r/:slug/mesa/:label
   const rMatch = pathname.match(/\/r\/([^\/]+)\/mesa\/([^\/]+)/i);
@@ -317,13 +463,198 @@ async function fetchWithRetry(url, options = {}, retries = 2, timeoutMs = 3000) 
     try {
       const res = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(id);
+      markOnline();
       return res;
     } catch (err) {
       clearTimeout(id);
-      if (i === retries - 1) throw err;
+      if (i === retries - 1) {
+        if (isLikelyNetworkError(err)) markOffline();
+        throw err;
+      }
     }
   }
 }
+
+function isLikelyNetworkError(error) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  if (!error) return false;
+  if (error.name === 'AbortError' || error.name === 'TypeError') return true;
+  return /fetch|network|connection|timeout|failed/i.test(String(error.message || error));
+}
+
+function showNetworkStatus(online, message) {
+  if (!el.networkStatus) return;
+  if (networkStatusTimer) {
+    clearTimeout(networkStatusTimer);
+    networkStatusTimer = null;
+  }
+  el.networkStatus.textContent = message;
+  el.networkStatus.className = online
+    ? 'rounded-2xl border border-emerald-500/40 bg-emerald-950/70 px-4 py-3 text-xs font-bold leading-relaxed text-emerald-100 shadow-lg'
+    : 'rounded-2xl border border-amber-500/40 bg-amber-950/70 px-4 py-3 text-xs font-bold leading-relaxed text-amber-100 shadow-lg';
+  el.networkStatus.classList.remove('hidden');
+  if (online) {
+    networkStatusTimer = window.setTimeout(() => {
+      el.networkStatus?.classList.add('hidden');
+      networkStatusTimer = null;
+    }, 4000);
+  }
+}
+
+function markOffline() {
+  networkState = 'offline';
+  showNetworkStatus(false, 'Sin conexión. No se enviará nada hasta comprobarlo.');
+}
+
+function markOnline() {
+  const wasOffline = networkState === 'offline';
+  networkState = 'online';
+  if (wasOffline) {
+    showNetworkStatus(true, 'Conexión restablecida; comprobando la mesa…');
+  } else if (el.networkStatus) {
+    el.networkStatus.classList.add('hidden');
+  }
+}
+
+const MANAGED_MODAL_IDS = [
+  'dishDetailSheetBackdrop',
+  'sommelierSheetBackdrop',
+  'modalReviewFair',
+  'modalCart',
+  'modalBill',
+  'modalWaiter',
+  'modalSupplies',
+  'modalMenu'
+];
+
+const FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  '[href]',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable="true"]'
+].join(',');
+
+function isVisibleForFocus(node) {
+  if (!node || typeof node.matches !== 'function') return false;
+  if (node.closest('.hidden') || node.getAttribute('aria-hidden') === 'true') return false;
+  try {
+    const style = window.getComputedStyle(node);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+  } catch (_) {}
+  return true;
+}
+
+function getTopManagedModal() {
+  for (const id of MANAGED_MODAL_IDS) {
+    const candidate = document.getElementById(id);
+    if (!candidate) continue;
+    const open = candidate.classList.contains('active')
+      || (candidate.classList.contains('fixed') && !candidate.classList.contains('hidden'));
+    if (open) return candidate;
+  }
+  return null;
+}
+
+function hasOpenManagedModal() {
+  return Boolean(getTopManagedModal());
+}
+
+function rememberModalFocus(trigger = document.activeElement) {
+  if (trigger && typeof trigger.focus === 'function' && trigger !== document.body) {
+    modalFocusStack.push(trigger);
+  }
+}
+
+function focusManagedModal(container) {
+  if (!container) return;
+  const focus = () => {
+    if (!isVisibleForFocus(container)) return;
+    const autofocus = container.querySelector('[autofocus]');
+    const focusables = Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR)).filter(isVisibleForFocus);
+    const target = (autofocus && isVisibleForFocus(autofocus)) ? autofocus : (focusables[0] || container);
+    if (target && typeof target.focus === 'function') {
+      target.focus({ preventScroll: true });
+    }
+  };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(focus);
+  else window.setTimeout(focus, 0);
+}
+
+function restoreModalFocusIfNone() {
+  if (suppressModalFocusRestore) return;
+  while (modalFocusStack.length > 0) {
+    const target = modalFocusStack.pop();
+    if (target && isVisibleForFocus(target)) {
+      target.focus({ preventScroll: true });
+      return;
+    }
+  }
+}
+
+function closeBasicModal(modal) {
+  if (!modal) return;
+  modal.classList.add('hidden');
+  if (!hasOpenManagedModal()) {
+    document.body.classList.remove('modal-open');
+  }
+  restoreModalFocusIfNone();
+}
+
+function closeManagedModal(modal) {
+  if (!modal) return;
+  switch (modal.id) {
+    case 'dishDetailSheetBackdrop':
+      closeDishDetailSheet();
+      break;
+    case 'sommelierSheetBackdrop':
+      closeSommelierDrawer();
+      break;
+    case 'modalReviewFair':
+      closeReviewFairModal();
+      break;
+    case 'modalCart':
+      closeCartModal();
+      break;
+    case 'modalMenu':
+      closeBasicModal(modal);
+      restoreMenuContext();
+      break;
+    default:
+      closeBasicModal(modal);
+      break;
+  }
+}
+
+document.addEventListener('keydown', (event) => {
+  const modal = getTopManagedModal();
+  if (!modal) return;
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeManagedModal(modal);
+    return;
+  }
+
+  if (event.key !== 'Tab') return;
+  const focusables = Array.from(modal.querySelectorAll(FOCUSABLE_SELECTOR)).filter(isVisibleForFocus);
+  if (focusables.length === 0) {
+    event.preventDefault();
+    modal.focus({ preventScroll: true });
+    return;
+  }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+    event.preventDefault();
+    last.focus({ preventScroll: true });
+  } else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+    event.preventDefault();
+    first.focus({ preventScroll: true });
+  }
+});
 
 function formatSector(sector) {
   const map = {
@@ -336,8 +667,223 @@ function formatSector(sector) {
   return map[sector] || sector || 'Salón';
 }
 
+function formatWaitlistStatus(status) {
+  const labels = {
+    WAITING: 'Estamos esperando que se libere una mesa.',
+    CALLED: '¡Tu mesa está lista! Acercate al ingreso.',
+    SEATED: 'Tu grupo fue asignado a una mesa.',
+    CANCELLED: 'Este turno fue cancelado.',
+    NO_SHOW: 'El turno venció por falta de presentación.'
+  };
+  return labels[status] || 'Estamos actualizando tu turno.';
+}
+
+function setWaitlistPublicMode() {
+  if (!el.waitlistPublicRoot) return;
+  el.waitlistPublicRoot.classList.remove('hidden');
+  el.waitlistPublicRoot.classList.add('flex');
+  document.body.classList.remove('justify-between', 'max-w-md', 'p-3.5', 'sm:p-4');
+  document.querySelectorAll('body > *:not(#waitlistPublicRoot)').forEach((node) => {
+    node.classList.add('hidden');
+  });
+}
+
+function showWaitlistPublicView(view) {
+  el.waitlistJoinView?.classList.toggle('hidden', view !== 'join');
+  el.waitlistTicketView?.classList.toggle('hidden', view !== 'ticket');
+  el.waitlistUnavailableView?.classList.toggle('hidden', view !== 'unavailable');
+}
+
+function renderWaitlistPreOrderMenu() {
+  if (!el.waitlistPreOrderSection || !el.waitlistPreOrderList) return;
+  if (!publicWaitlistPreOrderEnabled || publicWaitlistMenuItems.length === 0) {
+    el.waitlistPreOrderSection.classList.add('hidden');
+    return;
+  }
+
+  el.waitlistPreOrderList.replaceChildren();
+  publicWaitlistMenuItems.slice(0, 30).forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900 px-2.5 py-2';
+    const text = document.createElement('span');
+    text.className = 'min-w-0 flex-1 text-[11px] font-semibold text-slate-200';
+    text.textContent = `${item.name} · $${Number(item.price).toLocaleString('es-AR')}`;
+    const qty = document.createElement('input');
+    qty.type = 'hidden';
+    qty.value = '0';
+    qty.dataset.preorderItemId = item.id;
+    const controls = document.createElement('div');
+    controls.className = 'flex shrink-0 items-center gap-1 rounded-xl border border-slate-700 bg-slate-950 p-1';
+    controls.setAttribute('role', 'group');
+    controls.setAttribute('aria-label', `Cantidad de ${item.name}`);
+    const minus = document.createElement('button');
+    minus.type = 'button';
+    minus.className = 'min-h-[36px] min-w-[36px] rounded-lg bg-slate-800 text-xl leading-none text-white disabled:cursor-not-allowed disabled:opacity-40';
+    minus.textContent = '−';
+    minus.setAttribute('aria-label', `Restar ${item.name}`);
+    const display = document.createElement('output');
+    display.className = 'min-w-7 text-center text-sm font-black text-white';
+    display.textContent = '0';
+    display.setAttribute('aria-live', 'polite');
+    const plus = document.createElement('button');
+    plus.type = 'button';
+    plus.className = 'min-h-[36px] min-w-[36px] rounded-lg bg-slate-800 text-xl leading-none text-white disabled:cursor-not-allowed disabled:opacity-40';
+    plus.textContent = '+';
+    plus.setAttribute('aria-label', `Sumar ${item.name}`);
+    const setQuantity = (value) => {
+      const quantity = Math.min(50, Math.max(0, Math.round(Number(value) || 0)));
+      qty.value = String(quantity);
+      display.textContent = String(quantity);
+      minus.disabled = quantity <= 0;
+      plus.disabled = quantity >= 50;
+    };
+    minus.addEventListener('click', () => setQuantity(Number(qty.value) - 1));
+    plus.addEventListener('click', () => setQuantity(Number(qty.value) + 1));
+    controls.append(minus, display, plus);
+    row.append(text, controls, qty);
+    el.waitlistPreOrderList.appendChild(row);
+  });
+  el.waitlistPreOrderSection.classList.remove('hidden');
+}
+
+function collectWaitlistPreOrder() {
+  if (!publicWaitlistPreOrderEnabled || !el.waitlistPreOrderList) return [];
+  return [...el.waitlistPreOrderList.querySelectorAll('[data-preorder-item-id]')]
+    .map((input) => ({ menuItemId: input.dataset.preorderItemId, quantity: Number(input.value) || 0 }))
+    .filter((line) => line.quantity > 0);
+}
+
+function renderPublicWaitlistTicket(ticket) {
+  publicWaitlistTicket = ticket;
+  showWaitlistPublicView('ticket');
+  if (el.waitlistTicketGuest) el.waitlistTicketGuest.textContent = ticket.guestName ? `${ticket.guestName}, tu turno está registrado` : 'Tu turno está registrado';
+  if (el.waitlistTicketPosition) el.waitlistTicketPosition.textContent = ticket.positionInQueue ? `#${ticket.positionInQueue}` : '—';
+  if (el.waitlistTicketWait) el.waitlistTicketWait.textContent = ticket.estimatedWaitMinutes ? `${ticket.estimatedWaitMinutes} min` : 'Ahora';
+  if (el.waitlistTicketStatus) el.waitlistTicketStatus.textContent = formatWaitlistStatus(ticket.status);
+  if (el.waitlistTicketMeta) el.waitlistTicketMeta.textContent = `Estado: ${ticket.status === 'CALLED' ? 'LLAMADO' : ticket.status === 'SEATED' ? 'SENTADO' : ticket.status === 'WAITING' ? 'EN ESPERA' : ticket.status}`;
+}
+
+async function refreshPublicWaitlistTicket() {
+  if (!publicWaitlistSlug || !publicWaitlistTicket?.id || !publicWaitlistTicket.phone) return;
+  const query = new URLSearchParams({ phone: publicWaitlistTicket.phone });
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/waitlist/${encodeURIComponent(publicWaitlistTicket.id)}/status?${query.toString()}`, {}, 2, 5000);
+    if (res.status === 404) {
+      window.sessionStorage.removeItem(`mesaya_waitlist_${publicWaitlistSlug}`);
+      showWaitlistPublicView('join');
+      return;
+    }
+    if (!res.ok) return;
+    const ticket = await res.json();
+    ticket.phone = publicWaitlistTicket.phone;
+    renderPublicWaitlistTicket(ticket);
+    if (ticket.status === 'SEATED' || ticket.status === 'CANCELLED' || ticket.status === 'NO_SHOW') {
+      if (publicWaitlistTimer) window.clearInterval(publicWaitlistTimer);
+      publicWaitlistTimer = null;
+    }
+  } catch (_) {
+    // La pantalla conserva el último estado válido y reintenta en el próximo ciclo.
+  }
+}
+
+async function initWaitlistPublic(slug) {
+  publicWaitlistSlug = String(slug || '').trim().toLowerCase();
+  if (!publicWaitlistSlug) return;
+  setWaitlistPublicMode();
+  showWaitlistPublicView('join');
+
+  const stored = window.sessionStorage.getItem(`mesaya_waitlist_${publicWaitlistSlug}`);
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed?.id && parsed?.phone) {
+        publicWaitlistTicket = parsed;
+        showWaitlistPublicView('ticket');
+        await refreshPublicWaitlistTicket();
+      }
+    } catch (_) {
+      window.sessionStorage.removeItem(`mesaya_waitlist_${publicWaitlistSlug}`);
+    }
+  }
+
+  try {
+    const [configRes, menuRes] = await Promise.all([
+      fetchWithRetry(`${API_BASE}/restaurants/${encodeURIComponent(publicWaitlistSlug)}/config`, {}, 2, 5000),
+      fetchWithRetry(`${API_BASE}/restaurants/${encodeURIComponent(publicWaitlistSlug)}/menu`, {}, 2, 5000)
+    ]);
+    if (!configRes.ok) throw new Error('Restaurante no encontrado');
+    const config = await configRes.json();
+    if (el.waitlistRestaurantName) el.waitlistRestaurantName.textContent = config.restaurantName || 'Fila virtual';
+    if (config.enableWaitlist === false) {
+      if (el.waitlistUnavailableText) el.waitlistUnavailableText.textContent = 'El encargado todavía no habilitó el ingreso de grupos.';
+      showWaitlistPublicView('unavailable');
+      return;
+    }
+    publicWaitlistPreOrderEnabled = config.enableWaitlistPreOrder === true;
+    if (menuRes.ok) {
+      const menu = await menuRes.json();
+      publicWaitlistMenuItems = (menu.categories || []).flatMap((category) => category.items || []).filter((item) => item.isAvailable);
+      renderWaitlistPreOrderMenu();
+      if (menu.restaurant?.name && el.waitlistRestaurantName) el.waitlistRestaurantName.textContent = menu.restaurant.name;
+    }
+  } catch (err) {
+    if (el.waitlistUnavailableText) el.waitlistUnavailableText.textContent = 'No pudimos cargar el restaurante. Revisá el enlace o intentá nuevamente.';
+    showWaitlistPublicView('unavailable');
+  }
+
+  if (!el.waitlistJoinForm || el.waitlistJoinForm.dataset.bound === 'true') return;
+  el.waitlistJoinForm.dataset.bound = 'true';
+  el.waitlistJoinForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (el.waitlistJoinError) el.waitlistJoinError.classList.add('hidden');
+    if (el.waitlistJoinButton) { el.waitlistJoinButton.disabled = true; el.waitlistJoinButton.textContent = 'Registrando…'; }
+    try {
+      const phone = el.waitlistPhone.value.trim();
+      const response = await fetchWithRetry(`${API_BASE}/waitlist/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          restaurantSlug: publicWaitlistSlug,
+          guestName: el.waitlistGuestName.value.trim(),
+          partySize: Number(el.waitlistPartySize.value),
+          phone,
+          consent: el.waitlistConsent.checked,
+          preOrderData: collectWaitlistPreOrder()
+        })
+      }, 2, 7000);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'No se pudo registrar el turno');
+      publicWaitlistTicket = { ...data, phone };
+      window.sessionStorage.setItem(`mesaya_waitlist_${publicWaitlistSlug}`, JSON.stringify(publicWaitlistTicket));
+      renderPublicWaitlistTicket(publicWaitlistTicket);
+      if (publicWaitlistTimer) window.clearInterval(publicWaitlistTimer);
+      publicWaitlistTimer = window.setInterval(refreshPublicWaitlistTicket, 10000);
+    } catch (err) {
+      if (el.waitlistJoinError) { el.waitlistJoinError.textContent = err.message || 'No se pudo registrar el turno.'; el.waitlistJoinError.classList.remove('hidden'); }
+    } finally {
+      if (el.waitlistJoinButton) { el.waitlistJoinButton.disabled = false; el.waitlistJoinButton.textContent = 'Sumarme a la fila'; }
+    }
+  });
+
+  el.waitlistNewTicketButton?.addEventListener('click', () => {
+    window.sessionStorage.removeItem(`mesaya_waitlist_${publicWaitlistSlug}`);
+    publicWaitlistTicket = null;
+    el.waitlistJoinForm?.reset();
+    if (el.waitlistPartySize) el.waitlistPartySize.value = '2';
+    showWaitlistPublicView('join');
+  });
+  if (publicWaitlistTicket) {
+    if (publicWaitlistTimer) window.clearInterval(publicWaitlistTimer);
+    publicWaitlistTimer = window.setInterval(refreshPublicWaitlistTicket, 10000);
+  }
+}
+
 async function init(overrideToken) {
   const tableParams = getTableParams();
+  if (tableParams.queueSlug && !overrideToken) {
+    await initWaitlistPublic(tableParams.queueSlug);
+    return;
+  }
   const token = overrideToken || tableParams.token;
   const restaurantSlug = tableParams.restaurantSlug;
   const tableParam = tableParams.tableLabel;
@@ -373,7 +919,7 @@ async function init(overrideToken) {
     if (!data.valid) {
       if (el.stateLoading) el.stateLoading.classList.add('hidden');
       if (el.actionsContainer) el.actionsContainer.classList.add('hidden');
-      if (el.activeCallCard) el.activeCallCard.classList.add('hidden');
+      renderActiveCalls([]);
       stopPolling();
 
       // Render table & restaurant header info and dynamic public menu
@@ -386,8 +932,10 @@ async function init(overrideToken) {
             if (el.heroCoverImage) el.heroCoverImage.src = safePdfUrl;
           }
         }
-        loadDynamicMenu(data.restaurant.slug || 'trattoria-del-puerto');
-        loadRestaurantModuleConfig(data.restaurant.slug || 'trattoria-del-puerto');
+        if (data.restaurant.slug) {
+          loadDynamicMenu(data.restaurant.slug);
+          loadRestaurantModuleConfig(data.restaurant.slug);
+        }
       }
       if (data.table) {
         if (el.tableBadge) el.tableBadge.textContent = data.table.label;
@@ -404,6 +952,7 @@ async function init(overrideToken) {
 
     currentSession = data;
     currentToken = data.token;
+    markOnline();
     if (data.token) {
       sessionStorage.setItem('mesaya_token', data.token);
     }
@@ -424,38 +973,35 @@ async function init(overrideToken) {
     if (data.restaurant && data.restaurant.slug) {
       loadDynamicMenu(data.restaurant.slug);
       loadRestaurantModuleConfig(data.restaurant.slug);
-    } else {
-      loadDynamicMenu('trattoria-del-puerto');
-      loadRestaurantModuleConfig('trattoria-del-puerto');
     }
+
+    loadActiveOrder({ silent: true });
 
     if (el.stateLoading) el.stateLoading.classList.add('hidden');
     if (el.stateExpired) el.stateExpired.classList.add('hidden');
     if (el.actionsContainer) el.actionsContainer.classList.remove('hidden');
 
-    if (data.activeCall) {
-      activeCall = data.activeCall;
-      renderActiveCall(data.activeCall);
-    } else {
-      activeCall = null;
-      if (el.activeCallCard) el.activeCallCard.classList.add('hidden');
-    }
+    const initialActiveCalls = Array.isArray(data.activeCalls)
+      ? data.activeCalls
+      : (data.activeCall ? [data.activeCall] : []);
+    renderActiveCalls(initialActiveCalls);
 
     // Start background sync
     startPolling();
   } catch (err) {
     console.warn('Falla al conectar sesión:', err);
     if (el.stateLoading) el.stateLoading.classList.add('hidden');
-    showExpiredState('No se pudo establecer conexión con la mesa. Por favor reintenta o escanea el QR nuevamente.');
+    showConnectionState('No pudimos comprobar la mesa. Revisá la conexión y reintentá; la carta sigue disponible para consultar.');
   }
 }
 
 function showInactiveState(message) {
   if (el.stateLoading) el.stateLoading.classList.add('hidden');
   if (el.actionsContainer) el.actionsContainer.classList.add('hidden');
-  if (el.activeCallCard) el.activeCallCard.classList.add('hidden');
+  renderActiveCalls([]);
   if (el.stateExpired) {
     el.stateExpired.classList.remove('hidden');
+    el.stateExpired.dataset.state = 'inactive';
     const titleEl = el.stateExpired.querySelector('h3');
     if (titleEl) titleEl.textContent = 'Mesa Sin Sesión Activa';
     if (el.expiredMessageText && message) {
@@ -470,9 +1016,10 @@ function showInactiveState(message) {
 function showExpiredState(message) {
   if (el.stateLoading) el.stateLoading.classList.add('hidden');
   if (el.actionsContainer) el.actionsContainer.classList.add('hidden');
-  if (el.activeCallCard) el.activeCallCard.classList.add('hidden');
+  renderActiveCalls([]);
   if (el.stateExpired) {
     el.stateExpired.classList.remove('hidden');
+    el.stateExpired.dataset.state = 'expired';
     const titleEl = el.stateExpired.querySelector('h3');
     if (titleEl) titleEl.textContent = 'Sesión de Mesa Finalizada';
     if (el.expiredMessageText && message) {
@@ -484,7 +1031,34 @@ function showExpiredState(message) {
   }
 }
 
+function showConnectionState(message) {
+  if (el.stateLoading) el.stateLoading.classList.add('hidden');
+  if (el.actionsContainer) el.actionsContainer.classList.add('hidden');
+  renderActiveCalls([]);
+  if (el.stateExpired) {
+    el.stateExpired.classList.remove('hidden');
+    el.stateExpired.dataset.state = 'connection';
+    const titleEl = el.stateExpired.querySelector('h3');
+    if (titleEl) titleEl.textContent = 'Conexión interrumpida';
+    if (el.expiredMessageText && message) {
+      el.expiredMessageText.textContent = message;
+    }
+    if (el.btnReactivateSession) {
+      el.btnReactivateSession.textContent = 'Reintentar conexión';
+    }
+  }
+}
+
 let selectedDishForOrder = null;
+
+function setDishOrderQuantity(value) {
+  const quantity = Math.min(50, Math.max(1, Math.round(Number(value) || 1)));
+  if (el.dishOrderQuantity) el.dishOrderQuantity.value = String(quantity);
+  if (el.dishOrderQuantityDisplay) el.dishOrderQuantityDisplay.textContent = String(quantity);
+  if (el.btnDishOrderQuantityMinus) el.btnDishOrderQuantityMinus.disabled = quantity <= 1;
+  if (el.btnDishOrderQuantityPlus) el.btnDishOrderQuantityPlus.disabled = quantity >= 50;
+  return quantity;
+}
 
 const MENU_TAG_MAP = {
   GLUTEN_FREE: { label: 'Sin TACC', emoji: '🌾', class: 'text-amber-400 bg-amber-400/10 border-amber-400/30' },
@@ -495,9 +1069,17 @@ const MENU_TAG_MAP = {
   POPULAR: { label: 'Más Pedido', emoji: '🔥', class: 'text-orange-400 bg-orange-400/10 border-orange-400/30' }
 };
 
-function openDishDetailSheet(item) {
+function openDishDetailSheet(item, categoryId) {
+  const trigger = document.activeElement;
   selectedDishForOrder = item;
   triggerHaptic();
+  saveMenuContext(categoryId);
+
+  setDishOrderQuantity(1);
+  if (el.dishOrderNote) el.dishOrderNote.value = '';
+  const guestNameInput = document.getElementById('dishOrderGuestName');
+  if (guestNameInput) guestNameInput.value = getGuestName();
+  setDishSheetError('');
 
   const sheet = document.getElementById('dishDetailSheetBackdrop');
   if (!sheet) return;
@@ -557,20 +1139,54 @@ function openDishDetailSheet(item) {
     }
   }
 
+  const orderSpecificBtn = document.getElementById('btnOrderSpecificDish');
+  const dishAvailable = item.isAvailable !== false;
+  const availEl = document.getElementById('dishSheetAvailability');
+  if (availEl) {
+    if (dishAvailable) {
+      availEl.className = 'rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] leading-relaxed text-emerald-200';
+      availEl.textContent = '✅ Disponible — agregar al carrito no cobra. Podés editar cantidad, nota larga y nombre sin perder otro cambio de la mesa.';
+      availEl.classList.remove('hidden');
+    } else {
+      availEl.className = 'rounded-xl border border-rose-500/30 bg-rose-950/30 px-3 py-2 text-[11px] leading-relaxed text-rose-200';
+      availEl.textContent = '⛔ No disponible — el plato no se puede agregar ahora. El resto del carrito queda intacto.';
+      availEl.classList.remove('hidden');
+    }
+  }
+  if (orderSpecificBtn) {
+    orderSpecificBtn.disabled = !dishAvailable;
+    orderSpecificBtn.setAttribute('aria-disabled', String(!dishAvailable));
+    orderSpecificBtn.classList.toggle('opacity-50', !dishAvailable);
+    orderSpecificBtn.classList.toggle('cursor-not-allowed', !dishAvailable);
+    const orderLabel = orderSpecificBtn.querySelector('span');
+    if (orderLabel) {
+      orderLabel.textContent = dishAvailable ? '🛒 Agregar al carrito — no se cobra aún' : '⛔ No disponible';
+    }
+  }
+
+  rememberModalFocus(trigger);
+  sheet.setAttribute('aria-hidden', 'false');
+  sheet.removeAttribute('inert');
   sheet.classList.add('active');
   document.body.classList.add('modal-open');
+  focusManagedModal(sheet);
 }
 
 function closeDishDetailSheet() {
   const sheet = document.getElementById('dishDetailSheetBackdrop');
-  if (sheet) sheet.classList.remove('active');
+  if (sheet) {
+    sheet.classList.remove('active');
+    sheet.setAttribute('aria-hidden', 'true');
+    sheet.setAttribute('inert', '');
+  }
   selectedDishForOrder = null;
-  
+
   // Only remove modal-open if no other drawer or modal is active
-  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden)');
-  if (!anyModalActive) {
+  if (!hasOpenManagedModal()) {
     document.body.classList.remove('modal-open');
   }
+  restoreModalFocusIfNone();
+  restoreMenuContext();
 }
 
 let lastMenuResponse = null;
@@ -585,6 +1201,496 @@ async function loadDynamicMenu(slug) {
   } catch (err) {
     console.warn('Usando carta local estática como respaldo:', err);
   }
+}
+
+function getGuestSessionId() {
+  const key = 'mesaya_guest_session_id';
+  let value = null;
+  try { value = sessionStorage.getItem(key); } catch (_) {}
+  if (value) return value;
+
+  const generated = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : `guest-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  try { sessionStorage.setItem(key, generated); } catch (_) {}
+  return generated;
+}
+
+function orderStatusLabel(status) {
+  const labels = {
+    DRAFT: 'Borrador colaborativo — no cobrado',
+    PENDING_VALIDATION: 'Esperando validación del mozo',
+    CONFIRMED: 'Comanda confirmada',
+    IN_KITCHEN: 'En cocina',
+    READY_TO_SERVE: 'Lista para servir',
+    SERVED: 'Servida',
+    PAID: 'Cobrada',
+    CANCELLED: 'Cancelada'
+  };
+  return labels[status] || status || 'Sin comanda';
+}
+
+function orderHistoryStatus(status, cancellationReason) {
+  const labels = {
+    PENDING_VALIDATION: 'Esperando confirmación',
+    CONFIRMED: 'Recibido para preparar',
+    IN_KITCHEN: 'Recibido para preparar — en cocina',
+    READY_TO_SERVE: 'Listo para entregar',
+    SERVED: 'Entregado',
+    PAID: 'Cobrado — entrega no informada',
+    CANCELLED: 'Rechazado/cancelado — no se cobra'
+  };
+  if (status === 'CANCELLED' && cancellationReason) {
+    return `${labels[status]} Motivo: ${cancellationReason}`;
+  }
+  return labels[status] || 'Estado del pedido: ' + (status || 'desconocido');
+}
+
+function formatMinorAmount(value) {
+  const minor = Number(value);
+  if (!Number.isFinite(minor)) return '$0';
+  return `$${Math.round(minor / 100).toLocaleString('es-AR')}`;
+}
+
+function formatOrderHistoryDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
+  return date.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderOrderHistory() {
+  if (!el.orderHistorySection || !el.orderHistoryList || !el.orderHistoryEmpty) return;
+  const history = Array.isArray(orderHistory) ? orderHistory : [];
+  el.orderHistoryList.innerHTML = history.map((round, index) => {
+    const items = Array.isArray(round.items) ? round.items : [];
+    const itemText = items.length
+      ? items.map((item) => `
+          <li class="flex items-start justify-between gap-2 py-1.5 border-b border-slate-800/60 last:border-0">
+            <span class="min-w-0 break-words"><strong class="text-white">${escapeHtml(item.quantity)}x</strong> ${escapeHtml(item.name)}</span>
+            <span class="shrink-0 font-semibold text-slate-200">${formatMinorAmount(item.lineTotalMinor)}</span>
+          </li>
+        `).join('')
+      : '<li class="text-slate-500 italic">Sin detalle de ítems disponible.</li>';
+    return `
+      <article data-order-history-id="${escapeHtmlAttr(round.orderId)}" data-order-status="${escapeHtmlAttr(round.status)}" class="rounded-2xl border border-slate-800 bg-slate-950/70 p-3 space-y-2">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h5 class="text-xs font-black text-white">Tanda ${index + 1}</h5>
+            <p class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(formatOrderHistoryDate(round.createdAt))}</p>
+          </div>
+          <span class="shrink-0 text-sm font-black text-amber-400">${formatMinorAmount(round.totalMinor)}</span>
+        </div>
+        <p class="text-xs font-bold leading-relaxed text-indigo-200">${escapeHtml(orderHistoryStatus(round.status, round.cancellationReason))}</p>
+        <ul class="text-[11px] text-slate-300 leading-relaxed">${itemText}</ul>
+      </article>
+    `;
+  }).join('');
+  el.orderHistoryEmpty.classList.toggle('hidden', history.length > 0);
+  el.orderHistoryList.classList.toggle('hidden', history.length === 0);
+  el.orderHistorySection.classList.remove('hidden');
+}
+
+// C04: nombre del comensal y preservación de contexto de carta
+function getGuestName() {
+  try { return (sessionStorage.getItem('mesaya_guest_name') || '').trim(); } catch (_) { return ''; }
+}
+function setGuestName(name) {
+  const v = String(name || '').trim();
+  try {
+    if (!v) sessionStorage.removeItem('mesaya_guest_name');
+    else if (v.length <= 40) sessionStorage.setItem('mesaya_guest_name', v);
+  } catch (_) {}
+  return v;
+}
+let lastMenuScrollTop = 0;
+let lastMenuCategoryId = null;
+function saveMenuContext(categoryId) {
+  const sc = document.getElementById('dynamicMenuCategoriesContainer');
+  if (sc) lastMenuScrollTop = sc.scrollTop;
+  if (categoryId) lastMenuCategoryId = categoryId;
+}
+function restoreMenuContext() {
+  const sc = document.getElementById('dynamicMenuCategoriesContainer');
+  if (!sc) return;
+  requestAnimationFrame(() => {
+    sc.scrollTop = lastMenuScrollTop;
+    if (lastMenuCategoryId) {
+      const target = document.getElementById(lastMenuCategoryId);
+      if (target) target.scrollIntoView({ block: 'nearest' });
+    }
+  });
+}
+function setCartError(msg) {
+  const c = document.getElementById('cartError');
+  if (!c) return;
+  if (!msg) { c.classList.add('hidden'); c.textContent = ''; return; }
+  c.textContent = String(msg);
+  c.classList.remove('hidden');
+}
+function setDishSheetError(msg) {
+  const c = document.getElementById('dishSheetError');
+  if (!c) return;
+  if (!msg) { c.classList.add('hidden'); c.textContent = ''; return; }
+  c.textContent = String(msg);
+  c.classList.remove('hidden');
+}
+
+function renderCart() {
+  const order = activeOrder;
+  const items = order?.items || [];
+  // El encabezado representa el borrador editable, no la última tanda
+  // enviada. Mostrar allí los ítems de una comanda servida hacía creer que
+  // todavía había algo pendiente de enviar.
+  const itemCount = order?.status === 'DRAFT'
+    ? items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+    : 0;
+
+  if (el.headerCartCount) {
+    el.headerCartCount.textContent = String(itemCount);
+    el.headerCartCount.classList.toggle('hidden', itemCount === 0);
+  }
+  if (el.cartEmptyState) el.cartEmptyState.classList.toggle('hidden', items.length > 0);
+  if (el.cartItemsList) {
+      el.cartItemsList.innerHTML = items.map((item) => {
+      // E13: identidad solo desde guestName (texto escapado); jamás IDs técnicos.
+      const displayAddedBy = typeof item.guestName === 'string' ? item.guestName.trim() : '';
+      const addedBy = escapeHtml(displayAddedBy);
+      const notes = item.notes ? escapeHtml(item.notes) : '';
+      return `
+      <div class="flex items-start justify-between gap-3 rounded-2xl bg-slate-950/70 border border-slate-800 p-3">
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-bold text-white break-words"><span class="text-amber-400">${escapeHtml(item.quantity)}x</span> ${escapeHtml(item.name)}</p>
+          ${addedBy ? `<p class="text-[10px] font-semibold text-indigo-300 mt-1 break-words">— ${addedBy}</p>` : ''}
+          ${notes ? `<p class="text-[11px] text-slate-300 mt-1 whitespace-pre-wrap break-words border-l-2 border-slate-700 pl-2">${notes}</p>` : ''}
+          <p class="text-[10px] text-slate-400 mt-1">$${Number(item.unitPrice * item.quantity).toLocaleString('es-AR')} · $${Number(item.unitPrice).toLocaleString('es-AR')} c/u</p>
+        </div>
+        ${order?.status === 'DRAFT' ? `<button type="button" data-cart-remove="${escapeHtmlAttr(item.id)}" class="shrink-0 min-h-[36px] min-w-[56px] text-[11px] font-bold text-rose-300 hover:text-rose-200 px-3 py-2 rounded-xl border border-rose-500/30 active:scale-95" aria-label="Quitar ${escapeHtmlAttr(item.name)}">Quitar</button>` : ''}
+      </div>
+    `;
+    }).join('');
+
+    el.cartItemsList.querySelectorAll('[data-cart-remove]').forEach((button) => {
+      button.addEventListener('click', () => removeCartItem(button.getAttribute('data-cart-remove')));
+    });
+  }
+
+  if (el.cartTotal) el.cartTotal.textContent = `$${Number(order?.totalAmount || 0).toLocaleString('es-AR')}`;
+  // C04 UI-state: cart copy reflects draft vs submitted consumption
+  const cartHeading = document.getElementById('cartHeading');
+  const cartCollaborativeHint = document.getElementById('cartCollaborativeHint');
+  const cartNoChargeHint = document.getElementById('cartNoChargeHint');
+  const cartTotalLabel = document.getElementById('cartTotalLabel');
+  const cartTotalDisclaimer = document.getElementById('cartTotalDisclaimer');
+  if (cartHeading || cartCollaborativeHint || cartNoChargeHint || cartTotalLabel || cartTotalDisclaimer) {
+    const isDraft = order?.status === 'DRAFT';
+    const hasOrder = Boolean(order);
+    const isSubmitted = hasOrder && !isDraft;
+    if (!hasOrder) {
+      if (cartHeading) cartHeading.textContent = 'Carrito';
+      if (cartCollaborativeHint) cartCollaborativeHint.textContent = 'Aún no hay borrador. Agregá platos desde la carta para crear uno.';
+      if (cartNoChargeHint) cartNoChargeHint.textContent = 'Agregar al carrito no genera cobro. El cobro es presencial con el mozo.';
+      if (cartTotalLabel) cartTotalLabel.textContent = 'Total';
+      if (cartTotalDisclaimer) cartTotalDisclaimer.textContent = 'Aún no hay tandas enviadas. La cuenta suma todas las tandas y se ve en “Pedir la cuenta”.';
+    } else if (isDraft) {
+      if (cartHeading) cartHeading.textContent = 'En tu carrito — borrador';
+      if (cartCollaborativeHint) cartCollaborativeHint.textContent = 'Carrito común de la mesa: lo que agregue cualquier comensal aparece aquí. La cuenta es por mesa y se pide en “Pedir la cuenta”. Todavía no se cobró nada.';
+      if (cartNoChargeHint) cartNoChargeHint.textContent = 'Agregar al carrito no genera cobro. El cobro es presencial con el mozo. El total de abajo es solo de este borrador.';
+      if (cartTotalLabel) cartTotalLabel.textContent = 'Total borrador';
+      if (cartTotalDisclaimer) cartTotalDisclaimer.textContent = 'Este total no es la cuenta. La cuenta real suma todas las tandas enviadas y se ve en “Pedir la cuenta”.';
+    } else if (isSubmitted) {
+      if (cartHeading) cartHeading.textContent = 'Última tanda enviada';
+      if (cartCollaborativeHint) cartCollaborativeHint.textContent = 'Estas son las líneas de la última tanda enviada. Para agregar más, volvé a la carta y se creará un nuevo borrador.';
+      if (cartNoChargeHint) cartNoChargeHint.textContent = 'Esta tanda ya fue enviada y no es un borrador editable. El cobro sigue siendo presencial con el mozo.';
+      if (cartTotalLabel) cartTotalLabel.textContent = 'Total de la tanda';
+      if (cartTotalDisclaimer) cartTotalDisclaimer.textContent = 'Este total es solo de la última tanda enviada. La cuenta real acumula todas las tandas y se ve en “Pedir la cuenta”.';
+    }
+  }
+  // C04: total de borrador diferenciado; no es la cuenta
+  const draftMeta = document.getElementById('cartDraftMeta');
+  const draftLabel = document.getElementById('cartDraftStatusLabel');
+  if (draftLabel && order) {
+    if (order.status === 'DRAFT') draftLabel.textContent = items.length ? `Borrador · ${items.length} ítem${items.length>1?'s':''}` : 'Borrador vacío';
+    else draftLabel.textContent = orderStatusLabel(order.status);
+  } else if (draftLabel && !order) {
+    draftLabel.textContent = 'Sin borrador';
+  }
+  if (draftMeta) draftMeta.classList.toggle('hidden', false);
+  if (el.cartOrderStatus) {
+    if (order) {
+      const isDraft = order.status === 'DRAFT';
+      el.cartOrderStatus.className = isDraft
+        ? 'text-xs rounded-xl border px-3 py-2 leading-relaxed border-amber-500/30 bg-amber-500/10 text-amber-200'
+        : 'text-xs rounded-xl border px-3 py-2 leading-relaxed border-indigo-500/30 bg-indigo-500/10 text-indigo-200';
+      el.cartOrderStatus.textContent = isDraft
+        ? `Borrador: ${orderStatusLabel(order.status)} — todavía no enviado a cocina. Volvé a la carta sin perder posición.`
+        : orderStatusLabel(order.status);
+      el.cartOrderStatus.classList.remove('hidden');
+    } else {
+      el.cartOrderStatus.classList.add('hidden');
+    }
+  }
+
+  const canSubmit = Boolean(activeOrderPolicy.allowOrdering !== false && order?.status === 'DRAFT' && items.length > 0);
+  if (el.btnSubmitCart) {
+    el.btnSubmitCart.disabled = !canSubmit;
+    el.btnSubmitCart.classList.toggle('opacity-50', !canSubmit);
+    el.btnSubmitCart.classList.toggle('cursor-not-allowed', !canSubmit);
+    const label = el.btnSubmitCart.querySelector('span');
+    if (label) label.textContent = canSubmit
+      ? (activeOrderPolicy.requireWaiterValidation ? 'Enviar pedido — confirmar al mozo' : 'Enviar pedido — confirmar a cocina')
+      : 'Enviar pedido — confirmar';
+    el.btnSubmitCart.setAttribute('aria-disabled', String(!canSubmit));
+  }
+  if (el.btnCartCallWaiter) el.btnCartCallWaiter.classList.toggle('hidden', activeOrderPolicy.allowOrdering !== false && canSubmit);
+  renderOrderHistory();
+}
+
+async function loadActiveOrder(options = {}) {
+  if (!currentToken) {
+    activeOrder = null;
+    orderHistory = [];
+    renderCart();
+    return;
+  }
+
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/session/${encodeURIComponent(currentToken)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    activeOrder = data.order || null;
+    orderHistory = Array.isArray(data.history)
+      ? data.history
+      : (Array.isArray(data.account?.tandas) ? data.account.tandas : []);
+    activeOrderPolicy = {
+      allowOrdering: data.allowOrdering !== false,
+      requireWaiterValidation: data.requireWaiterValidation === true
+    };
+    renderCart();
+  } catch (err) {
+    if (!options.silent) showToast('No se pudo actualizar el carrito.', 'error');
+  }
+}
+
+async function addDishToCart(item, quantity, notes) {
+  if (!currentToken) {
+    showToast('La mesa todavía no tiene una sesión activa.', 'warning');
+    return;
+  }
+  if (activeOrderPolicy.allowOrdering === false || activeRestaurantConfig?.allowOrdering === false) {
+    closeDishDetailSheet();
+    showToast('Este local usa carta informativa. Llamá al mozo para pedir.', 'info');
+    return;
+  }
+
+  // E13: nombre separado de la nota; la nota de cocina nunca lleva "Pedido de ...".
+  const guestName = getGuestName();
+  const trimmedNotes = typeof notes === 'string' ? notes.trim() : '';
+  const notesToSend = trimmedNotes ? trimmedNotes.slice(0, 500) : undefined;
+  const guestNameToSend = guestName ? guestName.trim() : undefined;
+  if (guestNameToSend && guestNameToSend.length > 40) {
+    setDishSheetError('El nombre puede tener hasta 40 caracteres.');
+    showToast('Acortá el nombre a 40 caracteres para agregar el plato.', 'warning');
+    return;
+  }
+  const guestSessionIdToSend = getGuestSessionId();
+
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionToken: currentToken,
+        menuItemId: item.id,
+        quantity,
+        notes: notesToSend,
+        guestName: guestNameToSend,
+        guestSessionId: guestSessionIdToSend
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // C04 + B06: mensajes accionables sin pérdida silenciosa
+      if (res.status === 409 && data.code === 'DRAFT_CONFLICT') {
+        setDishSheetError(data.error || 'Otro comensal editó el carrito al mismo tiempo. Se recargó el carrito; reintentá tu agregado.');
+        setCartError(data.error || 'Conflicto de carrito colaborativo: otro cambio se guardó primero.');
+        await loadActiveOrder({ silent: true });
+        showToast('Carrito actualizado por otro comensal. Revisá y reintentá.', 'warning');
+        return;
+      }
+      if (res.status === 422 && data.code === 'ITEM_NOT_AVAILABLE') {
+        setDishSheetError(data.error || 'Ese plato ya no está disponible. El resto del carrito queda intacto.');
+        setCartError(data.error || 'Un plato ya no está disponible; quitá ese ítem y reintentá.');
+        await loadActiveOrder({ silent: true });
+        showToast(data.error || 'Plato no disponible — el resto sigue en el carrito.', 'warning');
+        return;
+      }
+      if (res.status === 410) {
+        setDishSheetError(data.error || 'Sesión finalizada o expirada.');
+        showToast(data.error || 'Sesión de mesa finalizada.', 'error');
+        return;
+      }
+      setDishSheetError(data.error || 'No se pudo agregar el plato.');
+      showToast(data.error || 'No se pudo agregar el plato.', res.status === 422 ? 'warning' : 'error');
+      return;
+    }
+    setDishSheetError('');
+    setCartError('');
+    activeOrder = data;
+    renderCart();
+    // FIX cliente→API: no expulsar al carrito; cerrar solo el sheet y volver a la carta
+    closeDishDetailSheet();
+    ensureMenuModalOpen();
+    const cartCount = Array.isArray(activeOrder?.items) ? activeOrder.items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0) : quantity;
+    showToast(`Agregado (${quantity}x ${item.name}) — carrito: ${cartCount}. Seguí agregando o abrí el carrito.`, 'success', 4500);
+  } catch (_) {
+    setDishSheetError('No se pudo conectar con la comanda. Reintentá; no se duplicó.');
+    showToast('No se pudo conectar con la comanda.', 'error');
+  }
+}
+
+async function removeCartItem(itemId) {
+  if (!itemId || !currentToken) return;
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/items/${encodeURIComponent(itemId)}`, {
+      method: 'DELETE',
+      headers: { 'x-session-token': currentToken }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 409 || res.status === 404) {
+        setCartError(data.error || 'El carrito cambió (otro comensal lo editó o ya fue enviado). Se recargó.');
+        await loadActiveOrder({ silent: true });
+        showToast(data.error || 'Carrito actualizado por otro cambio. Revisá antes de seguir.', 'warning');
+        return;
+      }
+      setCartError(data.error || 'No se pudo quitar el plato.');
+      showToast(data.error || 'No se pudo quitar el plato.', 'error');
+      return;
+    }
+    setCartError('');
+    activeOrder = data;
+    renderCart();
+    if (!activeOrder || (activeOrder.items || []).length === 0) {
+      showToast('Último ítem quitado — borrador vacío, sin pérdida de enviados.', 'info');
+    } else {
+      showToast('Plato quitado del borrador.', 'info');
+    }
+  } catch (_) {
+    setCartError('No se pudo conectar al quitar. No se perdió lo enviado.');
+    showToast('No se pudo conectar con la comanda.', 'error');
+  }
+}
+
+async function submitCart() {
+  if (isCartSubmitting) return;
+  if (!currentToken || !activeOrder || activeOrder.status !== 'DRAFT') return;
+  const submitBtn = el.btnSubmitCart;
+  if (submitBtn && submitBtn.disabled) return;
+  isCartSubmitting = true;
+  const originalLabelText = submitBtn ? submitBtn.querySelector('span')?.textContent : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.setAttribute('aria-disabled', 'true');
+    submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+    const label = submitBtn.querySelector('span');
+    if (label) label.textContent = 'Enviando…';
+  }
+  // Idempotencia persistida en sessionStorage para sobrevivir reloads; estable por borrador
+  const submitStorageKey = getCartSubmitStorageKey();
+  const idempotencyKey = getOrCreateCartSubmitIdempotencyKey();
+  setCartError('');
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/orders/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionToken: currentToken, idempotencyKey })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 422 && data.code === 'ITEM_NOT_AVAILABLE') {
+        const detail = (data.details?.items || []).map(i => i.name).join(', ');
+        setCartError((data.error || 'Un plato ya no está disponible.') + (detail ? ` — ${detail}` : '') + ' Quitá ese ítem; el resto queda intacto.');
+        showToast(data.error || 'Un plato ya no está disponible. El resto queda en el carrito.', 'warning');
+        await loadActiveOrder({ silent: true });
+        return;
+      }
+      if (res.status === 409) {
+        setCartError(data.error || 'Envío concurrente o borrador duplicado. Se recargó el carrito.');
+        await loadActiveOrder({ silent: true });
+        showToast(data.error || 'El pedido ya fue enviado o hay conflicto. Revisá el carrito.', 'warning');
+        return;
+      }
+      if (res.status === 410 || res.status === 403) {
+        setCartError(data.error || 'No se pudo enviar.');
+        showToast(data.error || 'No se pudo enviar la comanda.', 'error');
+        return;
+      }
+      setCartError(data.error || 'No se pudo enviar la comanda.');
+      showToast(data.error || 'No se pudo enviar la comanda.', 'error');
+      return;
+    }
+    activeOrder = data;
+    // Pedido ya no es borrador: limpiar clave persistida del borrador confirmado; el próximo borrador generará una nueva
+    clearPersistedCartSubmitKey(submitStorageKey);
+    renderCart();
+    // C04: confirmación inequívoca de envío, diferenciada de borrador
+    showToast(activeOrderPolicy.requireWaiterValidation
+      ? '✅ Pedido enviado — el mozo lo recibió. Ya no es borrador.'
+      : '✅ Pedido enviado — cocina lo recibió. Ya no es borrador.', 'success');
+    setCartError('');
+    // Mantener el carrito abierto para ver el estado enviado, pero actualizar hint
+    const statusEl = document.getElementById('cartOrderStatus');
+    if (statusEl) statusEl.textContent = activeOrderPolicy.requireWaiterValidation
+      ? 'Enviado al mozo — esperando confirmación. Podés seguir navegando la carta.'
+      : 'Enviado a cocina — en preparación. Podés seguir navegando la carta.';
+  } catch (_) {
+    setCartError('No se pudo conectar. Si no ves el pedido como enviado, reintentá con el mismo carrito — no se duplica por clave.');
+    showToast('Conexión intermitente. Verificá si el pedido figura como enviado antes de reintentar.', 'warning');
+    await loadActiveOrder({ silent: true });
+  } finally {
+    isCartSubmitting = false;
+    // No re-habilitar a ciegas: delegar a renderCart el estado real (DRAFT vs enviado)
+    renderCart();
+    if (submitBtn && activeOrder && activeOrder.status === 'DRAFT' && originalLabelText && submitBtn.querySelector('span')?.textContent === 'Enviando…') {
+      // Si seguimos en borrador y renderCart no cambió el label (caso error), restaurar
+      const label = submitBtn.querySelector('span');
+      if (label && !label.textContent.includes('Enviar pedido')) {
+        // renderCart ya establece el label correcto; no forzar restauración que pise i18n
+      }
+    }
+  }
+}
+
+function ensureMenuModalOpen() {
+  const menu = document.getElementById('modalMenu');
+  if (menu && menu.classList.contains('hidden')) {
+    menu.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+  }
+  restoreMenuContext();
+}
+
+function openCartModal() {
+  const trigger = document.activeElement;
+  saveMenuContext();
+  closeAllModals({ restoreFocus: false });
+  if (el.modalCart) {
+    rememberModalFocus(trigger);
+    setCartError('');
+    loadActiveOrder({ silent: true });
+    el.modalCart.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    focusManagedModal(el.modalCart);
+  }
+}
+
+function closeCartModal() {
+  if (el.modalCart) el.modalCart.classList.add('hidden');
+  if (!hasOpenManagedModal()) {
+    document.body.classList.remove('modal-open');
+  }
+  restoreModalFocusIfNone();
+  restoreMenuContext();
 }
 
 function applyTemplateTheme(templateId, manual = true) {
@@ -629,6 +1735,18 @@ function applyTemplateTheme(templateId, manual = true) {
   }
 }
 
+function bindDishCardActivation(card, dish) {
+  const categoryId = card.getAttribute('data-category') || card.closest('section[id^="dynamic-cat-"]')?.id || null;
+  const open = () => openDishDetailSheet(dish, categoryId);
+  card.addEventListener('click', open);
+  card.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      open();
+    }
+  });
+}
+
 function renderDynamicMenu(menuResponse) {
   lastMenuResponse = menuResponse;
   const { restaurant, categories } = menuResponse;
@@ -645,7 +1763,7 @@ function renderDynamicMenu(menuResponse) {
     if (templateId === 'NEON_BURGER') {
       subtitleEl.textContent = `${restaurant.name} // STREET FOOD & CRAFT BEER`;
     } else if (templateId === 'COASTAL_BEACH') {
-      subtitleEl.textContent = `${restaurant.name} • Puerto de Mar del Plata 2026`;
+      subtitleEl.textContent = `${restaurant.name} • Selección costera de la casa`;
     } else if (templateId === 'MINIMAL_BISTRO') {
       subtitleEl.textContent = `${restaurant.name} • Specialty Roasters & Bakery`;
     } else {
@@ -665,7 +1783,6 @@ function renderDynamicMenu(menuResponse) {
     pillsContainer.querySelectorAll('.btn-category-pill').forEach(btn => {
       btn.addEventListener('click', () => {
         const catId = btn.getAttribute('data-category');
-        closeAllModals();
         if (el.modalMenu) {
           el.modalMenu.classList.remove('hidden');
           setTimeout(() => {
@@ -699,122 +1816,9 @@ function renderDynamicMenu(menuResponse) {
     });
   }
 
-  // 2. Render Featured Dishes: Story Cards (Appetite Appeal)
-  const storyContainer = document.getElementById('featuredStoryCardsContainer');
-  const featuredItems = allItems.filter(i => i.isFeatured || (i.tags && i.tags.includes('CHEF_PICK')));
-  const itemsToShowInStory = (featuredItems.length > 0 ? featuredItems : allItems).slice(0, 6);
-
-  if (storyContainer && itemsToShowInStory.length > 0) {
-    storyContainer.innerHTML = itemsToShowInStory.map(item => {
-      const formattedPrice = `$${Number(item.price).toLocaleString('es-AR')}`;
-      const defaultImg = 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80';
-      const imgUrl = sanitizeUrl(item.imageUrl, defaultImg);
-      const safeDishId = escapeHtmlAttr(item.id);
-      const safeName = escapeHtml(item.name);
-      const safeAlt = escapeHtmlAttr(item.name);
-      const safeDesc = escapeHtml(item.description || '');
-
-      if (templateId === 'NEON_BURGER') {
-        return `
-          <div data-dish-id="${safeDishId}" class="card-dish-story snap-center shrink-0 w-64 sm:w-72 rounded-3xl overflow-hidden neon-card-street cursor-pointer active:scale-95 transition-all group shadow-2xl">
-            <div class="relative h-40 sm:h-44 w-full overflow-hidden bg-zinc-950">
-              <img src="${imgUrl}" alt="${safeAlt}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
-              <div class="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent"></div>
-              <span class="absolute top-3 left-3 px-2.5 py-1 rounded-lg neon-sticker-badge text-[10px] font-black shadow-lg">
-                🔥 SMASH BURGER
-              </span>
-              <span class="absolute bottom-3 right-3 px-3 py-1 rounded-xl neon-price-tag text-xs font-mono font-black shadow-lg">
-                ${formattedPrice}
-              </span>
-            </div>
-            <div class="p-3.5 bg-zinc-950 flex items-center justify-between gap-2">
-              <div class="min-w-0 pr-1">
-                <h4 class="font-heading font-black text-sm text-white uppercase truncate group-hover:text-lime-400 transition-colors">${safeName}</h4>
-                <p class="text-xs text-zinc-400 truncate mt-0.5">${safeDesc || 'Doble smash artesanal con queso cheddar fundido.'}</p>
-              </div>
-              <span class="text-xs font-black text-lime-400 shrink-0">VER →</span>
-            </div>
-          </div>
-        `;
-      } else if (templateId === 'COASTAL_BEACH') {
-        return `
-          <div data-dish-id="${safeDishId}" class="card-dish-story snap-center shrink-0 w-64 sm:w-72 rounded-3xl overflow-hidden coastal-card-marine cursor-pointer active:scale-95 transition-all group shadow-2xl">
-            <div class="relative h-40 sm:h-44 w-full overflow-hidden bg-slate-950">
-              <img src="${imgUrl}" alt="${safeAlt}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
-              <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
-              <span class="absolute top-3 left-3 px-2.5 py-1 rounded-full coastal-seal-badge text-[10px] font-bold shadow-lg">
-                ⚓ Pesca MDP
-              </span>
-              <span class="absolute bottom-3 right-3 px-3 py-1 rounded-xl bg-slate-950/95 font-mono font-black text-xs text-cyan-300 border border-cyan-500/40 shadow-lg">
-                ${formattedPrice}
-              </span>
-            </div>
-            <div class="p-3.5 bg-slate-950 flex items-center justify-between gap-2">
-              <div class="min-w-0 pr-1">
-                <h4 class="font-heading font-black text-sm text-white truncate group-hover:text-cyan-300 transition-colors">${safeName}</h4>
-                <p class="text-xs text-cyan-200/80 truncate mt-0.5">${safeDesc || 'Especialidad del Puerto de Mar del Plata'}</p>
-              </div>
-              <span class="text-xs font-black text-cyan-400 shrink-0">Ver →</span>
-            </div>
-          </div>
-        `;
-      } else if (templateId === 'MINIMAL_BISTRO') {
-        return `
-          <div data-dish-id="${safeDishId}" class="card-dish-story snap-center shrink-0 w-64 sm:w-72 rounded-3xl overflow-hidden bg-neutral-900 border border-neutral-800 cursor-pointer active:scale-95 transition-all group shadow-2xl">
-            <div class="relative h-40 sm:h-44 w-full overflow-hidden bg-neutral-950">
-              <img src="${imgUrl}" alt="${safeAlt}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
-              <div class="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/30 to-transparent"></div>
-              <span class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-neutral-950/90 text-[10px] font-bold text-neutral-300 border border-neutral-700">
-                ⭐ Selección
-              </span>
-              <span class="absolute bottom-3 right-3 px-3 py-1 rounded-xl bg-neutral-950/95 font-mono font-bold text-xs text-neutral-200 border border-neutral-800">
-                ${formattedPrice}
-              </span>
-            </div>
-            <div class="p-3.5 bg-neutral-950 flex items-center justify-between gap-2">
-              <div class="min-w-0 pr-1">
-                <h4 class="font-heading font-bold text-sm text-neutral-100 truncate">${safeName}</h4>
-                <p class="text-xs text-neutral-400 truncate mt-0.5">${safeDesc || 'Elaboración artesanal diaria'}</p>
-              </div>
-              <span class="text-xs font-bold text-neutral-400 shrink-0">Ver →</span>
-            </div>
-          </div>
-        `;
-      } else {
-        // GOURMET_OBSIDIAN (Default)
-        return `
-          <div data-dish-id="${safeDishId}" class="card-dish-story snap-center shrink-0 w-64 sm:w-72 rounded-3xl overflow-hidden bg-slate-900 border border-amber-500/40 gourmet-frame-gold cursor-pointer active:scale-95 transition-all group shadow-2xl">
-            <div class="relative h-40 sm:h-44 w-full overflow-hidden bg-slate-950">
-              <img src="${imgUrl}" alt="${safeAlt}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 brightness-[0.92]" loading="lazy" />
-              <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/35 to-transparent"></div>
-              <span class="absolute top-3 left-3 px-3 py-1 rounded-full gourmet-seal-badge text-[10px] font-black flex items-center gap-1 shadow-lg">
-                ★ Plato Estrella
-              </span>
-              <span class="absolute bottom-3 right-3 px-3 py-1 rounded-xl bg-slate-950/95 font-mono font-black text-xs text-amber-300 border border-amber-500/40 shadow-lg">
-                ${formattedPrice}
-              </span>
-            </div>
-            <div class="p-3.5 bg-slate-950 flex items-center justify-between gap-2">
-              <div class="min-w-0 pr-1">
-                <h4 class="font-heading font-black text-sm text-white truncate group-hover:text-amber-300 transition-colors">${safeName}</h4>
-                <p class="text-xs text-slate-300 line-clamp-1 mt-0.5 font-normal">${safeDesc || 'Elaboración de autor con ingredientes seleccionados.'}</p>
-              </div>
-              <span class="text-xs font-black text-amber-400 shrink-0 flex items-center gap-1 group-hover:translate-x-1 transition-transform">Ver ➔</span>
-            </div>
-          </div>
-        `;
-      }
-    }).join('');
-
-    // Attach click listeners to story cards
-    storyContainer.querySelectorAll('.card-dish-story').forEach(card => {
-      card.addEventListener('click', () => {
-        const dishId = card.getAttribute('data-dish-id');
-        const dish = allItems.find(i => i.id === dishId);
-        if (dish) openDishDetailSheet(dish);
-      });
-    });
-  }
+  // C02: sección "Platos estrella" eliminada del inicio (sin carrusel sustituto).
+  // La carta completa (modal) y sus insignias por plato siguen intactas.
+  // (Bloque de story cards removido; ver historial git.)
 
   // 3. Render Modal Menu Categories & Food Items by Template
   const menuContainer = el.dynamicMenuCategoriesContainer || document.getElementById('dynamicMenuCategoriesContainer');
@@ -834,6 +1838,8 @@ function renderDynamicMenu(menuResponse) {
         const safeName = escapeHtml(item.name);
         const safeAlt = escapeHtmlAttr(item.name);
         const safeDesc = escapeHtml(item.description || '');
+        const dishActionAttrs = `role="button" tabindex="0" aria-label="${escapeHtmlAttr(`Ver detalle de ${item.name}${item.isAvailable === false ? ' (no disponible)' : ''}`)}"`;
+        const rowActionLabel = item.isAvailable === false ? 'No disponible' : 'Ver detalle →';
 
         const safeImgUrl = item.imageUrl ? sanitizeUrl(item.imageUrl) : '';
         const imageHtml = safeImgUrl ? `
@@ -844,7 +1850,7 @@ function renderDynamicMenu(menuResponse) {
 
         if (templateId === 'NEON_BURGER') {
           return `
-            <div data-dish-id="${safeDishId}" class="card-dish-row neon-card-street p-4 rounded-3xl cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden shadow-xl ${item.isAvailable ? '' : 'opacity-50'}">
+            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row neon-card-street p-4 rounded-3xl cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden shadow-xl ${item.isAvailable ? '' : 'opacity-50'} focus:outline-none focus-visible:ring-2 focus-visible:ring-lime-400">
               <div class="flex items-start gap-3.5">
                 ${imageHtml}
                 <div class="flex-1 min-w-0 flex flex-col justify-between self-stretch">
@@ -857,6 +1863,7 @@ function renderDynamicMenu(menuResponse) {
                     <div class="flex items-center gap-1.5 flex-wrap justify-end">
                       ${item.isFeatured ? '<span class="neon-sticker-badge text-[9px] px-1.5 py-0.5 rounded shadow-sm">🔥 SMASH</span>' : ''}
                       ${tagsHtml}
+                      <span class="row-action-label text-[10px] font-black text-lime-300 shrink-0">${rowActionLabel}</span>
                     </div>
                   </div>
                 </div>
@@ -865,19 +1872,20 @@ function renderDynamicMenu(menuResponse) {
           `;
         } else if (templateId === 'COASTAL_BEACH') {
           return `
-            <div data-dish-id="${safeDishId}" class="card-dish-row coastal-card-marine p-4 rounded-3xl cursor-pointer active:scale-[0.98] transition-all group shadow-xl ${item.isAvailable ? '' : 'opacity-50'}">
+            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row coastal-card-marine p-4 rounded-3xl cursor-pointer active:scale-[0.98] transition-all group shadow-xl ${item.isAvailable ? '' : 'opacity-50'} focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
               <div class="flex items-start gap-3.5">
                 ${imageHtml}
                 <div class="flex-1 min-w-0 flex flex-col justify-between self-stretch">
                   <div>
                     <h5 class="font-heading font-black text-sm sm:text-base text-cyan-100 group-hover:text-cyan-300 transition-colors leading-snug">${safeName}</h5>
-                    <p class="text-xs text-slate-300 font-normal leading-relaxed mt-1 line-clamp-2">${safeDesc || 'Especialidad fresca del Puerto de Mar del Plata.'}</p>
+                    <p class="text-xs text-slate-300 font-normal leading-relaxed mt-1 line-clamp-2">${safeDesc || 'Especialidad fresca de la casa.'}</p>
                   </div>
                   <div class="flex items-center justify-between gap-2 pt-2.5 mt-auto">
                     <span class="font-mono font-black text-xs text-cyan-300 bg-slate-950/90 px-2.5 py-1 rounded-xl border border-cyan-500/40 shadow-md">${formattedPrice}</span>
                     <div class="flex items-center gap-1.5 flex-wrap justify-end">
                       ${item.isFeatured ? '<span class="coastal-seal-badge text-[9px] px-2 py-0.5 rounded-full font-bold">⚓ Fresco</span>' : ''}
                       ${tagsHtml}
+                      <span class="row-action-label text-[10px] font-black text-cyan-300 shrink-0">${rowActionLabel}</span>
                     </div>
                   </div>
                 </div>
@@ -886,7 +1894,7 @@ function renderDynamicMenu(menuResponse) {
           `;
         } else if (templateId === 'MINIMAL_BISTRO') {
           return `
-            <div data-dish-id="${safeDishId}" class="card-dish-row p-4 rounded-3xl bg-neutral-900/90 hover:bg-neutral-850 border border-neutral-800 cursor-pointer active:scale-[0.98] transition-all group shadow-xl ${item.isAvailable ? '' : 'opacity-50'}">
+            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row p-4 rounded-3xl bg-neutral-900/90 hover:bg-neutral-850 border border-neutral-800 cursor-pointer active:scale-[0.98] transition-all group shadow-xl ${item.isAvailable ? '' : 'opacity-50'} focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300">
               <div class="flex items-start gap-3.5">
                 ${imageHtml}
                 <div class="flex-1 min-w-0 flex flex-col justify-between self-stretch">
@@ -899,6 +1907,7 @@ function renderDynamicMenu(menuResponse) {
                     <div class="flex items-center gap-1.5 flex-wrap justify-end">
                       ${item.isFeatured ? '<span class="text-[9px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700 font-medium">Recomendado</span>' : ''}
                       ${tagsHtml}
+                      <span class="row-action-label text-[10px] font-bold text-neutral-300 shrink-0">${rowActionLabel}</span>
                     </div>
                   </div>
                 </div>
@@ -908,7 +1917,7 @@ function renderDynamicMenu(menuResponse) {
         } else {
           // GOURMET_OBSIDIAN (Default)
           return `
-            <div data-dish-id="${safeDishId}" class="card-dish-row p-4 rounded-3xl bg-slate-900/95 hover:bg-slate-850 border border-amber-500/30 cursor-pointer active:scale-[0.98] transition-all group shadow-xl shadow-amber-950/20 ${item.isAvailable ? '' : 'opacity-50'}">
+            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row p-4 rounded-3xl bg-slate-900/95 hover:bg-slate-850 border border-amber-500/30 cursor-pointer active:scale-[0.98] transition-all group shadow-xl shadow-amber-950/20 ${item.isAvailable ? '' : 'opacity-50'} focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">
               <div class="flex items-start gap-3.5">
                 ${imageHtml}
                 <div class="flex-1 min-w-0 flex flex-col justify-between self-stretch">
@@ -921,6 +1930,7 @@ function renderDynamicMenu(menuResponse) {
                     <div class="flex items-center gap-1.5 flex-wrap justify-end">
                       ${item.isFeatured ? '<span class="text-[10px] px-2 py-0.5 rounded-full font-bold gourmet-seal-badge shadow-sm">★ Chef</span>' : ''}
                       ${tagsHtml}
+                      <span class="row-action-label text-[10px] font-black text-amber-300 shrink-0">${rowActionLabel}</span>
                     </div>
                   </div>
                 </div>
@@ -974,67 +1984,133 @@ function renderDynamicMenu(menuResponse) {
       `;
     }).join('');
 
-    // Attach click listeners to row items
+    // Attach mouse and keyboard listeners to row items.
     menuContainer.querySelectorAll('.card-dish-row').forEach(row => {
-      row.addEventListener('click', () => {
-        const dishId = row.getAttribute('data-dish-id');
-        const dish = allItems.find(i => i.id === dishId);
-        if (dish) openDishDetailSheet(dish);
+      const dishId = row.getAttribute('data-dish-id');
+      const dish = allItems.find(i => i.id === dishId);
+      if (dish) bindDishCardActivation(row, dish);
+      // C03: foto rota = se oculta su marco (sin huecos rotos; sin URL no hay marco).
+      row.querySelectorAll('img').forEach(img => {
+        img.addEventListener('error', () => {
+          const frame = img.closest('div');
+          if (frame) frame.style.display = 'none';
+        });
       });
     });
   }
 }
 
-function renderActiveCall(call) {
-  if (!el.activeCallCard) return;
-  el.activeCallCard.classList.remove('hidden');
-
-  let typeLabel = 'Llamado a la mesa';
+function getCallTypeLabel(call) {
   if (call.type === 'BILL') {
-    const payMap = {
-      MERCADO_PAGO: 'Mercado Pago (QR)',
-      CARD: 'Tarjeta Débito/Crédito',
-      CASH: 'Efectivo'
-    };
-    typeLabel = `Cuenta • ${payMap[call.paymentMethod] || 'Pendiente'}`;
-  } else if (call.type === 'WAITER') {
-    typeLabel = call.note ? `Mozo • ${call.note}` : 'Mozo a la mesa';
-  } else if (call.type === 'SUPPLIES') {
-    typeLabel = `Insumos • ${call.note || 'Solicitados'}`;
+    return `Cuenta • ${getPaymentMethodLabel(call.paymentMethod)}`;
   }
-
-  if (el.activeCallDetailText) el.activeCallDetailText.textContent = typeLabel;
-
-  if (call.status === 'IN_PROGRESS') {
-    if (el.activeCallTitle) el.activeCallTitle.textContent = 'Mozo en camino 🚶‍♂️';
-    if (el.activeCallSubtitle) el.activeCallSubtitle.textContent = 'Tu solicitud fue tomada por el personal';
-    if (el.activeCallBadge) {
-      el.activeCallBadge.textContent = 'En camino';
-      el.activeCallBadge.className = 'text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
-    }
-  } else {
-    if (el.activeCallTitle) el.activeCallTitle.textContent = 'Mozo notificado 🔔';
-    if (el.activeCallSubtitle) el.activeCallSubtitle.textContent = 'Aguardando que el staff tome el llamado';
-    if (el.activeCallBadge) {
-      el.activeCallBadge.textContent = 'Pendiente';
-      el.activeCallBadge.className = 'text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30';
-    }
-  }
-
-  updateCallTimer(call.createdAt);
-  if (callTimerInterval) clearInterval(callTimerInterval);
-  callTimerInterval = setInterval(() => updateCallTimer(call.createdAt), 1000);
+  if (call.type === 'WAITER') return call.note ? `Mozo • ${call.note}` : 'Mozo a la mesa';
+  if (call.type === 'SUPPLIES') return `Insumos • ${call.note || 'Solicitados'}`;
+  return call.note ? `Solicitud • ${call.note}` : 'Llamado a la mesa';
 }
 
-function updateCallTimer(isoCreatedAt) {
-  if (!el.activeCallTimer) return;
+function getPaymentMethodLabel(method) {
+  const payMap = {
+    MERCADO_PAGO: 'Mercado Pago / QR',
+    CARD: 'Tarjeta (sin especificar)',
+    CARD_DEBIT: 'Tarjeta de débito',
+    CARD_CREDIT: 'Tarjeta de crédito',
+    CASH: 'Efectivo'
+  };
+  return payMap[method] || 'medio no informado';
+}
+
+function getCallStatusLabel(call) {
+  if (call.type === 'BILL') {
+    return call.status === 'IN_PROGRESS'
+      ? `En atención: el mozo recibió la cuenta · ${getPaymentMethodLabel(call.paymentMethod)}`
+      : `Pendiente: mozo notificado · ${getPaymentMethodLabel(call.paymentMethod)}`;
+  }
+  return call.status === 'IN_PROGRESS'
+    ? 'En atención: el mozo tomó el pedido'
+    : 'Pendiente: el mozo recibió la solicitud';
+}
+
+function renderActiveCalls(calls) {
+  const nextCalls = Array.isArray(calls) ? calls.filter((call) => call && call.id) : [];
+  activeCalls = nextCalls;
+  activeCall = nextCalls[0] || null;
+  if (callTimerInterval) {
+    clearInterval(callTimerInterval);
+    callTimerInterval = null;
+  }
+  if (!el.activeCallCard || !el.activeCallList) return;
+
+  if (nextCalls.length === 0) {
+    el.activeCallList.innerHTML = '';
+    el.activeCallCard.classList.add('hidden');
+    return;
+  }
+
+  el.activeCallCard.classList.remove('hidden');
+  if (el.activeCallTitle) el.activeCallTitle.textContent = nextCalls.length === 1 ? 'Solicitud enviada' : 'Solicitudes enviadas';
+  if (el.activeCallSubtitle) el.activeCallSubtitle.textContent = 'El estado de cada motivo se actualiza automáticamente';
+  if (el.activeCallBadge) {
+    el.activeCallBadge.textContent = `${nextCalls.length} activa${nextCalls.length > 1 ? 's' : ''}`;
+    el.activeCallBadge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30';
+  }
+
+  el.activeCallList.innerHTML = nextCalls.map((call) => {
+    const inProgress = call.status === 'IN_PROGRESS';
+    const statusClass = inProgress
+      ? 'border-emerald-500/35 bg-emerald-950/20'
+      : 'border-amber-500/30 bg-slate-950/70';
+    const badgeClass = inProgress
+      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+      : 'bg-amber-500/15 text-amber-200 border-amber-500/30';
+    return `
+      <article data-active-call-id="${escapeHtmlAttr(call.id)}" class="rounded-xl border p-2.5 space-y-2 ${statusClass}" aria-live="polite">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <p class="text-xs font-bold text-white break-words">${escapeHtml(getCallTypeLabel(call))}</p>
+            <p class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(getCallStatusLabel(call))}</p>
+            ${call.type === 'BILL' ? `<p class="mt-1 text-[10px] font-bold text-emerald-300">Medio solicitado: ${escapeHtml(getPaymentMethodLabel(call.paymentMethod))}</p>${Number(call.tipMinor || 0) > 0 ? `<p class="mt-1 text-[10px] font-bold text-indigo-300">Propina elegida: ${escapeHtml(formatMinorAmount(call.tipMinor))} · se suma al cobro</p>` : ''}` : ''}
+          </div>
+          <span class="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeClass}">${inProgress ? 'En atención' : 'Pendiente'}</span>
+        </div>
+        <div class="flex items-center justify-between gap-2 text-[10px] text-slate-400">
+          <span>Tiempo desde el pedido</span>
+          <time data-call-timer data-call-created-at="${escapeHtmlAttr(call.createdAt)}" class="font-mono font-bold text-amber-300">0:00</time>
+        </div>
+        <button type="button" data-cancel-call="${escapeHtmlAttr(call.id)}" class="w-full min-h-[36px] py-2 px-3 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700 text-[11px] font-semibold text-slate-300 active:scale-[0.98] transition-transform">✓ Ya fui atendido / Cancelar</button>
+      </article>
+    `;
+  }).join('');
+
+  el.activeCallList.querySelectorAll('[data-cancel-call]').forEach((button) => {
+    button.addEventListener('click', () => cancelCallById(button.getAttribute('data-cancel-call')));
+  });
+  updateRenderedCallTimers();
+  callTimerInterval = setInterval(updateRenderedCallTimers, 1000);
+}
+
+// Compatibilidad con cualquier integración anterior que entregue un solo llamado.
+function renderActiveCall(call) {
+  renderActiveCalls(call ? [call] : []);
+}
+
+function updateCallTimer(isoCreatedAt, target) {
+  const timer = target || el.activeCallTimer;
+  if (!timer) return;
   const created = new Date(isoCreatedAt).getTime();
   const now = Date.now();
   const diffSecs = Math.max(0, Math.floor((now - created) / 1000));
 
   const mins = Math.floor(diffSecs / 60);
   const secs = diffSecs % 60;
-  el.activeCallTimer.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  timer.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
+
+function updateRenderedCallTimers() {
+  if (!el.activeCallList) return;
+  el.activeCallList.querySelectorAll('[data-call-timer]').forEach((timer) => {
+    updateCallTimer(timer.getAttribute('data-call-created-at'), timer);
+  });
 }
 
 async function sendCall(type, paymentMethod = 'NOT_APPLICABLE', note = null) {
@@ -1048,6 +2124,7 @@ async function sendCall(type, paymentMethod = 'NOT_APPLICABLE', note = null) {
     sessionToken: currentToken,
     type,
     paymentMethod,
+    ...(type === 'BILL' ? { tipMinor: getSelectedTipMinor() } : {}),
     note,
     origin: 'WEB_DIRECT',
     ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {})
@@ -1068,7 +2145,7 @@ async function sendCall(type, paymentMethod = 'NOT_APPLICABLE', note = null) {
         return;
       }
       if (res.status === 503 || data.code === 'DIGITAL_PAYMENTS_UNAVAILABLE') {
-        showToast(data.error || 'Pagos digitales no disponibles en el piloto. El cobro se realiza de forma presencial.', 'warning');
+        showToast(data.error || 'Pagos digitales no disponibles en esta instalación. El cobro se realiza de forma presencial.', 'warning');
         return;
       }
       if (res.status === 403 || data.code === 'GEOFENCE_EXCEEDED') {
@@ -1079,37 +2156,50 @@ async function sendCall(type, paymentMethod = 'NOT_APPLICABLE', note = null) {
       return;
     }
 
-    activeCall = data;
-    renderActiveCall(data);
+    const callForState = type === 'BILL' && !data.paymentMethod
+      ? { ...data, paymentMethod }
+      : data;
+    renderActiveCalls([...activeCalls.filter((call) => call.id !== data.id), callForState]);
     closeAllModals();
-    showToast(type === 'BILL' ? '¡Pedido de cuenta enviado!' : '¡Llamado enviado al mozo!', 'success');
+    showToast(type === 'BILL'
+      ? `¡Pedido de cuenta enviado! Medio solicitado: ${getPaymentMethodLabel(paymentMethod)}${getSelectedTipMinor() > 0 ? ` · propina incluida: ${formatMinorAmount(getSelectedTipMinor())}` : ''}.`
+      : '¡Llamado enviado al mozo!', 'success');
   } catch (err) {
     console.error('Error al enviar llamado:', err);
     showToast('No se pudo conectar con el servidor. Por favor verifica tu conexión.', 'error');
   }
 }
 
-async function cancelActiveCall() {
-  if (!activeCall || !currentToken) return;
+async function cancelCallById(callId) {
+  if (!callId || !currentToken) return;
   triggerHaptic();
 
   try {
-    const res = await fetchWithRetry(`${API_BASE}/calls/${activeCall.id}/cancel`, {
+    const res = await fetchWithRetry(`${API_BASE}/calls/${encodeURIComponent(callId)}/cancel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionToken: currentToken })
     });
+    const data = await res.json().catch(() => ({}));
 
     if (res.ok) {
-      activeCall = null;
-      if (callTimerInterval) clearInterval(callTimerInterval);
-      if (el.activeCallCard) el.activeCallCard.classList.add('hidden');
+      renderActiveCalls(activeCalls.filter((call) => call.id !== callId));
       showToast('Llamado cancelado exitosamente.', 'info');
+    } else if (res.status === 404 || res.status === 409) {
+      showToast(data.error || 'El llamado cambió de estado. Se actualizó la mesa.', 'warning');
+      pollFailures = 0;
+      scheduleNextPoll(0);
+    } else {
+      showToast(data.error || 'No se pudo cancelar el llamado.', 'error');
     }
   } catch (err) {
     console.error('Error al cancelar llamado:', err);
     showToast('No se pudo cancelar el llamado.', 'error');
   }
+}
+
+async function cancelActiveCall() {
+  await cancelCallById(activeCall?.id);
 }
 
 function stopPolling() {
@@ -1160,18 +2250,15 @@ async function pollTick() {
     }
 
     const data = await res.json();
+    markOnline();
     pollFailures = 0; // Reset backoff tras éxito
 
     if (data.valid) {
-      if (data.activeCall) {
-        activeCall = data.activeCall;
-        renderActiveCall(data.activeCall);
-      } else if (activeCall) {
-        // Fue resuelto o cancelado
-        activeCall = null;
-        if (callTimerInterval) clearInterval(callTimerInterval);
-        if (el.activeCallCard) el.activeCallCard.classList.add('hidden');
-      }
+      const nextActiveCalls = Array.isArray(data.activeCalls)
+        ? data.activeCalls
+        : (data.activeCall ? [data.activeCall] : []);
+      renderActiveCalls(nextActiveCalls);
+      if (el.modalCart && !el.modalCart.classList.contains('hidden')) loadActiveOrder({ silent: true });
       // Objetivo de 3 segundos en foreground
       scheduleNextPoll(3000);
     } else if (data.isClosed || data.isExpired) {
@@ -1183,6 +2270,7 @@ async function pollTick() {
     }
   } catch (err) {
     if (err.name === 'AbortError') return;
+    if (isLikelyNetworkError(err)) markOffline();
     pollFailures++;
     // Backoff exponencial con jitter: min(3s * 1.5^failures, 15s) + random(0..1000ms)
     const backoff = Math.min(3000 * Math.pow(1.5, pollFailures), 15000) + Math.random() * 1000;
@@ -1199,7 +2287,13 @@ function startPolling() {
 }
 
 if (typeof window !== 'undefined') {
+  window.addEventListener('offline', () => {
+    markOffline();
+    if (currentToken && !isPollingBusy) scheduleNextPoll(10000);
+  });
+
   window.addEventListener('online', () => {
+    markOnline();
     if (currentToken && !isPollingBusy) {
       pollFailures = 0;
       scheduleNextPoll(0);
@@ -1211,16 +2305,38 @@ if (typeof window !== 'undefined') {
       scheduleNextPoll(0);
     }
   });
+
+  window.addEventListener('pageshow', (event) => {
+    if (!event.persisted) return;
+    if (currentToken) scheduleNextPoll(0);
+    else void init();
+  });
+
+  window.addEventListener('popstate', () => {
+    closeAllModals();
+    void init();
+  });
 }
 
-function closeAllModals() {
+function closeAllModals({ restoreFocus = true } = {}) {
+  const previousSuppress = suppressModalFocusRestore;
+  suppressModalFocusRestore = true;
   if (el.modalBill) el.modalBill.classList.add('hidden');
   if (el.modalWaiter) el.modalWaiter.classList.add('hidden');
   if (el.modalSupplies) el.modalSupplies.classList.add('hidden');
   if (el.modalMenu) el.modalMenu.classList.add('hidden');
+  if (el.modalCart) el.modalCart.classList.add('hidden');
+  const reviewModal = document.getElementById('modalReviewFair');
+  if (reviewModal) {
+    reviewModal.classList.add('hidden');
+    reviewModal.setAttribute('aria-hidden', 'true');
+  }
+  if (el.btnOpenReviewFromBill) el.btnOpenReviewFromBill.setAttribute('aria-expanded', 'false');
   closeDishDetailSheet();
   closeSommelierDrawer();
+  suppressModalFocusRestore = previousSuppress;
   document.body.classList.remove('modal-open');
+  if (restoreFocus) restoreModalFocusIfNone();
 }
 
 // Universal Swipe-Down / Drag-to-Dismiss gesture engine for Bottom Sheets
@@ -1314,14 +2430,17 @@ function enableSheetSwipeToDismiss(sheetBackdropId, onDismissCallback) {
 function bindEvents() {
   // Menu Modals
   const openMenuModal = () => {
-    closeAllModals();
+    const trigger = document.activeElement;
+    closeAllModals({ restoreFocus: false });
     if (el.modalMenu) {
+      rememberModalFocus(trigger);
       el.modalMenu.classList.remove('hidden');
       document.body.classList.add('modal-open');
+      focusManagedModal(el.modalMenu);
     }
   };
 
-  if (el.btnOpenMenuHeader) el.btnOpenMenuHeader.addEventListener('click', openMenuModal);
+  if (el.btnOpenCartHeader) el.btnOpenCartHeader.addEventListener('click', openCartModal);
   if (el.btnOpenMenuHero) el.btnOpenMenuHero.addEventListener('click', openMenuModal);
   if (el.heroMenuCard) el.heroMenuCard.addEventListener('click', (e) => {
     // Avoid double firing if button was clicked
@@ -1330,54 +2449,109 @@ function bindEvents() {
   });
 
   if (el.btnCloseModalMenu) el.btnCloseModalMenu.addEventListener('click', () => {
-    if (el.modalMenu) el.modalMenu.classList.add('hidden');
-    document.body.classList.remove('modal-open');
+    closeManagedModal(el.modalMenu);
   });
 
   if (el.modalMenu) {
     el.modalMenu.addEventListener('click', (e) => {
       if (e.target === el.modalMenu) {
-        el.modalMenu.classList.add('hidden');
-        document.body.classList.remove('modal-open');
+        closeManagedModal(el.modalMenu);
       }
     });
   }
 
-  if (el.btnOrderFromMenu) el.btnOrderFromMenu.addEventListener('click', () => {
-    closeAllModals();
+  if (el.btnOrderFromMenu) el.btnOrderFromMenu.addEventListener('click', openCartModal);
+
+  if (el.btnCloseModalCart) el.btnCloseModalCart.addEventListener('click', () => {
+    closeCartModal();
+  });
+
+  if (el.modalCart) {
+    el.modalCart.addEventListener('click', (event) => {
+      if (event.target === el.modalCart) {
+        closeCartModal();
+      }
+    });
+  }
+
+  if (el.btnSubmitCart) el.btnSubmitCart.addEventListener('click', submitCart);
+  if (el.btnCartCallWaiter) el.btnCartCallWaiter.addEventListener('click', () => {
+    const trigger = document.activeElement;
+    closeAllModals({ restoreFocus: false });
     if (el.modalWaiter) {
+      rememberModalFocus(trigger);
       el.modalWaiter.classList.remove('hidden');
       document.body.classList.add('modal-open');
+      focusManagedModal(el.modalWaiter);
     }
   });
 
 async function loadBillDetails() {
   if (!currentToken) return;
   try {
-    const res = await fetchWithRetry(`${API_BASE}/orders/session/${currentToken}`);
+    const res = await fetchWithRetry(`${API_BASE}/orders/session/${encodeURIComponent(currentToken)}`);
     if (res && res.ok) {
       const data = await res.json();
-      const order = data.order;
-      const items = order && order.items ? order.items : [];
-      const total = order ? (order.totalAmount || 0) : 0;
+      // C06: la cuenta visible debe venir de la proyección contable de la sesión.
+      // No usar la respuesta parcial del borrador/última tanda como fallback.
+      const account = data && data.account;
+      if (!account || !Array.isArray(account.tandas)) {
+        throw new Error('La respuesta no incluye la cuenta acumulada de la sesión');
+      }
+      const tandas = account.tandas;
+      const items = tandas.flatMap((round, roundIndex) => {
+        const roundItems = Array.isArray(round.items) ? round.items : [];
+        return roundItems.map((item) => ({ ...item, round, roundIndex }));
+      });
+      const consumoMinor = Number.isFinite(Number(account.consumoMinor)) ? Number(account.consumoMinor) : 0;
+      const paidMinor = Number.isFinite(Number(account.paidMinor)) ? Number(account.paidMinor) : 0;
+      const tipMinor = Number.isFinite(Number(account.tipMinor)) ? Number(account.tipMinor) : 0;
+      const saldoMinor = Number.isFinite(Number(account.saldoMinor)) ? Number(account.saldoMinor) : 0;
+      currentBillConsumptionMinor = Math.max(0, Math.round(consumoMinor));
+      currentBillBalanceMinor = Math.max(0, Math.round(saldoMinor));
+      const pendingValidation = Array.isArray(account.pendingValidation) ? account.pendingValidation : [];
+      const draft = account.draft || null;
 
       if (el.modalBillTotal) {
-        el.modalBillTotal.textContent = `$${Number(total).toLocaleString('es-AR')}`;
+        el.modalBillTotal.textContent = formatMinorAmount(consumoMinor);
       }
       if (el.modalBillStatusText) {
-        el.modalBillStatusText.textContent = items.length > 0
-          ? `${items.length} producto${items.length > 1 ? 's' : ''} registrado${items.length > 1 ? 's' : ''}`
-          : 'Consumo registrado en la mesa';
+        el.modalBillStatusText.textContent = tandas.length > 0
+          ? `${tandas.length} tanda${tandas.length > 1 ? 's' : ''} incluida${tandas.length > 1 ? 's' : ''} · ${items.length} ítem${items.length !== 1 ? 's' : ''}`
+          : 'Todavía no hay consumo aceptado en la mesa';
+      }
+      if (el.modalBillPaid) el.modalBillPaid.textContent = formatMinorAmount(paidMinor);
+      if (el.modalBillTip) el.modalBillTip.textContent = formatMinorAmount(tipMinor);
+      if (el.modalBillBalance) el.modalBillBalance.textContent = formatMinorAmount(saldoMinor);
+      updateBillTipSummary();
+      if (el.modalBillPending) {
+        const notices = [];
+        if (pendingValidation.length > 0) {
+          notices.push(`${pendingValidation.length} tanda${pendingValidation.length > 1 ? 's' : ''} espera${pendingValidation.length > 1 ? 'n' : ''} confirmación del mozo y todavía no integra${pendingValidation.length > 1 ? 'n' : ''} el consumo.`);
+        }
+        if (draft) {
+          notices.push('Tu borrador todavía no forma parte de esta cuenta.');
+        }
+        el.modalBillPending.textContent = notices.length
+          ? notices.join(' ')
+          : 'La cuenta muestra solo tandas aceptadas. El mozo confirma el importe final en la mesa.';
+        el.modalBillPending.classList.remove('hidden');
       }
 
       if (el.modalBillItemsList && el.modalBillNoItems) {
         if (items.length > 0) {
-          el.modalBillItemsList.innerHTML = items.map(item => `
-            <div class="flex justify-between items-center py-1.5 text-slate-300">
-              <span class="truncate pr-2"><strong class="text-white">${item.quantity}x</strong> ${item.name}</span>
-              <span class="font-semibold text-white shrink-0">$${Number(item.unitPrice * item.quantity).toLocaleString('es-AR')}</span>
-            </div>
-          `).join('');
+          let lastRoundIndex = -1;
+          el.modalBillItemsList.innerHTML = items.map(item => {
+            const roundHeading = item.roundIndex !== lastRoundIndex
+              ? `<div class="flex items-center justify-between gap-2 pt-2 first:pt-0 text-[10px] font-black uppercase tracking-wider text-slate-500"><span>Tanda ${item.roundIndex + 1} · ${escapeHtml(orderHistoryStatus(item.round.status, item.round.cancellationReason))}</span><span>${formatMinorAmount(item.round.totalMinor)}</span></div>`
+              : '';
+            lastRoundIndex = item.roundIndex;
+            return `${roundHeading}
+              <div class="flex justify-between items-start gap-2 py-1.5 text-slate-300">
+                <span class="min-w-0 break-words"><strong class="text-white">${escapeHtml(item.quantity)}x</strong> ${escapeHtml(item.name)}</span>
+                <span class="font-semibold text-white shrink-0">${formatMinorAmount(item.lineTotalMinor)}</span>
+              </div>`;
+          }).join('');
           el.modalBillNoItems.classList.add('hidden');
           if (el.modalBillItemCount) {
             el.modalBillItemCount.textContent = `${items.length} ítem${items.length > 1 ? 's' : ''}`;
@@ -1392,16 +2566,38 @@ async function loadBillDetails() {
     }
   } catch (err) {
     console.warn('Error al cargar comanda de la sesión:', err);
+    if (el.modalBillTotal) el.modalBillTotal.textContent = '$0';
+    if (el.modalBillPaid) el.modalBillPaid.textContent = '$0';
+    if (el.modalBillTip) el.modalBillTip.textContent = '$0';
+    if (el.modalBillRequestedTip) el.modalBillRequestedTip.textContent = '$0';
+    if (el.modalBillBalance) el.modalBillBalance.textContent = '$0';
+    if (el.modalBillPayableTotal) el.modalBillPayableTotal.textContent = '$0';
+    currentBillConsumptionMinor = 0;
+    currentBillBalanceMinor = 0;
+    if (el.modalBillPending) {
+      el.modalBillPending.textContent = 'No se pudo actualizar la cuenta acumulada. Cerrá y volvé a abrir para reintentar.';
+      el.modalBillPending.classList.remove('hidden');
+    }
+    if (el.modalBillStatusText) el.modalBillStatusText.textContent = 'Cuenta no disponible por el momento';
+    if (el.modalBillItemsList) el.modalBillItemsList.innerHTML = '';
+    if (el.modalBillNoItems) {
+      el.modalBillNoItems.textContent = 'No se pudo cargar el consumo acumulado.';
+      el.modalBillNoItems.classList.remove('hidden');
+    }
+    if (el.modalBillItemCount) el.modalBillItemCount.classList.add('hidden');
   }
 }
 
   // Action: Pedir Cuenta
   if (el.btnActionBill) el.btnActionBill.addEventListener('click', () => {
-    closeAllModals();
+    const trigger = document.activeElement;
+    closeAllModals({ restoreFocus: false });
     if (el.modalBill) {
+      rememberModalFocus(trigger);
       loadBillDetails();
       el.modalBill.classList.remove('hidden');
       document.body.classList.add('modal-open');
+      focusManagedModal(el.modalBill);
     }
   });
 
@@ -1419,45 +2615,56 @@ async function loadBillDetails() {
   }
 
   if (el.btnCloseModalBill) el.btnCloseModalBill.addEventListener('click', () => {
-    if (el.modalBill) el.modalBill.classList.add('hidden');
-    document.body.classList.remove('modal-open');
+    closeManagedModal(el.modalBill);
   });
 
   if (el.modalBill) {
     el.modalBill.addEventListener('click', (e) => {
       if (e.target === el.modalBill) {
-        el.modalBill.classList.add('hidden');
-        document.body.classList.remove('modal-open');
+        closeManagedModal(el.modalBill);
       }
     });
   }
 
   document.querySelectorAll('.btn-pay-method').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
       const method = btn.getAttribute('data-method');
-      sendCall('BILL', method);
+      btn.disabled = true;
+      try {
+        // Evita enviar un porcentaje calculado sobre un saldo viejo si el
+        // cliente toca el medio apenas abre el modal.
+        await loadBillDetails();
+        const tipNote = getSelectedTipMinor() > 0
+          ? `Propina elegida: ${getSelectedTipLabel()}`
+          : 'Sin propina elegida';
+        await sendCall('BILL', method, tipNote);
+      } finally {
+        btn.disabled = false;
+      }
     });
   });
 
   // Action: Llamar Mozo
   if (el.btnActionWaiter) el.btnActionWaiter.addEventListener('click', () => {
-    closeAllModals();
+    const trigger = document.activeElement;
+    closeAllModals({ restoreFocus: false });
     if (el.modalWaiter) {
+      rememberModalFocus(trigger);
       el.modalWaiter.classList.remove('hidden');
       document.body.classList.add('modal-open');
+      focusManagedModal(el.modalWaiter);
     }
   });
 
   if (el.btnCloseModalWaiter) el.btnCloseModalWaiter.addEventListener('click', () => {
-    if (el.modalWaiter) el.modalWaiter.classList.add('hidden');
-    document.body.classList.remove('modal-open');
+    closeManagedModal(el.modalWaiter);
   });
 
   if (el.modalWaiter) {
     el.modalWaiter.addEventListener('click', (e) => {
       if (e.target === el.modalWaiter) {
-        el.modalWaiter.classList.add('hidden');
-        document.body.classList.remove('modal-open');
+        closeManagedModal(el.modalWaiter);
       }
     });
   }
@@ -1471,23 +2678,24 @@ async function loadBillDetails() {
 
   // Action: Insumos
   if (el.btnActionSupplies) el.btnActionSupplies.addEventListener('click', () => {
-    closeAllModals();
+    const trigger = document.activeElement;
+    closeAllModals({ restoreFocus: false });
     if (el.modalSupplies) {
+      rememberModalFocus(trigger);
       el.modalSupplies.classList.remove('hidden');
       document.body.classList.add('modal-open');
+      focusManagedModal(el.modalSupplies);
     }
   });
 
   if (el.btnCloseModalSupplies) el.btnCloseModalSupplies.addEventListener('click', () => {
-    if (el.modalSupplies) el.modalSupplies.classList.add('hidden');
-    document.body.classList.remove('modal-open');
+    closeManagedModal(el.modalSupplies);
   });
 
   if (el.modalSupplies) {
     el.modalSupplies.addEventListener('click', (e) => {
       if (e.target === el.modalSupplies) {
-        el.modalSupplies.classList.add('hidden');
-        document.body.classList.remove('modal-open');
+        closeManagedModal(el.modalSupplies);
       }
     });
   }
@@ -1530,18 +2738,43 @@ async function loadBillDetails() {
   enableSheetSwipeToDismiss('sommelierSheetBackdrop', closeSommelierDrawer);
 
   const btnOrderSpecificDish = document.getElementById('btnOrderSpecificDish');
+  if (el.btnDishOrderQuantityMinus) {
+    el.btnDishOrderQuantityMinus.addEventListener('click', () => {
+      triggerHaptic();
+      setDishOrderQuantity(Number(el.dishOrderQuantity?.value || 1) - 1);
+    });
+  }
+  if (el.btnDishOrderQuantityPlus) {
+    el.btnDishOrderQuantityPlus.addEventListener('click', () => {
+      triggerHaptic();
+      setDishOrderQuantity(Number(el.dishOrderQuantity?.value || 1) + 1);
+    });
+  }
   if (btnOrderSpecificDish) {
     btnOrderSpecificDish.addEventListener('click', () => {
       if (selectedDishForOrder) {
-        const dishName = selectedDishForOrder.name;
-        closeDishDetailSheet();
-        closeAllModals();
+        const dish = selectedDishForOrder;
+        const dishName = dish.name;
+        const quantity = setDishOrderQuantity(el.dishOrderQuantity?.value);
+        const notes = document.getElementById('dishOrderNote')?.value?.trim() || '';
+        const guestNameVal = document.getElementById('dishOrderGuestName')?.value?.trim() || '';
+        if (guestNameVal) setGuestName(guestNameVal);
+        // No cerrar antes de validar: dejamos el sheet abierto si hay error de disponibilidad
         if (activeRestaurantConfig && activeRestaurantConfig.allowOrdering === false) {
-          showToast('Comandas digitales desactivadas (Modo Carta Informativa). Solicitud enviada al personal.', 'info');
+          closeDishDetailSheet();
+          closeAllModals();
+          showToast('Comandas digitales desactivadas. Solicitud enviada al personal.', 'info');
+          sendCall('WAITER', 'NOT_APPLICABLE', `Pedido: ${dishName}${guestNameVal ? ` — ${guestNameVal}` : ''}`);
+        } else {
+          addDishToCart(dish, quantity, notes);
         }
-        sendCall('WAITER', 'NOT_APPLICABLE', `Pedido: ${dishName}`);
       }
     });
+  }
+  const dishGuestNameInput = document.getElementById('dishOrderGuestName');
+  if (dishGuestNameInput) {
+    dishGuestNameInput.addEventListener('change', () => setGuestName(dishGuestNameInput.value));
+    dishGuestNameInput.addEventListener('blur', () => setGuestName(dishGuestNameInput.value));
   }
 
   // Sommelier IA Drawer Handlers
@@ -1580,27 +2813,36 @@ async function loadBillDetails() {
   // Retry connection on inactive table or expired session
   if (el.btnReactivateSession) el.btnReactivateSession.addEventListener('click', () => {
     triggerHaptic();
-    sessionStorage.removeItem('mesaya_token');
-    init();
+    // Conservar el token permite recuperar una suspensión o caída de red sin
+    // convertir el reintento en un callejón sin salida para QR por token.
+    void init();
   });
 }
 
-function openSommelierDrawer() {
+function openSommelierDrawer(trigger = document.activeElement) {
   triggerHaptic();
   const drawer = document.getElementById('sommelierSheetBackdrop');
   if (drawer) {
+    rememberModalFocus(trigger);
+    drawer.setAttribute('aria-hidden', 'false');
+    drawer.removeAttribute('inert');
     drawer.classList.add('active');
     document.body.classList.add('modal-open');
+    focusManagedModal(drawer);
   }
 }
 
 function closeSommelierDrawer() {
   const drawer = document.getElementById('sommelierSheetBackdrop');
-  if (drawer) drawer.classList.remove('active');
-  const anyModalActive = document.querySelector('.bottom-sheet-backdrop.active, #modalMenu:not(.hidden), #modalBill:not(.hidden), #modalWaiter:not(.hidden), #modalSupplies:not(.hidden)');
-  if (!anyModalActive) {
+  if (drawer) {
+    drawer.classList.remove('active');
+    drawer.setAttribute('aria-hidden', 'true');
+    drawer.setAttribute('inert', '');
+  }
+  if (!hasOpenManagedModal()) {
     document.body.classList.remove('modal-open');
   }
+  restoreModalFocusIfNone();
 }
 
 async function handleSommelierQuery(queryText) {
@@ -1637,7 +2879,11 @@ async function handleSommelierQuery(queryText) {
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
   try {
-    const slug = currentSession?.restaurant?.slug || 'trattoria-del-puerto';
+    const slug = currentSession?.restaurant?.slug;
+    if (!slug || !currentToken) {
+      loadingBubble.remove();
+      throw new Error('La sesión no tiene un restaurante válido para consultar el Sommelier.');
+    }
     const res = await fetchWithRetry(`${API_BASE}/restaurants/${encodeURIComponent(slug)}/ai-sommelier`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1765,7 +3011,51 @@ async function handleSommelierQuery(queryText) {
 }
 
 let activeRestaurantConfig = null;
-let selectedTipPercentage = 10;
+let selectedTipPercentage = 0;
+let selectedRating = 0;
+let selectedTipAmount = 0;
+let currentBillConsumptionMinor = 0;
+let currentBillBalanceMinor = 0;
+let ratingSubmittedForSession = false;
+
+function getSelectedTipMinor() {
+  if (selectedTipAmount > 0) return Math.max(0, Math.round(Number(selectedTipAmount) * 100));
+  if (selectedTipPercentage > 0) return Math.max(0, Math.round(currentBillConsumptionMinor * selectedTipPercentage / 100));
+  return 0;
+}
+
+function getSelectedTipLabel() {
+  const tipMinor = getSelectedTipMinor();
+  if (selectedTipAmount > 0) return formatMinorAmount(tipMinor);
+  if (selectedTipPercentage > 0) return `${selectedTipPercentage}% · ${formatMinorAmount(tipMinor)}`;
+  return '$0';
+}
+
+function updateBillTipSummary() {
+  const tipMinor = getSelectedTipMinor();
+  const payableTotalMinor = Math.max(0, currentBillBalanceMinor + tipMinor);
+  if (el.modalBillRequestedTip) el.modalBillRequestedTip.textContent = formatMinorAmount(tipMinor);
+  if (el.modalBillPayableTotal) el.modalBillPayableTotal.textContent = formatMinorAmount(payableTotalMinor);
+  const tipSelectedText = document.getElementById('tipSelectedAmount');
+  if (tipSelectedText) tipSelectedText.textContent = getSelectedTipLabel();
+  if (el.billTipSelection) {
+    const hasTip = tipMinor > 0 || selectedTipPercentage > 0 || selectedTipAmount > 0;
+    const tipText = hasTip
+      ? `Propina seleccionada: ${getSelectedTipLabel()}. Se suma al total: ${formatMinorAmount(payableTotalMinor)}.`
+      : 'Podés dejar una propina opcional y una valoración. La propina elegida se suma al total que cobrará el mozo.';
+    const ratingText = selectedRating > 0 ? ` Valoración elegida: ${selectedRating}/5.` : '';
+    el.billTipSelection.textContent = `${tipText}${ratingText}`;
+  }
+  if (el.btnOpenReviewFromBill) {
+    const hasSelection = selectedTipAmount > 0 || selectedTipPercentage > 0 || selectedRating > 0;
+    el.btnOpenReviewFromBill.textContent = hasSelection ? 'Editar →' : 'Elegir →';
+    const reviewModal = document.getElementById('modalReviewFair');
+    el.btnOpenReviewFromBill.setAttribute(
+      'aria-expanded',
+      reviewModal && !reviewModal.classList.contains('hidden') ? 'true' : 'false'
+    );
+  }
+}
 
 async function loadRestaurantModuleConfig(slug) {
   try {
@@ -1773,6 +3063,14 @@ async function loadRestaurantModuleConfig(slug) {
     if (!res.ok) return;
     const config = await res.json();
     activeRestaurantConfig = config;
+    activeOrderPolicy = {
+      allowOrdering: config.allowOrdering !== false,
+      requireWaiterValidation: config.requireWaiterValidation === true
+    };
+    // QR es una preferencia de cobro que se informa al mozo. No representa
+    // una integración digital ni debe desaparecer cuando el local cobra de
+    // forma presencial (el cobro real se registra luego en el panel del staff).
+    renderCart();
 
     // Adaptar textos y acciones según allowOrdering (Comandas Digitales vs Modo Carta Informativa)
     if (config.allowOrdering === false) {
@@ -1785,23 +3083,35 @@ async function loadRestaurantModuleConfig(slug) {
       }
     } else {
       if (el.btnOrderFromMenu) {
-        el.btnOrderFromMenu.innerHTML = '<span>🙋 Llamar al Mozo para Pedir</span>';
+        el.btnOrderFromMenu.innerHTML = '<span>🛒 Ver carrito colaborativo</span>';
       }
       const orderSpecificBtn = document.getElementById('btnOrderSpecificDish');
       if (orderSpecificBtn) {
-        orderSpecificBtn.innerHTML = '<span>🛎️ Pedir este plato al Mozo</span>';
+        orderSpecificBtn.innerHTML = '<span>🛒 Agregar al carrito</span>';
       }
     }
 
-    // Apply Google Review Deep Link if available (validado contra caracteres maliciosos)
+    // Apply Google Review Deep Link only when the instance supplied a valid Place ID.
     const reviewBtn = document.getElementById('btnGoogleReviewDeepLink');
     if (reviewBtn) {
       const safePlaceId = sanitizeGooglePlaceId(config.googlePlaceId);
       if (safePlaceId) {
         reviewBtn.href = `https://search.google.com/local/writereview?placeid=${encodeURIComponent(safePlaceId)}`;
+        reviewBtn.classList.remove('hidden', 'pointer-events-none', 'opacity-50');
       } else {
         reviewBtn.removeAttribute('href');
+        reviewBtn.classList.add('hidden');
       }
+    }
+
+    const reviewOptions = document.getElementById('reviewOptions');
+    const internalRatingSection = document.getElementById('internalRatingSection');
+    if (config.enableReviews === false) {
+      reviewOptions?.classList.add('hidden');
+      internalRatingSection?.classList.add('hidden');
+    } else {
+      reviewOptions?.classList.remove('hidden');
+      internalRatingSection?.classList.remove('hidden');
     }
 
     // Hide / show tipping section depending on module flag
@@ -1813,24 +3123,123 @@ async function loadRestaurantModuleConfig(slug) {
         tipSection.classList.remove('hidden');
       }
     }
+    const percentages = Array.isArray(config.suggestedTipPercentages)
+      ? config.suggestedTipPercentages.filter((value) => Number.isInteger(value) && value >= 0 && value <= 100).slice(0, 5)
+      : [10, 15, 20];
+    const tipOptions = document.getElementById('tipOptionsContainer');
+    if (tipOptions && percentages.length > 0) {
+      tipOptions.innerHTML = [0, ...percentages.filter((value) => value !== 0)].map((value, index) => `
+        <button data-tip="${value}" class="btn-tip-pill py-2 rounded-xl ${value === selectedTipPercentage || (index === 0 && selectedTipPercentage === 0) ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'} font-bold text-xs active:scale-95 transition-all">${value}%</button>
+      `).join('');
+      bindTipPills();
+    }
+    updateBillTipSummary();
   } catch (err) {
     console.warn('Error al cargar configuración modular:', err);
   }
 }
 
-function openReviewFairModal() {
+function bindTipPills() {
+  document.querySelectorAll('.btn-tip-pill').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      triggerHaptic();
+      selectedTipPercentage = Math.max(0, Number(btn.getAttribute('data-tip')) || 0);
+      selectedTipAmount = 0;
+      const customInput = document.getElementById('tipCustomAmount');
+      if (customInput) customInput.value = '';
+      document.querySelectorAll('.btn-tip-pill').forEach((b) => {
+        b.className = 'btn-tip-pill py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-bold text-xs active:scale-95 transition-all';
+      });
+      btn.className = 'btn-tip-pill py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs active:scale-95 transition-all';
+      const tipText = document.getElementById('tipSelectedAmount');
+      if (tipText) tipText.textContent = getSelectedTipLabel();
+      updateBillTipSummary();
+    });
+  });
+}
+
+function openReviewFairModal(trigger = document.activeElement) {
   triggerHaptic();
   const modal = document.getElementById('modalReviewFair');
   if (modal) {
+    rememberModalFocus(trigger);
     modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    if (el.btnOpenReviewFromBill) el.btnOpenReviewFromBill.setAttribute('aria-expanded', 'true');
     document.body.classList.add('modal-open');
+    focusManagedModal(modal);
   }
 }
 
 function closeReviewFairModal() {
   const modal = document.getElementById('modalReviewFair');
-  if (modal) modal.classList.add('hidden');
-  document.body.classList.remove('modal-open');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  if (el.btnOpenReviewFromBill) el.btnOpenReviewFromBill.setAttribute('aria-expanded', 'false');
+  if (!hasOpenManagedModal()) {
+    document.body.classList.remove('modal-open');
+  }
+  restoreModalFocusIfNone();
+}
+
+async function submitReviewAndReturnToBill() {
+  const button = el.btnSubmitReview;
+  if (!button || button.disabled) return;
+
+  triggerHaptic();
+  const tipLabel = getSelectedTipLabel();
+
+  // La propina queda seleccionada en este paso y se adjunta al llamado BILL
+  // cuando el comensal elige efectivo, tarjeta o QR en la cuenta.
+  if (!selectedRating || ratingSubmittedForSession) {
+    updateBillTipSummary();
+    closeReviewFairModal();
+    showToast(
+      selectedRating
+        ? `Valoración ya guardada. La propina ${tipLabel} se sumará al total al elegir el medio de pago.`
+        : `Propina ${tipLabel} guardada. Se sumará al total cuando elijas el medio de pago.`,
+      'success'
+    );
+    return;
+  }
+
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Enviando valoración…';
+
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionToken: currentToken,
+        rating: selectedRating
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok && !(res.status === 409 && data.code === 'FEEDBACK_ALREADY_EXISTS')) {
+      throw new Error(data.error || 'Respuesta no válida del servidor');
+    }
+
+    ratingSubmittedForSession = true;
+    updateBillTipSummary();
+    closeReviewFairModal();
+    showToast(
+      res.status === 409
+        ? `La valoración ya estaba guardada. La propina ${tipLabel} se sumará al total al elegir el medio de pago.`
+        : `¡Valoración enviada! La propina ${tipLabel} se incluirá en el total a cobrar.`,
+      'success'
+    );
+  } catch (err) {
+    console.warn('Error al enviar valoración:', err);
+    showToast('No se pudo enviar la valoración. Revisá la conexión e intentá nuevamente.', 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel || 'Guardar propina y valoración';
+  }
 }
 
 // Bind review & tipping listeners
@@ -1840,22 +3249,45 @@ function bindReviewFairEvents() {
     btnCloseModalReview.addEventListener('click', closeReviewFairModal);
   }
 
-  // Tip pills
-  document.querySelectorAll('.btn-tip-pill').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      triggerHaptic();
-      const pct = Number(btn.getAttribute('data-tip')) || 10;
-      selectedTipPercentage = pct;
-
-      document.querySelectorAll('.btn-tip-pill').forEach((b) => {
-        b.className = 'btn-tip-pill py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-bold text-xs active:scale-95 transition-all';
-      });
-      btn.className = 'btn-tip-pill py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs active:scale-95 transition-all';
-
+  // Tip pills and optional free amount
+  bindTipPills();
+  const customTipInput = document.getElementById('tipCustomAmount');
+  if (customTipInput) {
+    customTipInput.addEventListener('input', () => {
+      selectedTipAmount = Math.max(0, Number(customTipInput.value) || 0);
+      if (customTipInput.value.trim() !== '') {
+        selectedTipPercentage = 0;
+        document.querySelectorAll('.btn-tip-pill').forEach((b) => {
+          b.className = 'btn-tip-pill py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-bold text-xs active:scale-95 transition-all';
+        });
+      }
       const tipText = document.getElementById('tipSelectedAmount');
-      if (tipText) tipText.textContent = `${pct}%`;
+      if (tipText) tipText.textContent = getSelectedTipLabel();
+      updateBillTipSummary();
+    });
+  }
+
+  document.querySelectorAll('.btn-rating').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectedRating = Math.min(5, Math.max(1, Number(btn.getAttribute('data-rating')) || 5));
+      document.querySelectorAll('.btn-rating').forEach((b) => {
+        b.className = 'btn-rating p-2 rounded-xl bg-slate-800 text-slate-300';
+      });
+      btn.className = 'btn-rating p-2 rounded-xl bg-indigo-600 text-white';
+      updateBillTipSummary();
     });
   });
+
+  if (el.btnOpenReviewFromBill) {
+    el.btnOpenReviewFromBill.addEventListener('click', () => {
+      const trigger = document.activeElement;
+      openReviewFairModal(trigger);
+    });
+  }
+
+  if (el.btnSubmitReview) {
+    el.btnSubmitReview.addEventListener('click', submitReviewAndReturnToBill);
+  }
 
   // Private feedback toggle
   const btnPrivateToggle = document.getElementById('btnPrivateFeedbackToggle');
@@ -1873,6 +3305,10 @@ function bindReviewFairEvents() {
     btnSubmitPrivate.addEventListener('click', async () => {
       const text = privateText.value.trim();
       if (!text) return;
+      if (!selectedRating) {
+        showToast('Elegí una calificación de 1 a 5 antes de enviar.', 'warning');
+        return;
+      }
 
       try {
         const res = await fetchWithRetry(`${API_BASE}/feedback`, {
@@ -1880,7 +3316,7 @@ function bindReviewFairEvents() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionToken: currentToken,
-            rating: 5,
+            rating: selectedRating,
             comment: text
           })
         });
@@ -1891,6 +3327,8 @@ function bindReviewFairEvents() {
 
         showToast('¡Gracias! Tu mensaje fue enviado directamente al encargado del local.', 'success');
         privateText.value = '';
+        ratingSubmittedForSession = true;
+        updateBillTipSummary();
         closeReviewFairModal();
       } catch (err) {
         showToast('No se pudo enviar el comentario. Intenta nuevamente.', 'error');
@@ -1905,4 +3343,3 @@ document.addEventListener('DOMContentLoaded', () => {
   bindReviewFairEvents();
   init();
 });
-

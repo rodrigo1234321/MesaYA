@@ -96,11 +96,6 @@ html.theme-neon, body.theme-neon, .theme-neon {
   border-color: rgba(163, 230, 53, 0.5) !important;
   color: #a3e635 !important;
 }
-.theme-neon #btnOpenMenuHeader {
-  background: rgba(163, 230, 53, 0.15) !important;
-  border-color: rgba(163, 230, 53, 0.4) !important;
-  color: #bef264 !important;
-}
 .theme-neon #btnActionBill {
   background: linear-gradient(155deg, rgba(20, 25, 35, 0.95), rgba(12, 15, 20, 0.95)) !important;
   border-color: rgba(163, 230, 53, 0.4) !important;
@@ -180,11 +175,6 @@ html.theme-coastal, body.theme-coastal, .theme-coastal {
   border-color: rgba(6, 182, 212, 0.5) !important;
   color: #67e8f9 !important;
 }
-.theme-coastal #btnOpenMenuHeader {
-  background: rgba(6, 182, 212, 0.15) !important;
-  border-color: rgba(6, 182, 212, 0.4) !important;
-  color: #67e8f9 !important;
-}
 .theme-coastal #btnActionBill {
   background: linear-gradient(155deg, rgba(12, 74, 110, 0.45), rgba(7, 26, 51, 0.95)) !important;
   border-color: rgba(6, 182, 212, 0.45) !important;
@@ -253,11 +243,6 @@ html.theme-minimal, body.theme-minimal, .theme-minimal {
 .theme-minimal #tableBadge {
   background: rgba(176, 137, 104, 0.2) !important;
   border-color: rgba(176, 137, 104, 0.45) !important;
-  color: #eddcd2 !important;
-}
-.theme-minimal #btnOpenMenuHeader {
-  background: rgba(176, 137, 104, 0.15) !important;
-  border-color: rgba(176, 137, 104, 0.35) !important;
   color: #eddcd2 !important;
 }
 .theme-minimal #btnActionBill {
@@ -360,6 +345,54 @@ body {
   overflow-x: hidden;
 }
 
+/* El zoom automático de Safari/Chrome móvil aparece cuando un campo tiene
+   menos de 16px. Se conserva el zoom manual de accesibilidad del navegador. */
+@media (max-width: 767px) {
+  #appBody input:not([type="hidden"]),
+  #appBody textarea,
+  #appBody select {
+    font-size: 16px !important;
+  }
+}
+
+/* La Carta es el bloque flexible final de la pantalla principal: ocupa el
+   espacio que queda después de las acciones, avisos y llamados activos. */
+#appBody > main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-block: 0;
+}
+
+#heroMenuCard {
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column;
+  min-height: 15rem;
+}
+
+#heroMenuCard > div:first-child {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+#heroMenuCard #heroCoverImage {
+  min-height: 100%;
+}
+
+#btnDishOrderQuantityMinus,
+#btnDishOrderQuantityPlus {
+  flex: 0 0 40px;
+}
+
+@media (max-height: 680px) {
+  #heroMenuCard {
+    min-height: 12rem;
+  }
+}
+
 .pb-safe {
   padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
 }
@@ -381,14 +414,17 @@ body {
   -webkit-backdrop-filter: blur(10px);
   z-index: 60;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 0.25s;
   touch-action: manipulation;
 }
 
 .bottom-sheet-backdrop.active {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .bottom-sheet-content {
@@ -409,8 +445,23 @@ body {
   max-height: 88dvh;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
   box-shadow: 0 -10px 40px -10px rgba(0, 0, 0, 0.7);
   will-change: transform;
+}
+
+/* Scroll real dentro de sheets/drawers: el panel recorta, la región interna scrollea.
+   Sin min-height:0 el hijo flex-1 nunca cede altura y overflow-y-auto no se activa.
+   overscroll-behavior evita que el gesto se fugue al body (bloqueado por modal-open). */
+.bottom-sheet-content .overflow-y-auto,
+#dynamicMenuCategoriesContainer,
+#sommelierChatMessages {
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-width: thin;
 }
 
 .bottom-sheet-backdrop.active .bottom-sheet-content {
@@ -448,10 +499,15 @@ body {
   transform: scaleY(1.2);
 }
 
-/* Body lock when modal/drawer is open */
+/* Body lock when modal/drawer is open — sin touch-action:none global para no
+   bloquear taps/scroll dentro de sheets en móvil (segunda entrega táctil) */
 body.modal-open {
   overflow: hidden !important;
-  touch-action: none;
+}
+
+/* Respuesta táctil inmediata: evita retardo de doble-tap/zoom en acciones */
+button, .row-action-label, .drag-handle-container {
+  touch-action: manipulation;
 }
 
 @keyframes pulseGlow {
@@ -461,4 +517,169 @@ body.modal-open {
 
 .animate-glow {
   animation: pulseGlow 2.5s infinite ease-in-out;
+}
+
+/* ==========================================================================
+   C03: carta blanca legible — SOLO #modalMenu (el resto del cliente no cambia).
+   Fondo blanco, contraste alto, nombres 20px / lectura 16px, pills y cierres
+   táctiles de 48px. Las filas conservan IDs, listeners y foco de teclado.
+   ========================================================================== */
+#modalMenu {
+  background-color: #ffffff !important;
+}
+#modalMenu h3 {
+  color: #0f172a !important;
+}
+#modalMenu > div:first-child p {
+  color: #475569 !important;
+  font-size: 0.75rem !important;
+}
+#menuRestaurantSubtitle {
+  color: #b45309 !important;
+}
+#modalMenuCategoryPillsContainer .btn-modal-cat-pill {
+  min-height: 48px;
+  font-size: 0.875rem;
+  padding: 0.75rem 1rem;
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+#modalMenu h4 {
+  color: #0f172a !important;
+  font-size: 1.125rem !important;
+}
+#modalMenu .card-dish-row {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08) !important;
+}
+#modalMenu .card-dish-row h5 {
+  color: #0f172a !important;
+  font-size: 1.25rem !important;
+  line-height: 1.35 !important;
+}
+#modalMenu .card-dish-row p {
+  color: #334155 !important;
+  font-size: 1rem !important;
+  line-height: 1.5 !important;
+}
+#modalMenu .card-dish-row .font-mono {
+  color: #92400e !important;
+  background: #fef3c7 !important;
+  border-color: #fbbf24 !important;
+  font-size: 1rem !important;
+  flex-shrink: 0;
+}
+#modalMenu .card-dish-row .text-\[10px\] {
+  font-size: 0.75rem !important;
+}
+#modalMenu .card-dish-row .text-\[11px\] {
+  font-size: 0.75rem !important;
+}
+/* Reauditoría C03: etiqueta de acción y textos claros heredados de temas oscuros.
+   El texto ("Ver detalle" / "No disponible") se conserva: no se depende del color. */
+#modalMenu .card-dish-row .row-action-label {
+  color: #1e293b !important;
+  font-size: 0.75rem !important;
+}
+#modalMenu .card-dish-row .coastal-seal-badge {
+  color: #0e7490 !important;
+}
+#modalMenu .card-dish-row .text-amber-400,
+#modalMenu .card-dish-row .text-yellow-400,
+#modalMenu .card-dish-row .text-orange-400 {
+  color: #92400e !important;
+}
+#modalMenu .card-dish-row .text-emerald-400,
+#modalMenu .card-dish-row .text-lime-400 {
+  color: #3f6212 !important;
+}
+#modalMenu .card-dish-row .text-rose-400 {
+  color: #9f1239 !important;
+}
+#modalMenu .card-dish-row .text-cyan-300,
+#modalMenu .card-dish-row .text-cyan-200,
+#modalMenu .card-dish-row .text-zinc-300,
+#modalMenu .card-dish-row .text-neutral-300,
+#modalMenu .card-dish-row .text-neutral-400,
+#modalMenu .card-dish-row .text-slate-300 {
+  color: #334155 !important;
+}
+#modalMenu section > p {
+  color: #475569 !important;
+  font-size: 0.875rem !important;
+}
+#btnOpenSommelierModal {
+  color: #92400e !important;
+}
+#modalMenu #btnCloseModalMenu {
+  min-width: 48px;
+  min-height: 48px;
+}
+#dynamicMenuCategoriesContainer {
+  width: 100%;
+  max-width: 48rem;
+  margin-inline: auto;
+}
+
+/* C02/C01 cierre móvil: el hero no desplaza las 3 acciones fuera del primer
+   viewport en 360px; en pantallas angostas se compacta sin tocar sm+. */
+@media (max-width: 389px) {
+  #heroMenuCard h2 {
+    font-size: 1.65rem !important;
+    line-height: 1 !important;
+  }
+  #heroMenuCard .absolute.inset-x-0.bottom-0 {
+    padding: 0.75rem !important;
+  }
+  #btnOpenMenuHero {
+    min-height: 48px;
+  }
+}
+
+/* ==========================================================================
+   C04: detalle y carrito como borrador — diferenciación visual, táctil 48px
+   y textos largos sin pérdida. No cambia contratos; solo presentación.
+   ========================================================================== */
+#dishSheetTitle,
+#dishSheetDescription,
+#dishSheetTagsContainer {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+#dishSheetAvailability {
+  min-height: 38px;
+}
+#dishOrderQuantity,
+#dishOrderGuestName,
+#dishOrderNote {
+  min-height: 48px;
+}
+#dishOrderNote {
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+#cartItemsList .break-words {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+#cartDraftMeta,
+#cartOrderStatus,
+#cartError,
+#dishSheetError {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+#btnOrderSpecificDish,
+#btnSubmitCart,
+#btnCartCallWaiter,
+#btnCloseDishSheet,
+#btnCloseModalCart {
+  min-height: 48px;
+}
+#cartItemsList [data-cart-remove] {
+  min-height: 36px;
+  min-width: 56px;
 }

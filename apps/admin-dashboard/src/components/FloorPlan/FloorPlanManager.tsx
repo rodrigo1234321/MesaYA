@@ -12,9 +12,11 @@ import { Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface FloorPlanManagerProps {
   restaurantSlug: string;
+  /** Incremented after authentication so the initial pre-login request is retried. */
+  refreshKey?: number;
 }
 
-export const FloorPlanManager: React.FC<FloorPlanManagerProps> = ({ restaurantSlug }) => {
+export const FloorPlanManager: React.FC<FloorPlanManagerProps> = ({ restaurantSlug, refreshKey = 0 }) => {
   const {
     loading,
     error,
@@ -28,6 +30,7 @@ export const FloorPlanManager: React.FC<FloorPlanManagerProps> = ({ restaurantSl
     setFloorPlanData,
     setLoading,
     setError,
+    hasUnsavedChanges,
     addTableLocal,
     saveFloorPlan,
     floorPlanConflict,
@@ -41,7 +44,7 @@ export const FloorPlanManager: React.FC<FloorPlanManagerProps> = ({ restaurantSl
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // 1. Activate Live SSE Realtime Connection
-  useFloorPlanSSE(restaurantSlug);
+  useFloorPlanSSE(restaurantSlug, refreshKey);
 
   // 2. Fetch initial floor plan layout from REST API
   const loadFloorPlan = async () => {
@@ -57,7 +60,7 @@ export const FloorPlanManager: React.FC<FloorPlanManagerProps> = ({ restaurantSl
 
   useEffect(() => {
     loadFloorPlan();
-  }, [restaurantSlug]);
+  }, [restaurantSlug, refreshKey]);
 
   // 3. Save layout in bulk (for editor mode) — Etapa 26: pasa por el action
   // versionado del store (expectedVersion + preservación del borrador ante 409).
@@ -204,6 +207,18 @@ export const FloorPlanManager: React.FC<FloorPlanManagerProps> = ({ restaurantSl
           >
             <span>Ocultar</span>
           </button>
+        </div>
+      )}
+
+      {error && !floorPlanConflict && (
+        <div role="alert" className="px-4 py-2.5 bg-rose-950/50 border-b border-rose-800/60 flex flex-wrap items-center gap-3">
+          <AlertCircle className="w-4 h-4 text-rose-300 shrink-0" />
+          <p className="flex-1 min-w-[220px] text-xs font-semibold text-rose-100">{error} {hasUnsavedChanges ? 'El borrador local se conserva.' : ''}</p>
+          {hasUnsavedChanges && (
+            <button onClick={handleSaveLayout} disabled={saving} className="px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white text-xs font-black disabled:opacity-50">
+              Reintentar guardado
+            </button>
+          )}
         </div>
       )}
 

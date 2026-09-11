@@ -71,6 +71,11 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
   // Category Collapsed state
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({});
 
+  const clientPreviewUrl = (import.meta.env.VITE_CLIENT_URL as string) ||
+    (typeof window !== 'undefined'
+      ? `${window.location.protocol}//${window.location.hostname}${window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? ':5173' : (window.location.port ? `:${window.location.port}` : '')}/?r=${encodeURIComponent(restaurantId)}&m=${encodeURIComponent('Mesa 1')}`
+      : 'http://localhost:5173');
+
   const loadMenu = async () => {
     setLoading(true);
     try {
@@ -371,6 +376,16 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <a
+            href={clientPreviewUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition-all active:scale-95"
+            aria-label="Abrir vista previa de la carta para el cliente"
+          >
+            <Eye className="w-3.5 h-3.5 text-indigo-300" />
+            <span>Vista cliente</span>
+          </a>
           {/* AI Chef Copilot Button */}
           <button
             onClick={() => setShowAiModal(true)}
@@ -1167,4 +1182,3 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
     </div>
   );
 };
-

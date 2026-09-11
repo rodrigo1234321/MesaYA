@@ -1,6 +1,8 @@
 import { prisma } from '../lib/prisma';
 import { eventBus } from '../lib/eventBus';
 import { fsmService } from './fsm.service';
+import { OrderService } from './order.service';
+import { isRestaurantInConfiguredInstance } from '../lib/environment';
 import {
   WaitlistStatus,
   WaitlistEntryDTO,
@@ -32,20 +34,55 @@ export function normalizePhoneE164(raw: string): string {
   return `+${cleaned}`;
 }
 
+type PreOrderLine = { menuItemId: string; quantity: number; notes?: string };
+
+function parsePreOrderData(raw: string | null | undefined): PreOrderLine[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed
+      .filter((line) => line && typeof line.menuItemId === 'string')
+      .map((line) => ({
+        menuItemId: line.menuItemId,
+        quantity: Number(line.quantity),
+        ...(typeof line.notes === 'string' && line.notes ? { notes: line.notes } : {})
+      }))
+      .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
+  } catch (_) {
+    return null;
+  }
+}
+
+function toEntryDTO(entry: any, options: { includePhone?: boolean; positionInQueue?: number } = {}): WaitlistEntryDTO {
+  return {
+    id: entry.id,
+    restaurantId: entry.restaurantId,
+    guestName: entry.guestName,
+    partySize: entry.partySize,
+    ...(options.includePhone ? { phone: entry.phone } : {}),
+    status: entry.status as WaitlistStatus,
+    preOrderData: parsePreOrderData(entry.preOrderData),
+    estimatedWaitMinutes: entry.estimatedWaitMinutes,
+    ...(options.positionInQueue !== undefined ? { positionInQueue: options.positionInQueue } : {}),
+    calledAt: entry.calledAt?.toISOString() || null,
+    seatedAt: entry.seatedAt?.toISOString() || null,
+    createdAt: entry.createdAt.toISOString()
+  };
+}
+
+function waitlistError(message: string, statusCode: number, code: string): never {
+  const error: any = new Error(message);
+  error.statusCode = statusCode;
+  error.code = code;
+  throw error;
+}
+
 /**
- * PRECONDICIONES DE CONCURRENCIA PARA ETAPA POSTGRESQL (Etapas 22-24):
- * En SQLite efímera, las escrituras son atómicas a nivel archivo por el lock exclusivo de SQLite.
- * Sin embargo, bajo un entorno concurrente multi-worker en producción (PostgreSQL + PgBouncer):
- * 1. Asignación de mesa y seating atómico: Se debe ejecutar dentro de un prisma.$transaction con
- *    bloqueo pesimista (SELECT ... FOR UPDATE) tanto en "WaitlistEntry" (para evitar doble seating
- *    secuencial o simultáneo) como en "Table" (para evitar que dos mozos o procesos asignen la misma
- *    mesa en el mismo instante).
- * 2. Condición de guarda atómica:
- *    UPDATE "WaitlistEntry" SET status = 'SEATED', "seatedAt" = NOW()
- *    WHERE id = $1 AND status IN ('WAITING', 'CALLED') RETURNING id;
- *    Si rows affected === 0, abortar inmediatamente con 409 ALREADY_SEATED sin modificar la mesa.
- * 3. Transición FSM de Mesa: En la misma transacción atómica, realizar el UPDATE en "Table"
- *    con comprobación optimista WHERE id = $tableId AND "currentState" = 'AVAILABLE'.
+ * La reserva del turno usa una guarda UPDATE ... WHERE status IN (WAITING, CALLED)
+ * antes de tocar la mesa. Esto evita que dos pantallas de mozos sienten el mismo
+ * turno; la FSM mantiene además el CAS de la mesa para resolver carreras entre
+ * turnos distintos. Si la transición falla, la guarda se revierte al estado previo.
  */
 
 export class WaitlistService {
@@ -54,7 +91,7 @@ export class WaitlistService {
    * Reglas de seguridad:
    * - Valida payload, límites de longitud y tipos estrictos (400).
    * - Respeta feature flag enableWaitlist del restaurante (403).
-   * - Desactiva pre-orden para el piloto presencial; no almacena JSON arbitrario como orden (403).
+   * - Desactiva el pre-pedido si la configuración no lo habilita; no almacena JSON arbitrario como orden (403).
    * - Valida consentimiento explícito si es enviado (400).
    * - No devuelve listado de personas ni teléfonos en la respuesta pública del ticket.
    */
@@ -73,7 +110,7 @@ export class WaitlistService {
       include: { moduleConfig: true }
     });
 
-    if (!restaurant) {
+    if (!restaurant || !isRestaurantInConfiguredInstance(restaurant.id)) {
       const error: any = new Error('Restaurante no encontrado');
       error.statusCode = 404;
       error.code = 'RESTAURANT_NOT_FOUND';
@@ -87,12 +124,45 @@ export class WaitlistService {
       throw error;
     }
 
-    // Piloto presencial: pre-orden desactivada (no se acepta ni se almacena como feature)
-    if (dto.preOrderData && Array.isArray(dto.preOrderData) && dto.preOrderData.length > 0) {
-      const error: any = new Error('La función de pre-orden en fila virtual está desactivada para el piloto presencial');
-      error.statusCode = 403;
-      error.code = 'PREORDER_DISABLED';
-      throw error;
+    let normalizedPreOrder: PreOrderLine[] | null = null;
+    if (dto.preOrderData !== undefined) {
+      if (!Array.isArray(dto.preOrderData) || dto.preOrderData.length > 20) {
+        waitlistError('El pre-pedido debe contener entre 1 y 20 ítems válidos', 400, 'INVALID_PREORDER');
+      }
+
+      if (dto.preOrderData.length > 0 && !restaurant.moduleConfig.enableWaitlistPreOrder) {
+        waitlistError('El pre-pedido no está habilitado para este restaurante', 403, 'PREORDER_DISABLED');
+      }
+
+      const requested = dto.preOrderData.map((line: any) => ({
+        menuItemId: typeof line?.menuItemId === 'string' ? line.menuItemId.trim() : '',
+        quantity: line?.quantity,
+        notes: line?.notes
+      }));
+      if (requested.some((line) => !line.menuItemId || !Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 50 || (line.notes !== undefined && (typeof line.notes !== 'string' || line.notes.length > 500)))) {
+        waitlistError('Cada ítem del pre-pedido requiere plato, cantidad entre 1 y 50 y notas de hasta 500 caracteres', 400, 'INVALID_PREORDER');
+      }
+
+      if (requested.length > 0) {
+        const ids = [...new Set(requested.map((line) => line.menuItemId))];
+        const availableItems = await prisma.menuItem.findMany({
+          where: {
+            id: { in: ids },
+            isAvailable: true,
+            category: { restaurantId: restaurant.id }
+          },
+          select: { id: true }
+        });
+        const availableIds = new Set(availableItems.map((item) => item.id));
+        if (ids.some((id) => !availableIds.has(id))) {
+          waitlistError('Uno o más platos del pre-pedido no están disponibles en este restaurante', 422, 'PREORDER_ITEM_UNAVAILABLE');
+        }
+        normalizedPreOrder = requested.map((line) => ({
+          menuItemId: line.menuItemId,
+          quantity: line.quantity,
+          ...(line.notes?.trim() ? { notes: line.notes.trim() } : {})
+        }));
+      }
     }
 
     // Validación de campos mínimos y consentimiento
@@ -147,7 +217,7 @@ export class WaitlistService {
         partySize,
         phone: phoneE164,
         status: WaitlistStatus.WAITING,
-        preOrderData: null, // Desactivado para piloto
+        preOrderData: normalizedPreOrder ? JSON.stringify(normalizedPreOrder) : null,
         estimatedWaitMinutes: estimatedMinutes
       }
     });
@@ -166,16 +236,7 @@ export class WaitlistService {
     });
 
     // RESPUESTA PÚBLICA: Confirmación de ticket individual sin exponer listados ni teléfonos
-    return {
-      id: entry.id,
-      restaurantId: entry.restaurantId,
-      guestName: entry.guestName,
-      partySize: entry.partySize,
-      status: entry.status as WaitlistStatus,
-      estimatedWaitMinutes: entry.estimatedWaitMinutes,
-      positionInQueue: waitingBefore + 1,
-      createdAt: entry.createdAt.toISOString()
-    };
+    return toEntryDTO(entry, { positionInQueue: waitingBefore + 1 });
   }
 
   /**
@@ -190,7 +251,7 @@ export class WaitlistService {
       }
     });
 
-    if (!restaurant) {
+    if (!restaurant || !isRestaurantInConfiguredInstance(restaurant.id)) {
       const error: any = new Error('Restaurante no encontrado');
       error.statusCode = 404;
       error.code = 'RESTAURANT_NOT_FOUND';
@@ -212,20 +273,34 @@ export class WaitlistService {
       orderBy: { createdAt: 'asc' }
     });
 
-    return entries.map((e, index) => ({
-      id: e.id,
-      restaurantId: e.restaurantId,
-      guestName: e.guestName,
-      partySize: e.partySize,
-      phone: e.phone,
-      status: e.status as WaitlistStatus,
-      preOrderData: null,
-      estimatedWaitMinutes: e.estimatedWaitMinutes,
-      positionInQueue: index + 1,
-      calledAt: e.calledAt?.toISOString() || null,
-      seatedAt: e.seatedAt?.toISOString() || null,
-      createdAt: e.createdAt.toISOString()
-    }));
+    return entries.map((e, index) => toEntryDTO(e, { includePhone: true, positionInQueue: index + 1 }));
+  }
+
+  /** Consulta pública del ticket. El teléfono funciona como segundo factor
+   * liviano y se compara normalizado para no exponer datos por enumeración. */
+  static async getPublicStatus(waitlistId: string, rawPhone: string): Promise<WaitlistEntryDTO> {
+    const phone = typeof rawPhone === 'string' ? rawPhone.trim() : '';
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 8 || digits.length > 15) {
+      waitlistError('Ticket no encontrado', 404, 'WAITLIST_TICKET_NOT_FOUND');
+    }
+
+    const entry = await prisma.waitlistEntry.findUnique({ where: { id: waitlistId } });
+    if (!entry || !isRestaurantInConfiguredInstance(entry.restaurantId) || entry.phone !== normalizePhoneE164(phone)) {
+      waitlistError('Ticket no encontrado', 404, 'WAITLIST_TICKET_NOT_FOUND');
+    }
+
+    const position = entry.status === WaitlistStatus.WAITING || entry.status === WaitlistStatus.CALLED
+      ? await prisma.waitlistEntry.count({
+        where: {
+          restaurantId: entry.restaurantId,
+          status: { in: [WaitlistStatus.WAITING, WaitlistStatus.CALLED] },
+          createdAt: { lt: entry.createdAt }
+        }
+      }) + 1
+      : undefined;
+
+    return toEntryDTO(entry, { positionInQueue: position });
   }
 
   /**
@@ -239,7 +314,7 @@ export class WaitlistService {
       where: { id: waitlistId }
     });
 
-    if (!entry) {
+    if (!entry || !isRestaurantInConfiguredInstance(entry.restaurantId)) {
       const error: any = new Error('Turno de espera no encontrado');
       error.statusCode = 404;
       error.code = 'WAITLIST_ENTRY_NOT_FOUND';
@@ -275,18 +350,7 @@ export class WaitlistService {
       }
     });
 
-    const parsedDTO: WaitlistEntryDTO = {
-      id: updated.id,
-      restaurantId: updated.restaurantId,
-      guestName: updated.guestName,
-      partySize: updated.partySize,
-      phone: updated.phone,
-      status: updated.status as WaitlistStatus,
-      preOrderData: null,
-      estimatedWaitMinutes: 0,
-      calledAt: updated.calledAt?.toISOString() || null,
-      createdAt: updated.createdAt.toISOString()
-    };
+    const parsedDTO = toEntryDTO(updated, { includePhone: true });
 
     eventBus.broadcast(updated.restaurantId, 'waitlist.guest_called', parsedDTO);
 
@@ -322,7 +386,7 @@ export class WaitlistService {
       where: { id: waitlistId }
     });
 
-    if (!entry) {
+    if (!entry || !isRestaurantInConfiguredInstance(entry.restaurantId)) {
       const error: any = new Error('Turno de espera no encontrado');
       error.statusCode = 404;
       error.code = 'WAITLIST_ENTRY_NOT_FOUND';
@@ -379,6 +443,27 @@ export class WaitlistService {
       throw error;
     }
 
+    const previousStatus = entry.status as WaitlistStatus;
+
+    // Guarda atómica: sólo un mozo puede reclamar el turno. Se ejecuta antes
+    // de la FSM para que una carrera perdedora no altere la mesa.
+    const claimTime = new Date();
+    const claim = await prisma.waitlistEntry.updateMany({
+      where: {
+        id: waitlistId,
+        restaurantId: entry.restaurantId,
+        status: { in: [WaitlistStatus.WAITING, WaitlistStatus.CALLED] }
+      },
+      data: { status: WaitlistStatus.SEATED, seatedAt: claimTime }
+    });
+    if (claim.count === 0) {
+      const fresh = await prisma.waitlistEntry.findUnique({ where: { id: waitlistId } });
+      if (fresh?.status === WaitlistStatus.SEATED) {
+        waitlistError('El comensal ya fue sentado previamente en una mesa', 409, 'ALREADY_SEATED');
+      }
+      waitlistError('El turno ya no está disponible para ser sentado', 409, 'INVALID_WAITLIST_STATUS');
+    }
+
     // Transicionar estado FSM de la mesa a OCCUPIED_NO_ORDER
     try {
       await fsmService.attemptTransition({
@@ -386,34 +471,44 @@ export class WaitlistService {
         toState: TableFSMState.OCCUPIED_NO_ORDER,
         source: SignalSource.STAFF_TERMINAL_TAP,
         trigger: `Comensal de fila virtual sentado (${entry.guestName}, grupo de ${entry.partySize})`,
-        staffUserId: options?.staffUserId
+        staffUserId: options?.staffUserId,
+        expectedCurrentState: TableFSMState.AVAILABLE
       });
     } catch (err: any) {
+      await prisma.waitlistEntry.updateMany({
+        where: { id: waitlistId, status: WaitlistStatus.SEATED, seatedAt: claimTime },
+        data: { status: previousStatus, seatedAt: null }
+      });
       const error: any = new Error(`Conflicto al ocupar la mesa destino: ${err.message}`);
       error.statusCode = err.statusCode || 409;
       error.code = err.code || 'TABLE_STATE_CONFLICT';
       throw error;
     }
 
-    const updated = await prisma.waitlistEntry.update({
-      where: { id: waitlistId },
-      data: {
-        status: WaitlistStatus.SEATED,
-        seatedAt: new Date()
-      }
-    });
+    const updated = await prisma.waitlistEntry.findUnique({ where: { id: waitlistId } });
+    if (!updated) waitlistError('El turno desapareció durante la asignación', 409, 'WAITLIST_STATE_CONFLICT');
 
-    const parsedDTO: WaitlistEntryDTO = {
-      id: updated.id,
-      restaurantId: updated.restaurantId,
-      guestName: updated.guestName,
-      partySize: updated.partySize,
-      phone: updated.phone,
-      status: updated.status as WaitlistStatus,
-      preOrderData: null,
-      seatedAt: updated.seatedAt?.toISOString() || null,
-      createdAt: updated.createdAt.toISOString()
-    };
+    // Un pre-pedido validado se convierte en comanda sólo después de que la
+    // mesa quedó asignada. OrderService conserva el precio servidor y envía a KDS.
+    const preOrder = parsePreOrderData(updated.preOrderData);
+    if (preOrder?.length) {
+      try {
+        await OrderService.addPreOrderByStaff({
+          tableId: table.id,
+          lines: preOrder,
+          staffUserId: options?.staffUserId,
+          staffName: 'Fila virtual',
+          staffRestaurantId: entry.restaurantId
+        });
+      } catch (err: any) {
+        const error: any = new Error(`La mesa fue asignada, pero no se pudo convertir el pre-pedido en comanda: ${err.message}`);
+        error.statusCode = 409;
+        error.code = 'PREORDER_PROMOTION_FAILED';
+        throw error;
+      }
+    }
+
+    const parsedDTO = toEntryDTO(updated, { includePhone: true });
 
     eventBus.broadcast(updated.restaurantId, 'waitlist.guest_seated', parsedDTO);
 

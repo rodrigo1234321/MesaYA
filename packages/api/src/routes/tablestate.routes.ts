@@ -138,6 +138,17 @@ export async function tableStateRoutes(fastify: FastifyInstance) {
 
     const staffUserId = request.staffUser!.sub;
 
+    // Gate A: el override ya no es un bypass universal. Requiere motivo explícito
+    // (auditoría) y sólo ejecuta transiciones válidas por matriz que además superen
+    // los guardas de cuenta/pendientes; los saltos prohibidos (PAID->AVAILABLE,
+    // TO_CLEAN->OCCUPIED_*) se rechazan con 422 aunque vengan por esta ruta.
+    if (!reason || !String(reason).trim()) {
+      return reply.status(400).send({
+        error: 'OVERRIDE_REASON_REQUIRED',
+        message: 'El override administrativo requiere motivo explícito para auditoría.'
+      });
+    }
+
     try {
       const result = await fsmService.attemptTransition({
         tableId,
@@ -145,11 +156,17 @@ export async function tableStateRoutes(fastify: FastifyInstance) {
         source: SignalSource.MANAGER_OVERRIDE,
         trigger: reason || `Manager Override -> ${targetState}`,
         staffUserId,
+        metadata: { administrativeOverride: true, reason: String(reason).trim() },
         isOverride: true
       });
 
       return reply.send(result);
     } catch (err: any) {
+      const status = err.statusCode || 500;
+      const code = err.code || 'OVERRIDE_FAILED';
+      if (status !== 500) {
+        return reply.status(status).send({ error: code, message: err.message, details: err.details });
+      }
       request.log.error(err);
       return reply.status(500).send({ error: err.message || 'Error en override de estado' });
     }

@@ -1,4 +1,4 @@
-import { CallEventData, CallStatus, StaffLoginDTO, StaffUserDTO } from '@mesaya/shared';
+import { CallEventData, CallStatus, StaffLoginDTO, StaffUserDTO, ServiceTaskClaimDTO, ServiceTaskKind, ServiceWorkspaceDTO } from '@mesaya/shared';
 
 export const API_BASE = (
   (import.meta.env.VITE_API_URL as string) ||
@@ -13,6 +13,18 @@ export const API_BASE = (
 ).replace(/\/$/, '');
 
 export class StaffApi {
+  static getTerminalId(): string {
+    const storageKey = 'mesaya_staff_terminal_id';
+    if (typeof localStorage === 'undefined') return 'terminal-server';
+    const saved = localStorage.getItem(storageKey);
+    if (saved && /^[a-zA-Z0-9_-]{8,100}$/.test(saved)) return saved;
+    const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(storageKey, random);
+    return random;
+  }
+
   static getAuthToken(): string | null {
     if (typeof localStorage !== 'undefined') {
       return localStorage.getItem('mesaya_staff_token');
@@ -20,8 +32,8 @@ export class StaffApi {
     return null;
   }
 
-  static getAuthHeaders(options?: { isJson?: boolean }): Record<string, string> {
-    const token = this.getAuthToken();
+  static getAuthHeaders(options?: { isJson?: boolean; token?: string | null }): Record<string, string> {
+    const token = options?.token ?? this.getAuthToken();
     const headers: Record<string, string> = {};
     if (options?.isJson !== false) {
       headers['Content-Type'] = 'application/json';
@@ -35,16 +47,25 @@ export class StaffApi {
   static getSavedUser(): StaffUserDTO | null {
     if (typeof localStorage !== 'undefined') {
       const raw = localStorage.getItem('mesaya_staff_user');
-      return raw ? JSON.parse(raw) : null;
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' && typeof parsed.restaurantId === 'string' ? parsed : null;
+      } catch {
+        localStorage.removeItem('mesaya_staff_user');
+        localStorage.removeItem('mesaya_staff_token');
+        return null;
+      }
     }
     return null;
   }
 
-  static async login(dto: StaffLoginDTO): Promise<{ token: string; staffUser: StaffUserDTO }> {
+  static async login(dto: StaffLoginDTO & { terminalId?: string }): Promise<{ token: string; staffUser: StaffUserDTO }> {
+    const requestDto = { ...dto, terminalId: dto.terminalId || this.getTerminalId() };
     const res = await fetch(`${API_BASE}/staff/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dto)
+      body: JSON.stringify(requestDto)
     });
 
     if (!res.ok) {
@@ -55,6 +76,22 @@ export class StaffApi {
     const data = await res.json();
     localStorage.setItem('mesaya_staff_token', data.token);
     localStorage.setItem('mesaya_staff_user', JSON.stringify(data.staffUser));
+    return data;
+  }
+
+  /**
+   * Reautorización puntual: autentica a un encargado sin reemplazar la
+   * identidad persistida del operador que sigue trabajando en Servicio.
+   */
+  static async loginTemporary(dto: StaffLoginDTO & { terminalId?: string }): Promise<{ token: string; staffUser: StaffUserDTO }> {
+    const requestDto = { ...dto, terminalId: dto.terminalId || this.getTerminalId() };
+    const res = await fetch(`${API_BASE}/staff/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestDto)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || 'PIN de encargado inválido');
     return data;
   }
 
@@ -77,6 +114,81 @@ export class StaffApi {
     }
     if (!res.ok) throw new Error('Error al cargar llamados');
     return res.json();
+  }
+
+  static async getServiceWorkspace(restaurantId: string, signal?: AbortSignal): Promise<ServiceWorkspaceDTO> {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/service-workspace`, {
+      headers: this.getAuthHeaders({ isJson: false }),
+      signal
+    });
+    if (res.status === 401) {
+      this.logout();
+      const error: any = new Error('Sesión de staff expirada');
+      error.statusCode = 401;
+      error.code = 'STAFF_UNAUTHORIZED';
+      throw error;
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Error al cargar Servicio');
+    }
+    return res.json();
+  }
+
+  static async claimServiceTask(taskType: ServiceTaskKind, targetId: string): Promise<ServiceTaskClaimDTO> {
+    const res = await fetch(`${API_BASE}/staff/service/tasks/${encodeURIComponent(taskType)}/${encodeURIComponent(targetId)}/claim`, {
+      method: 'POST',
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const error: any = new Error(err.message || err.error || 'No se pudo tomar la tarea');
+      error.statusCode = res.status;
+      error.code = err.code;
+      throw error;
+    }
+    return res.json();
+  }
+
+  static async releaseServiceTask(taskType: ServiceTaskKind, targetId: string) {
+    const res = await fetch(`${API_BASE}/staff/service/tasks/${encodeURIComponent(taskType)}/${encodeURIComponent(targetId)}/release`, {
+      method: 'POST',
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'No se pudo reasignar la tarea');
+    }
+    return res.json();
+  }
+
+  static async resolveServiceTask(taskType: ServiceTaskKind, targetId: string) {
+    const res = await fetch(`${API_BASE}/staff/service/tasks/${encodeURIComponent(taskType)}/${encodeURIComponent(targetId)}/resolve`, {
+      method: 'POST',
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'No se pudo cerrar la tarea');
+    }
+    return res.json();
+  }
+
+  static async actServiceTask(taskType: ServiceTaskKind, targetId: string, body?: { action?: 'COMPLETE' | 'REJECT' | 'UNDO'; reason?: string }) {
+    const res = await fetch(`${API_BASE}/staff/service/tasks/${encodeURIComponent(taskType)}/${encodeURIComponent(targetId)}/act`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(body || {})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const error: any = new Error(data.message || data.error || 'No se pudo completar la tarea');
+      error.statusCode = res.status;
+      error.code = data.code;
+      error.details = data.details;
+      throw error;
+    }
+    return data;
   }
 
   static async updateCallStatus(callId: string, status: CallStatus): Promise<CallEventData> {
@@ -149,6 +261,23 @@ export class StaffApi {
     return res.json();
   }
 
+  static async rejectOrder(orderId: string, reason: string) {
+    const res = await fetch(`${API_BASE}/staff/orders/${orderId}/reject`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ reason })
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      const message = error.error || error.message || 'Error al rechazar comanda';
+      const failure: any = new Error(message);
+      failure.code = error.code;
+      failure.details = error.details;
+      throw failure;
+    }
+    return res.json();
+  }
+
   // --- RTMS SALÓN TABLET ---
   static async getFloorPlan(restaurantIdOrSlug: string): Promise<import('@mesaya/shared').FloorPlanResponseDTO> {
     const res = await fetch(`${API_BASE}/floor-plan/${restaurantIdOrSlug}`, {
@@ -169,15 +298,20 @@ export class StaffApi {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Error al actualizar mesa');
+      const error: any = new Error(err.message || err.error || 'Error al actualizar mesa');
+      error.statusCode = res.status;
+      error.code = err.code;
+      error.details = err.details;
+      throw error;
     }
     return res.json();
   }
 
   // --- KITCHEN ORDERS / COMANDAS ---
-  static async getKitchenOrders(restaurantId: string) {
+  static async getKitchenOrders(restaurantId: string, signal?: AbortSignal) {
     const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/kitchen-orders`, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders(),
+      signal
     });
     if (!res.ok) throw new Error('Error al cargar comandas de cocina');
     return res.json();
@@ -196,6 +330,17 @@ export class StaffApi {
     return res.json();
   }
 
+  static async addManualOrderByStaff(tableId: string, lines: Array<{ menuItemId: string; quantity: number; notes?: string }>) {
+    const res = await fetch(`${API_BASE}/staff/tables/${encodeURIComponent(tableId)}/orders`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ lines })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || 'Error al cargar pedido presencial');
+    return data;
+  }
+
   static async updateOrderStatus(orderId: string, status: string) {
     const res = await fetch(`${API_BASE}/staff/orders/${orderId}/status`, {
       method: 'PATCH',
@@ -206,17 +351,123 @@ export class StaffApi {
     return res.json();
   }
 
-  static async payOrder(orderId: string, paymentMethod?: string, tipAmount?: number) {
+  static async settleSessionAccount(sessionId: string, payload: {
+    idempotencyKey: string;
+    expectedAccountVersion: string;
+    method: string;
+    amountMinor?: number;
+    tipMinor?: number;
+    responsibleStaffUserId?: string;
+    allocations?: Array<{ orderId: string; amountMinor: number }>;
+  }, authToken?: string) {
+    const res = await fetch(`${API_BASE}/staff/sessions/${encodeURIComponent(sessionId)}/settle`, {
+      method: 'POST',
+      headers: this.getAuthHeaders({ token: authToken }),
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const error: any = new Error(data.message || data.error || 'No se pudo registrar el cobro');
+      error.statusCode = res.status;
+      error.code = data.code;
+      error.details = data.details;
+      throw error;
+    }
+    return data;
+  }
+
+  /**
+   * Comando atómico E03 — cobrar y cerrar por cuenta de sesión.
+   * Reintento idempotente: conservar exactamente el mismo body/version
+   * (`idempotencyKey`, `expectedAccountVersion`, `method`, `amountMinor`,
+   * `tipMinor`, `allocations`). Cambiar cualquier campo crea otra intención
+   * y responde 409 IDEMPOTENCY_KEY_REUSED en vez de replay.
+   */
+  static async settleAndCloseSessionAccount(sessionId: string, payload: {
+    idempotencyKey: string;
+    expectedAccountVersion: string;
+    method: string;
+    amountMinor?: number;
+    tipMinor?: number;
+    responsibleStaffUserId?: string;
+    allocations?: Array<{ orderId: string; amountMinor: number }>;
+  }, authToken?: string) {
+    const res = await fetch(`${API_BASE}/staff/sessions/${encodeURIComponent(sessionId)}/settle-and-close`, {
+      method: 'POST',
+      headers: this.getAuthHeaders({ token: authToken }),
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const error: any = new Error(data.message || data.error || 'No se pudo cobrar y cerrar');
+      error.statusCode = res.status;
+      error.code = data.code;
+      error.details = data.details;
+      throw error;
+    }
+    return data;
+  }
+
+  /**
+   * @deprecated E01 — cobro por comanda fuera del camino normal. Usar
+   * `settleSessionAccount` / `settleAndCloseSessionAccount` (cuenta por sesión).
+   * Reintento idempotente: conservar exactamente el mismo body/version;
+   * cualquier reintento debe repetir el mismo payload sin cambios.
+   */
+  static async payOrder(orderId: string, paymentMethod?: string, tipAmount?: number, idempotencyKey?: string, customerPhone?: string) {
+    // eslint-disable-next-line no-console
+    console.warn('E01: StaffApi.payOrder deprecado; usar cuenta por sesión (settle / settle-and-close).');
     const res = await fetch(`${API_BASE}/staff/orders/${orderId}/pay`, {
       method: 'POST',
       headers: this.getAuthHeaders(),
-      body: JSON.stringify({ paymentMethod, tipAmount })
+      body: JSON.stringify({ paymentMethod, tipAmount, idempotencyKey, customerPhone })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || err.error || 'Error al confirmar cobro');
     }
     return res.json();
+  }
+
+  static async getCashOrders(restaurantId: string, signal?: AbortSignal) {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/cash-orders`, {
+      headers: this.getAuthHeaders({ isJson: false }),
+      signal
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Error al cargar caja');
+    }
+    return res.json();
+  }
+
+  static async getRewardsCustomer(restaurantId: string, phone: string) {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/rewards/customer?phone=${encodeURIComponent(phone)}`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || 'No se pudo consultar Rewards');
+    return data;
+  }
+
+  static async getRewardItems(restaurantId: string) {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/rewards/items`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || 'No se pudieron cargar los premios');
+    return data;
+  }
+
+  static async redeemReward(restaurantId: string, phone: string, rewardItemId: string, idempotencyKey: string) {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/rewards/redeem`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ phone, rewardItemId, idempotencyKey })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || 'No se pudo canjear el premio');
+    return data;
   }
 
   static async getMenu(restaurantSlugOrId: string) {
@@ -233,4 +484,3 @@ export class StaffApi {
     return res.json();
   }
 }
-

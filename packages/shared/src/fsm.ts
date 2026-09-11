@@ -56,17 +56,48 @@ export const TRANSITION_MATRIX: Record<TableFSMState, readonly TableFSMState[]> 
     TableFSMState.EATING    // Customer continues ordering
   ]),
   [TableFSMState.PAID]: Object.freeze([
-    TableFSMState.TO_CLEAN,
-    TableFSMState.AVAILABLE // Direct clean release
+    TableFSMState.TO_CLEAN
+    // Contrato operativo Gate A: PAID nunca salta directo a AVAILABLE.
+    // La limpieza es obligatoria (PAID -> TO_CLEAN -> AVAILABLE vía `Mesa lista`).
   ]),
   [TableFSMState.TO_CLEAN]: Object.freeze([
-    TableFSMState.AVAILABLE,
-    TableFSMState.OCCUPIED_NO_ORDER // Immediate seating before explicit clean tap
+    TableFSMState.AVAILABLE
+    // Contrato operativo Gate A: TO_CLEAN nunca reabre ocupación directo.
+    // Sólo la acción explícita `Mesa lista` (TO_CLEAN -> AVAILABLE) habilita
+    // la siguiente ocupación; TO_CLEAN -> OCCUPIED_NO_ORDER está prohibido.
   ])
 });
 
 /**
+ * Saltos prohibidos por el contrato operativo Gate A (E00–E03): reabren
+ * ocupación o saltan la limpieza obligatoria. Ni siquiera el override
+ * administrativo puede ejecutarlos.
+ */
+export const PROHIBITED_JUMPS: ReadonlyArray<readonly [TableFSMState, TableFSMState]> = Object.freeze([
+  Object.freeze([TableFSMState.PAID, TableFSMState.AVAILABLE]),
+  Object.freeze([TableFSMState.TO_CLEAN, TableFSMState.OCCUPIED_NO_ORDER])
+] as unknown as ReadonlyArray<readonly [TableFSMState, TableFSMState]>);
+
+export function isProhibitedJump(from: TableFSMState, to: TableFSMState): boolean {
+  if (to === TableFSMState.OCCUPIED_NO_ORDER && (from === TableFSMState.PAID || from === TableFSMState.TO_CLEAN)) {
+    return true;
+  }
+  if (from === TableFSMState.PAID && to === TableFSMState.AVAILABLE) return true;
+  // Cualquier salida de TO_CLEAN que no sea la `Mesa lista` explícita.
+  if (from === TableFSMState.TO_CLEAN && to !== TableFSMState.AVAILABLE && from !== to) return true;
+  return false;
+}
+
+/**
  * Validates whether transitioning from state `from` to state `to` is permitted.
+ *
+ * Contrato operativo Gate A: el flag `isOverride` YA NO es un bypass universal.
+ * Se conserva el parámetro por compatibilidad de firma, pero siempre se valida
+ * contra la matriz canónica; los saltos prohibidos (PAID->AVAILABLE,
+ * TO_CLEAN->OCCUPIED_NO_ORDER y cualquier reapertura sin `Mesa lista`) se
+ * rechazan incluso con override. La única vía administrativa legítima es una
+ * transición válida por matriz con guardas de cuenta/pendientes superadas y
+ * auditoría completa en el evento FSM (el servicio la exige antes de mutar).
  */
 export function isValidTransition(
   from: TableFSMState,
@@ -74,7 +105,8 @@ export function isValidTransition(
   isOverride = false
 ): boolean {
   if (from === to) return true;
-  if (isOverride) return true; // MANAGER_OVERRIDE can force any transition
+  void isOverride; // Compat: ya no habilita ningún salto fuera de matriz.
+  if (isProhibitedJump(from, to)) return false;
 
   const allowed = TRANSITION_MATRIX[from];
   return allowed ? allowed.includes(to) : false;

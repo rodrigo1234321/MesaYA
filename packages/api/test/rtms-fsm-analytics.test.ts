@@ -191,21 +191,24 @@ describe('RTMS Capa 3: FSM Engine & Analytics Verification', () => {
       expect(summary).toBeDefined();
       expect(summary.restaurantId).toBe(testRestaurant.id);
       expect(summary.totalSeats).toBeGreaterThan(0);
-      expect(summary.totalSeatHours).toBeGreaterThan(0);
+      expect(summary.totalSeatHours).toBeGreaterThanOrEqual(0);
       expect(typeof summary.revPASH).toBe('number');
-      expect(summary.averageTurnTimeMinutes).toBeGreaterThan(0);
+      expect(summary.averageTurnTimeMinutes).toBeGreaterThanOrEqual(0);
       expect(summary.occupancyRatePercentage).toBeGreaterThanOrEqual(0);
+      expect(summary.quality?.timezone).toBe(testRestaurant.timezone);
+      expect(summary.metrics?.totalRevenue?.quality).not.toBe('ESTIMATED');
     });
 
     it('debe calcular los tiempos promedio por fase gastronómica', async () => {
       const phases = await RTMSAnalyticsService.getPhaseMetrics(testRestaurant.id);
 
       expect(phases).toBeDefined();
-      expect(phases.timeToOrderAvgMinutes).toBeGreaterThan(0);
-      expect(phases.kitchenPrepAvgMinutes).toBeGreaterThan(0);
-      expect(phases.eatingDwellAvgMinutes).toBeGreaterThan(0);
-      expect(phases.paymentToVacateAvgMinutes).toBeGreaterThan(0);
-      expect(phases.cleaningTurnaroundAvgMinutes).toBeGreaterThan(0);
+      expect(phases.timeToOrderAvgMinutes).toBeGreaterThanOrEqual(0);
+      expect(phases.kitchenPrepAvgMinutes).toBeGreaterThanOrEqual(0);
+      expect(phases.eatingDwellAvgMinutes).toBeGreaterThanOrEqual(0);
+      expect(phases.paymentToVacateAvgMinutes).toBeGreaterThanOrEqual(0);
+      expect(phases.cleaningTurnaroundAvgMinutes).toBeGreaterThanOrEqual(0);
+      expect(Object.values(phases.metrics || {}).every((metric) => metric.quality !== 'ESTIMATED')).toBe(true);
     });
 
     it('debe generar la matriz 7x24 para el mapa de calor (168 celdas)', async () => {

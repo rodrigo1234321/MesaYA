@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { eventBus } from '../lib/eventBus';
+import { isRestaurantInConfiguredInstance } from '../lib/environment';
 import {
   PaymentMode,
   RestaurantModuleConfigDTO,
@@ -8,8 +9,71 @@ import {
   CapabilityState,
   CapabilityKey,
   CapabilityEntry,
-  RestaurantCapabilitiesDTO
+  RestaurantCapabilitiesDTO,
+  DEFAULT_REVIEW_QUANTITY_THRESHOLD
 } from '@mesaya/shared';
+
+/** Error de dominio para evitar activar capacidades sin recorrido operativo completo. */
+export class CapabilityConfigurationError extends Error {
+  readonly statusCode = 409;
+  readonly code = 'CAPABILITY_NOT_AVAILABLE';
+  readonly capability: CapabilityKey;
+  readonly field: string;
+
+  constructor(field: string, capability: CapabilityKey, message: string) {
+    super(message);
+    this.name = 'CapabilityConfigurationError';
+    this.field = field;
+    this.capability = capability;
+  }
+}
+
+/** Valida sólo activaciones nuevas; apagar o conservar un flag legado sigue permitido. */
+export function validateCapabilityUpdate(
+  current: RestaurantModuleConfigDTO,
+  dto: UpdateModuleConfigDTO
+): void {
+  if (dto.reviewQuantityThreshold !== undefined && (
+    !Number.isInteger(dto.reviewQuantityThreshold) ||
+    dto.reviewQuantityThreshold < 2 ||
+    dto.reviewQuantityThreshold > 50
+  )) {
+    const error: any = new Error('El umbral de revisión debe ser un entero entre 2 y 50 unidades por línea.');
+    error.statusCode = 400;
+    error.code = 'INVALID_REVIEW_QUANTITY_THRESHOLD';
+    throw error;
+  }
+
+  if (dto.enableWaitlistPreOrder === true && dto.enableWaitlist === false) {
+    throw new CapabilityConfigurationError(
+      'enableWaitlistPreOrder',
+      'waitlist_preorder',
+      'El pre-pedido requiere que la fila virtual esté habilitada.'
+    );
+  }
+
+  const blockedTransitions: Array<{
+    field: keyof UpdateModuleConfigDTO;
+    capability: CapabilityKey;
+    label: string;
+  }> = [
+    { field: 'allowSplitBill', capability: 'split_bill', label: 'la división de cuenta' },
+    // Las propinas presenciales ya tienen selector de sugerencia y registro en caja.
+  ];
+
+  for (const transition of blockedTransitions) {
+    const requested = dto[transition.field];
+    const previous = current[transition.field as keyof RestaurantModuleConfigDTO];
+    if (requested === true && previous !== true) {
+      throw new CapabilityConfigurationError(
+        String(transition.field),
+        transition.capability,
+        `No se puede activar ${transition.label}: el producto base todavía no expone un recorrido operativo completo.`
+      );
+    }
+  }
+
+}
 
 export class ConfigService {
   /**
@@ -30,6 +94,7 @@ export class ConfigService {
             allowOrdering: true,
             syncSocialCart: true,
             requireWaiterValidation: true,
+            reviewQuantityThreshold: true,
             enableUpsell: true,
             enableSmartTips: true,
             suggestedTipPercentages: true,
@@ -44,18 +109,22 @@ export class ConfigService {
       }
     });
 
-    if (!restaurant) return null;
+    if (!restaurant || !isRestaurantInConfiguredInstance(restaurant.id)) return null;
 
     // Si el restaurante aún no tiene configuración modular, inicializar con defaults
     if (!restaurant.moduleConfig) {
-      const created = await prisma.restaurantModuleConfig.create({
-        data: {
+      // Upsert evita que dos primeros clientes creen la configuración dos veces
+      // cuando una instancia nueva recibe tráfico concurrente.
+      const created = await prisma.restaurantModuleConfig.upsert({
+        where: { restaurantId: restaurant.id },
+        create: {
           restaurantId: restaurant.id,
           paymentMode: PaymentMode.WAITER_ONLY,
           allowSplitBill: false,
           allowOrdering: true,
           syncSocialCart: true,
-          requireWaiterValidation: true,
+          requireWaiterValidation: false,
+          reviewQuantityThreshold: DEFAULT_REVIEW_QUANTITY_THRESHOLD,
           enableUpsell: true,
           enableSmartTips: true,
           suggestedTipPercentages: JSON.stringify([10, 15, 20]),
@@ -66,6 +135,7 @@ export class ConfigService {
           enableRewards: false,
           pointsPerHundredPesos: 1
         },
+        update: {},
         select: {
           id: true,
           restaurantId: true,
@@ -74,6 +144,7 @@ export class ConfigService {
           allowOrdering: true,
           syncSocialCart: true,
           requireWaiterValidation: true,
+          reviewQuantityThreshold: true,
           enableUpsell: true,
           enableSmartTips: true,
           suggestedTipPercentages: true,
@@ -126,6 +197,7 @@ export class ConfigService {
         allowOrdering: true,
         syncSocialCart: true,
         requireWaiterValidation: true,
+        reviewQuantityThreshold: true,
         enableUpsell: true,
         enableSmartTips: true,
         suggestedTipPercentages: true,
@@ -139,14 +211,16 @@ export class ConfigService {
     });
 
     if (!config) {
-      config = await prisma.restaurantModuleConfig.create({
-        data: {
+      config = await prisma.restaurantModuleConfig.upsert({
+        where: { restaurantId },
+        create: {
           restaurantId,
           paymentMode: PaymentMode.WAITER_ONLY,
           allowSplitBill: false,
           allowOrdering: true,
           syncSocialCart: true,
-          requireWaiterValidation: true,
+          requireWaiterValidation: false,
+          reviewQuantityThreshold: DEFAULT_REVIEW_QUANTITY_THRESHOLD,
           enableUpsell: true,
           enableSmartTips: true,
           suggestedTipPercentages: JSON.stringify([10, 15, 20]),
@@ -157,6 +231,7 @@ export class ConfigService {
           enableRewards: false,
           pointsPerHundredPesos: 1
         },
+        update: {},
         select: {
           id: true,
           restaurantId: true,
@@ -165,6 +240,7 @@ export class ConfigService {
           allowOrdering: true,
           syncSocialCart: true,
           requireWaiterValidation: true,
+          reviewQuantityThreshold: true,
           enableUpsell: true,
           enableSmartTips: true,
           suggestedTipPercentages: true,
@@ -206,6 +282,8 @@ export class ConfigService {
     const restaurantId = restaurant.id;
     const current = await this.getAdminConfig(restaurantId);
 
+    validateCapabilityUpdate(current, dto);
+
     // Identificar cambios para auditoría
     const auditEntries: { changedField: string; oldValue: string | null; newValue: string | null }[] = [];
 
@@ -215,6 +293,7 @@ export class ConfigService {
       'allowOrdering',
       'syncSocialCart',
       'requireWaiterValidation',
+      'reviewQuantityThreshold',
       'enableUpsell',
       'enableSmartTips',
       'suggestedTipPercentages',
@@ -249,6 +328,7 @@ export class ConfigService {
       if (dto.allowOrdering !== undefined) updateData.allowOrdering = dto.allowOrdering;
       if (dto.syncSocialCart !== undefined) updateData.syncSocialCart = dto.syncSocialCart;
       if (dto.requireWaiterValidation !== undefined) updateData.requireWaiterValidation = dto.requireWaiterValidation;
+      if (dto.reviewQuantityThreshold !== undefined) updateData.reviewQuantityThreshold = dto.reviewQuantityThreshold;
       if (dto.enableUpsell !== undefined) updateData.enableUpsell = dto.enableUpsell;
       if (dto.enableSmartTips !== undefined) updateData.enableSmartTips = dto.enableSmartTips;
       if (dto.suggestedTipPercentages !== undefined) {
@@ -272,6 +352,7 @@ export class ConfigService {
           allowOrdering: true,
           syncSocialCart: true,
           requireWaiterValidation: true,
+          reviewQuantityThreshold: true,
           enableUpsell: true,
           enableSmartTips: true,
           suggestedTipPercentages: true,
@@ -345,26 +426,30 @@ export class ConfigService {
         effectiveEnabled: config.requireWaiterValidation,
         reasonCode: config.requireWaiterValidation ? 'WAITER_VALIDATION_ACTIVE' : 'WAITER_VALIDATION_OPTIONAL',
         message: config.requireWaiterValidation
-          ? 'El mozo debe validar cada comanda antes de enviarla a cocina.'
-          : 'La validación del mozo está desactivada; las comandas van directo a cocina.'
+          ? 'Modo manual activo: todas las comandas esperan al mozo antes de cocina.'
+          : `Las comandas normales van directo a cocina; sólo se revisan excepciones (más de ${config.reviewQuantityThreshold ?? DEFAULT_REVIEW_QUANTITY_THRESHOLD} unidades o stock cambiado).`
       },
       manual_payment: {
         key: 'manual_payment',
         label: 'Cobro presencial en caja',
-        state: CapabilityState.PILOT_ONLY,
-        configuredEnabled: config.paymentMode !== PaymentMode.DIGITAL_MP,
-        effectiveEnabled: false,
-        reasonCode: 'MANUAL_PAYMENT_API_ONLY',
-        message: 'El cobro presencial existe en la API para encargados, pero falta la pantalla operativa de caja.'
+        state: CapabilityState.AVAILABLE,
+        configuredEnabled: true,
+        effectiveEnabled: true,
+        reasonCode: 'MANUAL_PAYMENT_ACTIVE',
+        message: 'La caja presencial permite registrar efectivo, tarjeta, propina y liberar la mesa.'
       },
       digital_payment: {
         key: 'digital_payment',
-        label: 'Pago digital (Mercado Pago)',
-        state: CapabilityState.COMING_SOON,
+        label: 'Opción Mercado Pago informativa',
+        state: CapabilityState.AVAILABLE,
         configuredEnabled: config.paymentMode !== PaymentMode.WAITER_ONLY,
-        effectiveEnabled: false,
-        reasonCode: 'DIGITAL_PAYMENTS_UNAVAILABLE',
-        message: 'Los pagos digitales por Mercado Pago aún no están operativos. Los endpoints devuelven 503.'
+        effectiveEnabled: config.paymentMode !== PaymentMode.WAITER_ONLY,
+        reasonCode: config.paymentMode !== PaymentMode.WAITER_ONLY
+          ? 'DIGITAL_PAYMENT_OPTION_ACTIVE'
+          : 'DIGITAL_PAYMENT_OPTION_DISABLED',
+        message: config.paymentMode !== PaymentMode.WAITER_ONLY
+          ? 'Se muestra Mercado Pago como opción para el comensal; el cobro se confirma presencialmente por el personal.'
+          : 'La opción Mercado Pago no se muestra al comensal. El cobro presencial sigue activo.'
       },
       split_bill: {
         key: 'split_bill',
@@ -378,74 +463,76 @@ export class ConfigService {
       waitlist: {
         key: 'waitlist',
         label: 'Fila virtual',
-        state: CapabilityState.PILOT_ONLY,
+        state: CapabilityState.AVAILABLE,
         configuredEnabled: config.enableWaitlist,
         effectiveEnabled: config.enableWaitlist,
         reasonCode: config.enableWaitlist ? 'WAITLIST_ACTIVE' : 'WAITLIST_DISABLED',
         message: config.enableWaitlist
-          ? 'La API y la gestión del staff están activas; falta una pantalla pública de ingreso.'
+          ? 'Ingreso público, estado del ticket y gestión del staff están activos.'
           : 'La fila virtual no está habilitada.'
       },
       waitlist_preorder: {
         key: 'waitlist_preorder',
         label: 'Pre-pedido en fila virtual',
-        state: CapabilityState.COMING_SOON,
+        state: CapabilityState.AVAILABLE,
         configuredEnabled: config.enableWaitlist && config.enableWaitlistPreOrder,
-        effectiveEnabled: false,
-        reasonCode: 'WAITLIST_PREORDER_UNAVAILABLE',
-        message: 'El pre-pedido en fila virtual aún no está disponible.'
+        effectiveEnabled: config.enableWaitlist && config.enableWaitlistPreOrder,
+        reasonCode: config.enableWaitlist && config.enableWaitlistPreOrder
+          ? 'WAITLIST_PREORDER_ACTIVE'
+          : config.enableWaitlist
+            ? 'WAITLIST_PREORDER_DISABLED'
+            : 'WAITLIST_DISABLED',
+        message: config.enableWaitlist && config.enableWaitlistPreOrder
+          ? 'El pre-pedido se valida contra la carta y se convierte en comanda al sentar al grupo.'
+          : 'El pre-pedido está deshabilitado para este restaurante.'
       },
       rewards: {
         key: 'rewards',
         label: 'Programa Rewards',
-        state: CapabilityState.COMING_SOON,
+        state: CapabilityState.AVAILABLE,
         configuredEnabled: config.enableRewards,
-        effectiveEnabled: false,
-        reasonCode: 'REWARDS_NO_LEDGER',
-        message: 'El programa de fidelización Rewards tiene un calculador, pero falta el ledger y redención.'
+        effectiveEnabled: config.enableRewards,
+        reasonCode: config.enableRewards ? 'REWARDS_LEDGER_ACTIVE' : 'REWARDS_DISABLED',
+        message: config.enableRewards
+          ? 'Ledger, acreditación al cobro manual y canje autorizado están activos.'
+          : 'El programa de fidelización Rewards está deshabilitado.'
       },
       upsell: {
         key: 'upsell',
         label: 'Sugerencias de upsell',
-        state: CapabilityState.PILOT_ONLY,
+        state: CapabilityState.AVAILABLE,
         configuredEnabled: config.enableUpsell,
-        effectiveEnabled: false,
-        reasonCode: config.enableUpsell ? 'UPSELL_PILOT_ONLY' : 'UPSELL_DISABLED',
+        effectiveEnabled: config.enableUpsell,
+        reasonCode: config.enableUpsell ? 'UPSELL_CLIENT_CONSUMED' : 'UPSELL_DISABLED',
         message: config.enableUpsell
-          ? 'Recomendaciones de upsell disponibles vía API, pero ningún cliente las consume aún.'
+          ? 'Sugerencias disponibles en carrito/carta; impresión, aceptación y descarte quedan medidos por sesión.'
           : 'El módulo de upsell está deshabilitado.'
       },
       smart_tips: {
         key: 'smart_tips',
         label: 'Propinas inteligentes',
-        state: CapabilityState.PILOT_ONLY,
+        state: CapabilityState.AVAILABLE,
         configuredEnabled: config.enableSmartTips,
-        effectiveEnabled: false,
-        reasonCode: config.enableSmartTips ? 'SMART_TIPS_PILOT_ONLY' : 'SMART_TIPS_DISABLED',
+        effectiveEnabled: config.enableSmartTips,
+        reasonCode: config.enableSmartTips ? 'SMART_TIPS_MANUAL_CASH_ACTIVE' : 'SMART_TIPS_DISABLED',
         message: config.enableSmartTips
-          ? 'Propinas sugeridas disponibles con UI parcial; no todas las vistas están implementadas.'
+          ? 'Sugerencia de porcentaje/monto y registro manual de propina disponibles; el cobro sigue siendo presencial.'
           : 'El módulo de propinas inteligentes está deshabilitado.'
       },
       reviews: {
         key: 'reviews',
-        label: 'Reseñas en Google',
-        state: (() => {
-          if (config.enableReviews && !config.googlePlaceId) return CapabilityState.MISCONFIGURED;
-          if (config.enableReviews && config.googlePlaceId) return CapabilityState.PILOT_ONLY;
-          return CapabilityState.COMING_SOON;
-        })(),
+        label: 'Feedback y reseñas',
+        state: config.enableReviews ? CapabilityState.AVAILABLE : CapabilityState.COMING_SOON,
         configuredEnabled: config.enableReviews,
-        effectiveEnabled: Boolean(config.enableReviews && config.googlePlaceId),
-        reasonCode: (() => {
-          if (config.enableReviews && !config.googlePlaceId) return 'REVIEWS_NO_PLACE_ID';
-          if (config.enableReviews && config.googlePlaceId) return 'REVIEWS_PILOT_ONLY';
-          return 'REVIEWS_DISABLED';
-        })(),
-        message: (() => {
-          if (config.enableReviews && !config.googlePlaceId) return 'Reseñas habilitadas sin Google Place ID configurado; no funcionarán.';
-          if (config.enableReviews && config.googlePlaceId) return 'Reseñas habilitadas con Place ID; interfaz parcial en piloto.';
-          return 'El módulo de reseñas no está habilitado.';
-        })()
+        effectiveEnabled: config.enableReviews,
+        reasonCode: config.enableReviews
+          ? (config.googlePlaceId ? 'REVIEWS_INTERNAL_AND_GOOGLE_ACTIVE' : 'REVIEWS_INTERNAL_ACTIVE_GOOGLE_UNCONFIGURED')
+          : 'REVIEWS_DISABLED',
+        message: config.enableReviews
+          ? (config.googlePlaceId
+            ? 'Rating privado activo y enlace de Google disponible.'
+            : 'Rating privado y comentario interno activos; Google requiere Place ID válido.')
+          : 'El módulo de feedback no está habilitado.'
       }
     };
 
@@ -460,7 +547,7 @@ export class ConfigService {
       where: { OR: [{ id: restaurantIdOrSlug }, { slug: restaurantIdOrSlug }] },
       select: { id: true }
     });
-    if (!restaurant) return null;
+    if (!restaurant || !isRestaurantInConfiguredInstance(restaurant.id)) return null;
 
     const config = await this.getAdminConfig(restaurant.id);
     return this.buildCapabilities(config);
@@ -494,4 +581,3 @@ export class ConfigService {
     }));
   }
 }
-

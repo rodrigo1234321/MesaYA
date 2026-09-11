@@ -253,6 +253,34 @@ describe('Etapa 04 — Contención IA', () => {
     expect(vegetariano.recommendedDishIds).toContain('v1');
   });
 
+  it('respeta un presupuesto explícito y sólo recomienda platos disponibles dentro del límite', async () => {
+    mocks.findFirst.mockResolvedValue(
+      fakeRestaurant([
+        itemRow('cheap', 'Plato accesible', [], { price: 8500, isFeatured: true }),
+        itemRow('expensive', 'Plato premium', [], { price: 18000, isFeatured: true })
+      ])
+    );
+
+    const res = await AIService.askSommelier('rest-ficticio', 'algo rico hasta $10.000');
+
+    expect(res.recommendedDishIds).toEqual(['cheap']);
+    expect(res.suggestedDishes.every((dish) => dish.price <= 10000)).toBe(true);
+    expect(res.constraints?.budgetMax).toBe(10000);
+    expect(res.constraints?.availableOnly).toBe(true);
+  });
+
+  it('se abstiene si no existe ningún plato disponible dentro del presupuesto', async () => {
+    mocks.findFirst.mockResolvedValue(
+      fakeRestaurant([itemRow('expensive', 'Plato premium', [], { price: 18000 })])
+    );
+
+    const res = await AIService.askSommelier('rest-ficticio', 'presupuesto de $5.000');
+
+    expect(res.recommendedDishIds).toEqual([]);
+    expect(res.degraded).toBe(true);
+    expect(res.answer).toMatch(/presupuesto/i);
+  });
+
   it('IDs desconocidos de Gemini se descartan: nunca se sugieren platos inexistentes', async () => {
     process.env.ENABLE_AI_FEATURES = 'true';
     process.env.GEMINI_API_KEY = 'g-ficticia';

@@ -1,19 +1,10 @@
 import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
-
-interface TableQRConfig {
-  restaurantSlug: string;
-  tableLabel: string;
-  token?: string;
-  baseUrl?: string;
-}
+import { buildCanonicalTableUrl, TableQRConfig } from './qr-url';
 
 async function generateTableQR(config: TableQRConfig, outputDir: string) {
-  const baseUrl = config.baseUrl || 'https://mesaya.app';
-  const url = config.token
-    ? `${baseUrl}/mesa/${encodeURIComponent(config.tableLabel)}?token=${config.token}`
-    : `${baseUrl}/r/${config.restaurantSlug}/mesa/${encodeURIComponent(config.tableLabel)}`;
+  const url = buildCanonicalTableUrl(config);
 
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
@@ -48,8 +39,8 @@ async function generateTableQR(config: TableQRConfig, outputDir: string) {
   </g>
   
   <!-- Footer instructions -->
-  <text x="150" y="325" text-anchor="middle" font-size="11" font-weight="500" fill="#6b7280">Apoyá el celular (NFC) o escaneá el QR</text>
-  <text x="150" y="342" text-anchor="middle" font-size="9" fill="#9ca3af">Mar del Plata • Sin descargar app</text>
+  <text x="150" y="325" text-anchor="middle" font-size="11" font-weight="500" fill="#6b7280">Acercá el celular al NFC o escaneá el QR</text>
+  <text x="150" y="342" text-anchor="middle" font-size="9" fill="#9ca3af">Sin descargar app</text>
 </svg>
 `;
 
@@ -59,25 +50,33 @@ async function generateTableQR(config: TableQRConfig, outputDir: string) {
 
 async function main() {
   const outputDir = path.join(__dirname, 'output');
-  const targetBaseUrl =
-    process.env.MESAYA_PUBLIC_URL ||
-    process.env.VITE_CLIENT_URL ||
-    (process.argv.includes('--dev') ? 'http://localhost:5173' : 'https://mesaya.app');
+  const isDev = process.argv.includes('--dev');
+  const targetBaseUrl = process.env.MESAYA_PUBLIC_URL || process.env.VITE_CLIENT_URL ||
+    (isDev ? 'http://localhost:5173' : undefined);
+  const restaurantSlug = process.env.MESAYA_RESTAURANT_SLUG;
+  const tables = (process.env.MESAYA_TABLES || '')
+    .split(',')
+    .map((table) => table.trim())
+    .filter(Boolean);
 
-  console.log(`🏷️ Generando lote de plantillas QR vectoriales (Base URL: ${targetBaseUrl})...`);
+  if (!targetBaseUrl && !isDev) {
+    throw new Error('Definí MESAYA_PUBLIC_URL (o VITE_CLIENT_URL) para generar QR de una instalación concreta.');
+  }
+  if (!restaurantSlug) {
+    throw new Error('Definí MESAYA_RESTAURANT_SLUG; el generador no usa slugs históricos por defecto.');
+  }
+  if (tables.length === 0) {
+    throw new Error('Definí MESAYA_TABLES como lista separada por comas (por ejemplo "Mesa 1,Mesa 2").');
+  }
 
-  const tables = [
-    'Mesa 1', 'Mesa 2', 'Mesa 3', 'Mesa 4', 'Mesa 5',
-    'Terraza 1', 'Terraza 2', 'Terraza 3',
-    'Vereda 1', 'Barra 1'
-  ];
+  console.log(`🏷️ Generando QR vectoriales para ${restaurantSlug} (Base URL: ${targetBaseUrl})...`);
 
   for (const tableLabel of tables) {
     await generateTableQR(
       {
-        restaurantSlug: 'trattoria-del-puerto',
+        restaurantSlug,
         tableLabel,
-        baseUrl: targetBaseUrl
+        baseUrl: targetBaseUrl!
       },
       outputDir
     );

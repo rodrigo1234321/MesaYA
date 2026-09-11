@@ -19,7 +19,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/lib/prisma', () => ({
   prisma: {
     staffUser: { findUnique: (...args: unknown[]) => mocks.findStaff(...args) },
-    restaurant: { findFirst: (...args: unknown[]) => mocks.findRestaurant(...args) },
+    restaurant: {
+      findFirst: (...args: unknown[]) => mocks.findRestaurant(...args),
+      findUnique: (...args: unknown[]) => mocks.findRestaurant(...args)
+    },
     table: {
       findUnique: (...args: unknown[]) => mocks.findTable(...args),
       findFirst: (...args: unknown[]) => mocks.findTable(...args)
