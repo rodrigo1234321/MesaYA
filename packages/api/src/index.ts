@@ -114,28 +114,52 @@ export async function buildApp() {
     }
   });
 
-  // Global Error Handler for standardized JSON responses
+  // Global Error Handler for standardized JSON responses (P0-05)
   app.setErrorHandler((error: any, request, reply) => {
-    const statusCode = error?.statusCode || error?.status || 500;
+    const statusCode = Number(error?.statusCode || error?.status) || 500;
     const isClientError = statusCode >= 400 && statusCode < 500;
+    const requestId = String(request.id || error?.requestId || '');
 
+    // Registrar error completo de servidor en logs estructurados con requestId
     if (!isClientError) {
-      request.log.error(error);
+      request.log.error({ err: error, requestId, url: request.url }, 'Unhandled server exception');
     }
 
-    const isProd = process.env.NODE_ENV === 'production';
-    const errorMessage = isClientError || !isProd
-      ? (error?.message || 'Error en la solicitud')
-      : 'Error interno del servidor';
+    // Respuesta pública hacia el cliente: 5xx SIEMPRE es opaco
+    if (!isClientError) {
+      return reply.status(500).send({
+        code: 'INTERNAL_SERVER_ERROR',
+        error: 'Ocurrió un error inesperado al procesar la solicitud',
+        message: 'Ocurrió un error inesperado al procesar la solicitud',
+        statusCode: 500,
+        requestId
+      });
+    }
 
-    const response = {
-      error: errorMessage,
-      code: error?.code || (statusCode === 404 ? 'NOT_FOUND' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR'),
+    // Errores 4xx de cliente
+    const publicCode = error?.code || (statusCode === 404 ? 'NOT_FOUND' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : 'BAD_REQUEST');
+    const publicMessage = error?.message || 'Error en la solicitud';
+
+    return reply.status(statusCode).send({
+      code: publicCode,
+      error: publicMessage,
+      message: publicMessage,
       statusCode,
-      ...(process.env.NODE_ENV === 'development' ? { details: error?.details } : {})
-    };
+      requestId,
+      ...(error?.details ? { details: error.details } : {})
+    });
+  });
 
-    reply.status(statusCode).send(response);
+  // Standardized 404 handler (P0-05)
+  app.setNotFoundHandler((request, reply) => {
+    const requestId = String(request.id || '');
+    return reply.status(404).send({
+      code: 'NOT_FOUND',
+      error: `Ruta no encontrada: ${request.method} ${request.url}`,
+      message: `Ruta no encontrada: ${request.method} ${request.url}`,
+      statusCode: 404,
+      requestId
+    });
   });
 
   // Health & Readiness checks with database probe

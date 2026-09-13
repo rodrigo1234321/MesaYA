@@ -15,7 +15,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | **GATE-E01** | E01 | Contratos canónicos de dominio | `PASSED_LOCAL` | `packages/shared/src/contracts/` con unit tests 100% (11/11 tests pass) y build limpio. |
 | **GATE-E02** | E02 | Dependencias y Fastify 5 / Node 22 | `PASSED_LOCAL` | Fastify 5.12.4, @fastify/jwt 10.2.2, @fastify/cors 11.3.0. `npm audit --omit=dev` 0 vulnerabilidades. 604/604 tests pasan. |
 | **GATE-E03** | E03 | Núcleo monetario y transacciones atómicas | `PASSED_LOCAL` | Recálculo atómico en validación; convergencia canónica comanda-cuenta-recibo con divergencia cero. Test `monetary-convergence.test.ts` aprobado. Script `audit-and-backfill-monetary-data.mjs` y `DATA-AUDIT.json` creados. |
-| **GATE-E04** | E04 | Identidad Staff, PIN no colisionable y errores opacos | `PENDING` | Contrato 4-6 dígitos, PIN no duplicado por local, error boundary 500 opaco. |
+| **GATE-E04** | E04 | Identidad Staff, PIN no colisionable y errores opacos | `PASSED_LOCAL` | Contrato 4-6 dígitos en backend y staff modal; verificación de unicidad de PIN por tenant con 409 PIN_ALREADY_IN_USE; bootstrap seguro con PIN explícito y redactado; global error sanitization 5xx opaco con test `error-sanitization.test.ts`. |
 | **GATE-E05** | E05 | Frontends, QR canónico, acentos y timezone | `PENDING` | Navegación ticket, QR SVG/Canvas local, normalización NFD, IANA timezone. |
 | **GATE-E06** | E06 | Observabilidad Pino JSON y logging seguro | `PENDING` | CorrelationId, campos redactados (`pin`, `token`), formato estructurado. |
 | **GATE-E07** | E07 | Suite de regresión automatizada y serverless handler | `PENDING` | Test del handler serverless real, cold start, E2E Playwright. |
@@ -35,9 +35,9 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 |---|:---:|---|---|:---:|:---:|
 | **P0-01** | P0 | API / DB | Órdenes aceptadas no recalculaban totales de cabecera atómicamente. | `CLOSED` | E03 |
 | **P0-02** | P0 | API / Deps | Vulnerabilidades críticas/altas en `fast-jwt`, `fastify`, plugins. | `CLOSED` | E02 |
-| **P0-03** | P0 | Scripts / Auth | Bootstrap con PIN `9999` por defecto, rota siempre y lo imprime en stdout. | `OPEN` | E04 |
-| **P0-04** | P0 | Staff UI / Auth | Input forzado a 4 dígitos en UI; PIN duplicado no validado en backend. | `OPEN` | E04 |
-| **P0-05** | P0 | API / Handler | Fuga de `err.message` en múltiples controladores eludiendo manejador global. | `OPEN` | E04 |
+| **P0-03** | P0 | Scripts / Auth | Bootstrap con PIN `9999` por defecto, rota siempre y lo imprime en stdout. | `CLOSED` | E04 |
+| **P0-04** | P0 | Staff UI / Auth | Input forzado a 4 dígitos en UI; PIN duplicado no validado en backend. | `CLOSED` | E04 |
+| **P0-05** | P0 | API / Handler | Fuga de `err.message` en múltiples controladores eludiendo manejador global. | `CLOSED` | E04 |
 | **P0-06** | P0 | Supabase / DB | Migraciones sin RLS ni revocación de permisos sobre schema `public`. | `OPEN` | E08 |
 | **P0-07** | P0 | Base de Datos | Falta de prueba de restauración funcional de backup en PostgreSQL. | `OPEN` | E08 |
 | **P0-08** | P0 | Vercel Serverless | Smoke de serverless no invocaba el handler exportado con ciclo de vida real. | `OPEN` | E07 |

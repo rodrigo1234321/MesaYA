@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
-import { StaffLoginDTO, StaffUserDTO, Sector } from '@mesaya/shared';
+import { StaffLoginDTO, StaffUserDTO, Sector, isValidPinFormat } from '@mesaya/shared';
 
 export class StaffService {
   static async login(dto: StaffLoginDTO): Promise<{ staffUser: StaffUserDTO; rawUser: any }> {
@@ -66,9 +66,10 @@ export class StaffService {
       error.statusCode = 400;
       throw error;
     }
-    if (!/^\d{4,6}$/.test(cleanPin || '')) {
-      const error: any = new Error('El PIN debe tener entre 4 y 6 dígitos');
+    if (!isValidPinFormat(cleanPin)) {
+      const error: any = new Error('El PIN debe contener entre 4 y 6 dígitos numéricos');
       error.statusCode = 400;
+      error.code = 'PIN_INVALID';
       throw error;
     }
     if (!['WAITER', 'MANAGER'].includes(role)) {
@@ -76,6 +77,23 @@ export class StaffService {
       error.statusCode = 400;
       throw error;
     }
+
+    // Prevención de PIN duplicado por restaurante (P0-04)
+    const existingStaff = await prisma.staffUser.findMany({
+      where: { restaurantId },
+      select: { id: true, name: true, pinHash: true }
+    });
+
+    for (const existing of existingStaff) {
+      const isDuplicate = await bcrypt.compare(cleanPin, existing.pinHash);
+      if (isDuplicate) {
+        const error: any = new Error(`El PIN elegido ya está asignado a otro colaborador (${existing.name}) de este restaurante`);
+        error.statusCode = 409;
+        error.code = 'PIN_ALREADY_IN_USE';
+        throw error;
+      }
+    }
+
     const pinHash = await bcrypt.hash(cleanPin, 10);
     return prisma.staffUser.create({
       data: {

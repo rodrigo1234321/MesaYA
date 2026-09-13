@@ -1,24 +1,22 @@
-import { OrderStatus } from '../index';
-
 /**
  * Estados de comanda que integran consumo cobrable en la cuenta de mesa.
  * - PENDING_VALIDATION NO computa (requiere validación de mozo/staff).
  * - DRAFT NO computa (comanda en preparación local por comensal).
  * - CANCELLED / REJECTED NO computa.
  */
-export const CANONICAL_CONSUMO_STATUSES: readonly OrderStatus[] = Object.freeze([
-  OrderStatus.CONFIRMED,
-  OrderStatus.IN_KITCHEN,
-  OrderStatus.READY_TO_SERVE,
-  OrderStatus.SERVED,
-  OrderStatus.PAID
+export const CANONICAL_CONSUMO_STATUSES: readonly string[] = Object.freeze([
+  'CONFIRMED',
+  'IN_KITCHEN',
+  'READY_TO_SERVE',
+  'SERVED',
+  'PAID'
 ]);
 
 /**
  * Predicado formal: indica si una orden computa en el saldo exigible de la mesa.
  */
-export function isOrderComputable(status: OrderStatus | string): boolean {
-  return CANONICAL_CONSUMO_STATUSES.includes(status as OrderStatus);
+export function isOrderComputable(status: unknown): boolean {
+  return typeof status === 'string' && CANONICAL_CONSUMO_STATUSES.includes(status);
 }
 
 /**

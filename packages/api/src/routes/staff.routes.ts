@@ -5,6 +5,7 @@ import { getEnvironmentConfig, STAFF_JWT_EXPIRES_IN } from '../lib/environment';
 import { verifyManagerRole } from '../middlewares/auth.middleware';
 import { prisma } from '../lib/prisma';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export async function staffRoutes(fastify: FastifyInstance) {
   fastify.post('/staff/login', async (request, reply) => {
@@ -66,8 +67,7 @@ export async function staffRoutes(fastify: FastifyInstance) {
         staffUser
       });
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -81,8 +81,7 @@ export async function staffRoutes(fastify: FastifyInstance) {
       const staffList = await StaffService.listStaff(restaurantId);
       return reply.send(staffList);
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -96,8 +95,7 @@ export async function staffRoutes(fastify: FastifyInstance) {
       const newStaff = await StaffService.createStaff(restaurantId, name, pin, role, assignedSector);
       return reply.status(201).send(newStaff);
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 }
