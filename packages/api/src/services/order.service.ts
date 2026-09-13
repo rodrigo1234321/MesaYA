@@ -15,7 +15,11 @@ import {
   TableFSMState,
   SignalSource,
   DEFAULT_REVIEW_QUANTITY_THRESHOLD,
-  ServiceReviewReasonDTO
+  ServiceReviewReasonDTO,
+  calculateOrderTotalMinor,
+  calculateOrderItemTotalMinor,
+  calculateSessionBalance,
+  isOrderComputable
 } from '@mesaya/shared';
 
 export class DigitalPaymentsUnavailableError extends Error {
@@ -108,6 +112,10 @@ export interface SessionAccountDTO {
  */
 function toMinor(amount: number): number {
   return Math.round(Number(amount || 0) * 100);
+}
+
+function fromMinor(minor: number): number {
+  return Number(minor || 0) / 100;
 }
 
 type OrderReviewReason = Pick<ServiceReviewReasonDTO, 'code' | 'detail'>;
@@ -746,9 +754,17 @@ export class OrderService {
     let tipMinor = 0;
 
     for (const order of orders) {
-      // Minor persistido cuando existe; fallback redondeado SOLO para historia Float
-      // (C3, estado B04: escritores fuera de B04 aún no rellenan *Minor — ver §19).
-      const totalMinor = order.totalAmountMinor ?? toMinor(order.totalAmount);
+      // Reconciliación canónica: si la orden incluye items, su total minor se calcula de sus líneas
+      const computedFromItems =
+        order.items && order.items.length > 0
+          ? calculateOrderTotalMinor(
+              order.items.map((i: any) => ({
+                quantity: i.quantity,
+                unitPriceMinor: i.unitPriceMinor ?? toMinor(i.unitPrice)
+              }))
+            )
+          : null;
+      const totalMinor = computedFromItems ?? order.totalAmountMinor ?? toMinor(order.totalAmount);
       const createdAt =
         order.createdAt instanceof Date ? order.createdAt.toISOString() : order.createdAt;
       const updatedAt =
@@ -765,7 +781,7 @@ export class OrderService {
         continue;
       }
       if (order.status === OrderStatus.CANCELLED) continue;
-      if (!SESSION_CONSUMO_STATUSES.includes(order.status as OrderStatus)) continue;
+      if (!isOrderComputable(order.status as OrderStatus)) continue;
 
       consumoMinor += totalMinor;
       tandas.push(this.formatSessionTandaLine(order));
@@ -783,7 +799,12 @@ export class OrderService {
       tipMinor += settlement.tipMinor;
     }
 
-    const saldoMinor = Math.max(0, consumoMinor - paidMinor);
+    const { saldoMinor } = calculateSessionBalance({
+      consumoMinor,
+      paidMinor,
+      tipMinor,
+      adjustmentsMinor: 0
+    });
     // Fingerprint completo del estado contable para control optimista B04: cubre
     // tandas (id, estado, total, created/updated, líneas estables), pagos
     // (id, orderId, estado, importes, createdAt) y pending/draft con importes y
@@ -2362,10 +2383,20 @@ export class OrderService {
       throw error;
     }
 
+    // Recalcular de forma canónica y atómica los totales de la orden desde sus líneas (P0-01)
+    const calculatedTotalMinor = calculateOrderTotalMinor(
+      order.items.map((item: any) => ({
+        quantity: item.quantity,
+        unitPriceMinor: item.unitPriceMinor ?? toMinor(item.unitPrice)
+      }))
+    );
+
     await prisma.order.updateMany({
       where: { id: orderId, status: OrderStatus.PENDING_VALIDATION },
       data: {
         status: OrderStatus.IN_KITCHEN,
+        totalAmountMinor: calculatedTotalMinor,
+        totalAmount: fromMinor(calculatedTotalMinor),
         draftKey: null,
         reviewReasonCode: null,
         reviewReasonDetail: null

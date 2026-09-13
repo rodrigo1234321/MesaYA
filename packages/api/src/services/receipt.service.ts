@@ -5,7 +5,9 @@ import {
   WAITER_PAYMENT_METHOD_LABELS,
   OrderStatus,
   SalesSummaryDTO,
-  CallType
+  CallType,
+  calculateOrderItemTotalMinor,
+  calculateSessionBalance
 } from '@mesaya/shared';
 
 export interface GenerateReceiptInput {
@@ -107,8 +109,8 @@ export class ReceiptService {
 
     for (const order of session.orders) {
       for (const item of order.items) {
-        const unitPriceMinor = Math.round(Number(item.unitPrice || 0) * 100);
-        const lineTotalMinor = unitPriceMinor * item.quantity;
+        const unitPriceMinor = item.unitPriceMinor ?? Math.round(Number(item.unitPrice || 0) * 100);
+        const lineTotalMinor = calculateOrderItemTotalMinor(item.quantity, unitPriceMinor);
         consumoMinor += lineTotalMinor;
         items.push({
           name: item.menuItem?.name || 'Consumo',
