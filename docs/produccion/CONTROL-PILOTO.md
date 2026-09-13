@@ -13,7 +13,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 |:---:|---|---|:---:|---|
 | **GATE-E00** | E00 | Congelación, inventario de baseline y ramas | `PASSED_LOCAL` | Rama `release/pilot-1day-v1.0.0` creada; `.gitignore` actualizado; tablero inicializado. |
 | **GATE-E01** | E01 | Contratos canónicos de dominio | `PASSED_LOCAL` | `packages/shared/src/contracts/` con unit tests 100% (11/11 tests pass) y build limpio. |
-| **GATE-E02** | E02 | Dependencias y Fastify 5 / Node 22 | `PENDING` | `npm audit --omit=dev` 0 vulnerabilidades; build y parity OK. |
+| **GATE-E02** | E02 | Dependencias y Fastify 5 / Node 22 | `PASSED_LOCAL` | Fastify 5.12.4, @fastify/jwt 10.2.2, @fastify/cors 11.3.0. `npm audit --omit=dev` 0 vulnerabilidades. 604/604 tests pasan. |
 | **GATE-E03** | E03 | Núcleo monetario y transacciones atómicas | `PENDING` | Recálculo atómico en validación; tests de concurrencia e idempotencia. |
 | **GATE-E04** | E04 | Identidad Staff, PIN no colisionable y errores opacos | `PENDING` | Contrato 4-6 dígitos, PIN no duplicado por local, error boundary 500 opaco. |
 | **GATE-E05** | E05 | Frontends, QR canónico, acentos y timezone | `PENDING` | Navegación ticket, QR SVG/Canvas local, normalización NFD, IANA timezone. |
@@ -34,7 +34,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | ID | Prioridad | Componente | Descripción resumida | Estado | Etapa Causal |
 |---|:---:|---|---|:---:|:---:|
 | **P0-01** | P0 | API / DB | Órdenes aceptadas no recalculaban totales de cabecera atómicamente. | `OPEN` | E03 |
-| **P0-02** | P0 | API / Deps | Vulnerabilidades críticas/altas en `fast-jwt`, `fastify`, plugins. | `OPEN` | E02 |
+| **P0-02** | P0 | API / Deps | Vulnerabilidades críticas/altas en `fast-jwt`, `fastify`, plugins. | `CLOSED` | E02 |
 | **P0-03** | P0 | Scripts / Auth | Bootstrap con PIN `9999` por defecto, rota siempre y lo imprime en stdout. | `OPEN` | E04 |
 | **P0-04** | P0 | Staff UI / Auth | Input forzado a 4 dígitos en UI; PIN duplicado no validado en backend. | `OPEN` | E04 |
 | **P0-05** | P0 | API / Handler | Fuga de `err.message` en múltiples controladores eludiendo manejador global. | `OPEN` | E04 |

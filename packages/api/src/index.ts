@@ -115,8 +115,8 @@ export async function buildApp() {
   });
 
   // Global Error Handler for standardized JSON responses
-  app.setErrorHandler((error, request, reply) => {
-    const statusCode = (error as any).statusCode || (error as any).status || 500;
+  app.setErrorHandler((error: any, request, reply) => {
+    const statusCode = error?.statusCode || error?.status || 500;
     const isClientError = statusCode >= 400 && statusCode < 500;
 
     if (!isClientError) {
@@ -125,14 +125,14 @@ export async function buildApp() {
 
     const isProd = process.env.NODE_ENV === 'production';
     const errorMessage = isClientError || !isProd
-      ? (error.message || 'Error en la solicitud')
+      ? (error?.message || 'Error en la solicitud')
       : 'Error interno del servidor';
 
     const response = {
       error: errorMessage,
-      code: (error as any).code || (statusCode === 404 ? 'NOT_FOUND' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR'),
+      code: error?.code || (statusCode === 404 ? 'NOT_FOUND' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR'),
       statusCode,
-      ...(process.env.NODE_ENV === 'development' ? { details: (error as any).details } : {})
+      ...(process.env.NODE_ENV === 'development' ? { details: error?.details } : {})
     };
 
     reply.status(statusCode).send(response);
