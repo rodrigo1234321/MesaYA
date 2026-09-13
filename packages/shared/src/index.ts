@@ -992,3 +992,8 @@ export * from './ai-schemas';
 // VENTAS, COBROS Y REPORTES (Etapas 1–5)
 // ==========================================
 export * from './sales-types';
+
+// ==========================================
+// CONTRATOS CANÓNICOS DE DOMINIO (E01)
+// ==========================================
+export * from './contracts';

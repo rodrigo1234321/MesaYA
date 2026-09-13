@@ -12,7 +12,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | Gate | Etapa | Descripción | Estado | Evidencia / Notas |
 |:---:|---|---|:---:|---|
 | **GATE-E00** | E00 | Congelación, inventario de baseline y ramas | `PASSED_LOCAL` | Rama `release/pilot-1day-v1.0.0` creada; `.gitignore` actualizado; tablero inicializado. |
-| **GATE-E01** | E01 | Contratos canónicos de dominio | `PENDING` | `packages/shared/src/contracts/` con unit tests 100%. |
+| **GATE-E01** | E01 | Contratos canónicos de dominio | `PASSED_LOCAL` | `packages/shared/src/contracts/` con unit tests 100% (11/11 tests pass) y build limpio. |
 | **GATE-E02** | E02 | Dependencias y Fastify 5 / Node 22 | `PENDING` | `npm audit --omit=dev` 0 vulnerabilidades; build y parity OK. |
 | **GATE-E03** | E03 | Núcleo monetario y transacciones atómicas | `PENDING` | Recálculo atómico en validación; tests de concurrencia e idempotencia. |
 | **GATE-E04** | E04 | Identidad Staff, PIN no colisionable y errores opacos | `PENDING` | Contrato 4-6 dígitos, PIN no duplicado por local, error boundary 500 opaco. |
