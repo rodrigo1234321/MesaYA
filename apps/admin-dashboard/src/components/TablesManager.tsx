@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TableItem, AdminApi } from '../lib/api';
-import { Sector, SECTOR_LABELS } from '@mesaya/shared';
+import { Sector, SECTOR_LABELS, buildCanonicalClientTableUrl } from '@mesaya/shared';
 import { Plus, QrCode, Copy, Check, ExternalLink } from 'lucide-react';
+import QRCode from 'qrcode';
 
 interface TablesManagerProps {
   tables: TableItem[];
@@ -37,22 +38,45 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
 
   const getTablePermanentUrl = (label: string) => {
     const slug = restaurantSlug || restaurantId;
-    // Keep QR/mesa links on the public client even when this dashboard was
-    // built with the shared VITE_CLIENT_URL variable used by the other apps.
     const clientBaseUrl = (import.meta as any).env?.VITE_CLIENT_WEB_URL ||
       (import.meta as any).env?.VITE_CLIENT_URL;
+    let base: string;
     if (clientBaseUrl) {
-      const base = clientBaseUrl.replace(/\/$/, '');
-      return `${base}/?r=${encodeURIComponent(slug)}&m=${encodeURIComponent(label)}`;
+      base = clientBaseUrl.replace(/\/$/, '');
+    } else {
+      const host = typeof window !== 'undefined' ? window.location.hostname || 'localhost' : 'localhost';
+      const protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
+      const isDev = host === 'localhost' || host === '127.0.0.1';
+      const port = isDev ? ':5173' : (window.location.port ? `:${window.location.port}` : '');
+      base = `${protocol}//${host}${port}`;
     }
-    const host = typeof window !== 'undefined' ? window.location.hostname || 'localhost' : 'localhost';
-    const protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
-    const isDev = host === 'localhost' || host === '127.0.0.1';
-    const port = isDev ? ':5173' : (window.location.port ? `:${window.location.port}` : '');
-    return `${protocol}//${host}${port}/?r=${encodeURIComponent(slug)}&m=${encodeURIComponent(label)}`;
+    return buildCanonicalClientTableUrl(base, slug, label);
   };
 
   const [activeQrTable, setActiveQrTable] = useState<{ label: string; url: string } | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activeQrTable) {
+      setQrDataUrl(null);
+      return;
+    }
+    let isMounted = true;
+    QRCode.toDataURL(activeQrTable.url, {
+      width: 256,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      }
+    }).then(url => {
+      if (isMounted) setQrDataUrl(url);
+    }).catch(err => {
+      console.error('Error generando QR localmente:', err);
+    });
+    return () => { isMounted = false; };
+  }, [activeQrTable]);
 
   const copyUrl = (label: string, id: string) => {
     const url = getTablePermanentUrl(label);
@@ -162,12 +186,18 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
               <p className="text-xs text-slate-400">Escaneá para ingresar a la carta interactiva</p>
             </div>
 
-            <div className="p-3 bg-white rounded-2xl mx-auto inline-block shadow-inner">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(activeQrTable.url)}`}
-                alt={`QR ${activeQrTable.label}`}
-                className="w-44 h-44 mx-auto rounded-lg"
-              />
+            <div className="p-3 bg-white rounded-2xl mx-auto inline-block shadow-inner min-w-[176px] min-h-[176px] flex items-center justify-center">
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt={`QR ${activeQrTable.label}`}
+                  className="w-44 h-44 mx-auto rounded-lg"
+                />
+              ) : (
+                <div className="w-44 h-44 flex items-center justify-center text-slate-400 text-xs">
+                  Generando QR local...
+                </div>
+              )}
             </div>
 
             <p className="text-[11px] font-mono text-slate-400 break-all px-2 bg-slate-950 py-1.5 rounded-xl border border-slate-800">

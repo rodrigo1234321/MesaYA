@@ -199,6 +199,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
     try {
       const rcpt = await AdminApi.getReceipt(restaurantId, receiptId);
       setSelectedReceipt(rcpt);
+      setSubTab('tickets');
     } catch (err: any) {
       alert(err?.message || 'Error al cargar ticket');
     }

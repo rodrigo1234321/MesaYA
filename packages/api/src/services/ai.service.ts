@@ -308,7 +308,7 @@ export class AIService {
 
   // --- CONTENCIÓN DIETARIA (determinística, sin garantías de seguridad) ---
   private static detectDietaryIntent(query: string): 'allergy' | 'gluten' | 'vegan' | 'vegetarian' | null {
-    const q = query.toLowerCase();
+    const q = query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (
       q.includes('alerg') ||
       q.includes('anafilax') ||
@@ -545,7 +545,7 @@ Responde ÚNICAMENTE con este JSON:
     query: string,
     budgetMax: number | null = null
   ): SommelierResponseDTO {
-    const q = query.toLowerCase();
+    const q = query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     let matches: MenuItemDTO[] = [];
     let answer = '';
     let pairing = '';

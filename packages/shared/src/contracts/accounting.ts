@@ -101,8 +101,10 @@ export function calculateSessionBalance(params: {
   }
 
   const totalDueMinor = Math.max(0, consumoMinor + tipMinor + adjustmentsMinor);
-  const saldoMinor = Math.max(0, totalDueMinor - paidMinor);
-  const isSettled = saldoMinor === 0 && (consumoMinor > 0 ? paidMinor >= totalDueMinor : true);
+  // El saldo pendiente de cobro de la mesa es el consumo (con sus ajustes) pendiente de ser cubierto
+  const consumptionDueMinor = Math.max(0, consumoMinor + adjustmentsMinor);
+  const saldoMinor = Math.max(0, consumptionDueMinor - paidMinor);
+  const isSettled = saldoMinor === 0 && (consumoMinor > 0 ? paidMinor >= consumptionDueMinor : true);
 
   return {
     consumoMinor,

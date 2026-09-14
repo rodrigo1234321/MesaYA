@@ -16,7 +16,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | **GATE-E02** | E02 | Dependencias y Fastify 5 / Node 22 | `PASSED_LOCAL` | Fastify 5.12.4, @fastify/jwt 10.2.2, @fastify/cors 11.3.0. `npm audit --omit=dev` 0 vulnerabilidades. 604/604 tests pasan. |
 | **GATE-E03** | E03 | Núcleo monetario y transacciones atómicas | `PASSED_LOCAL` | Recálculo atómico en validación; convergencia canónica comanda-cuenta-recibo con divergencia cero. Test `monetary-convergence.test.ts` aprobado. Script `audit-and-backfill-monetary-data.mjs` y `DATA-AUDIT.json` creados. |
 | **GATE-E04** | E04 | Identidad Staff, PIN no colisionable y errores opacos | `PASSED_LOCAL` | Contrato 4-6 dígitos en backend y staff modal; verificación de unicidad de PIN por tenant con 409 PIN_ALREADY_IN_USE; bootstrap seguro con PIN explícito y redactado; global error sanitization 5xx opaco con test `error-sanitization.test.ts`. |
-| **GATE-E05** | E05 | Frontends, QR canónico, acentos y timezone | `PENDING` | Navegación ticket, QR SVG/Canvas local, normalización NFD, IANA timezone. |
+| **GATE-E05** | E05 | Frontends, QR canónico, acentos y timezone | `PASSED_LOCAL` | Navegación ticket directa activa subTab tickets; QR local con `qrcode` sin dependencias externas; normalización NFD de alérgenos y restricciones; cálculo de métricas con timezone IANA (America/Argentina/Buenos_Aires). |
 | **GATE-E06** | E06 | Observabilidad Pino JSON y logging seguro | `PENDING` | CorrelationId, campos redactados (`pin`, `token`), formato estructurado. |
 | **GATE-E07** | E07 | Suite de regresión automatizada y serverless handler | `PENDING` | Test del handler serverless real, cold start, E2E Playwright. |
 | **GATE-E08** | E08 | Supabase: migraciones, hardening y restore probado | `PENDING` | Permisos revocados sobre `public`, test de restore documentado. |
@@ -42,9 +42,9 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | **P0-07** | P0 | Base de Datos | Falta de prueba de restauración funcional de backup en PostgreSQL. | `OPEN` | E08 |
 | **P0-08** | P0 | Vercel Serverless | Smoke de serverless no invocaba el handler exportado con ciclo de vida real. | `OPEN` | E07 |
 | **P0-09** | P0 | Infra / Vercel | Discrepancias en proyectos/checks de despliegue en Vercel. | `OPEN` | E09 |
-| **P1-01** | P1 | Admin UI | "Ver ticket" no activa automáticamente la pestaña de tickets. | `OPEN` | E05 |
-| **P1-02** | P1 | Admin / QR | Admin genera QR con query string a su propio host; servicio externo para imagen. | `OPEN` | E05 |
-| **P1-03** | P1 | Métricas / Salón | Cortes diarios calculados con zona horaria del servidor y no del restaurante. | `OPEN` | E05 |
-| **P1-04** | P1 | Cliente / Menú | Detección de alérgenos sensible a diacríticos (ej. `alérgica`, `celíaco`). | `OPEN` | E05 |
+| **P1-01** | P1 | Admin UI | "Ver ticket" no activa automáticamente la pestaña de tickets. | `CLOSED` | E05 |
+| **P1-02** | P1 | Admin / QR | Admin genera QR con query string a su propio host; servicio externo para imagen. | `CLOSED` | E05 |
+| **P1-03** | P1 | Métricas / Salón | Cortes diarios calculados con zona horaria del servidor y no del restaurante. | `CLOSED` | E05 |
+| **P1-04** | P1 | Cliente / Menú | Detección de alérgenos sensible a diacríticos (ej. `alérgica`, `celíaco`). | `CLOSED` | E05 |
 | **P1-05** | P1 | Seguridad / Red | Rate limiting por IP puede bloquear colectivamente el router Wi-Fi del salón. | `OPEN` | E06 |
 | **P1-06** | P1 | Observabilidad | Logs no estructurados y sin correlación end-to-end con `correlationId`. | `OPEN` | E06 |

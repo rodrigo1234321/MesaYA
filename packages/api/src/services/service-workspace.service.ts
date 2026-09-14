@@ -58,7 +58,8 @@ function normalizeNote(value: unknown): string | null {
 }
 
 function isDeclaredRestrictionNote(note: string) {
-  return /alerg|anafil|intoleran|celiac|tacc|gluten/i.test(note);
+  const normalized = note.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return /alerg|anafil|intoleran|celiac|tacc|gluten/i.test(normalized);
 }
 
 function participantForOrder(source: unknown, guestName: unknown): ServiceParticipantDTO {

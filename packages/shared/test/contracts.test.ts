@@ -59,8 +59,8 @@ describe('Contracts — E01 Domain Invariants', () => {
 
       // TotalDue = 1000000 + 100000 - 50000 = 1050000
       assert.equal(balance.totalDueMinor, 1050000);
-      // Saldo = 1050000 - 600000 = 450000
-      assert.equal(balance.saldoMinor, 450000);
+      // Saldo consumo pendiente = (1000000 - 50000) - 600000 = 350000
+      assert.equal(balance.saldoMinor, 350000);
       assert.equal(balance.isSettled, false);
     });
 
