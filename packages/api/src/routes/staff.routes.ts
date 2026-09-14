@@ -38,22 +38,39 @@ export async function staffRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: 'Restaurante no encontrado' });
       }
 
-      // Calibración anti-bloqueo Wi-Fi: si el dispositivo presenta terminalId, el bucket es por terminal
-      // para no bloquear a otros mozos en el mismo router de salón.
-      const rateLimitKey = body.terminalId
-        ? `login:tenant:${restaurant.id}:term:${body.terminalId}`
-        : `login:tenant:${restaurant.id}:ip:${request.ip || 'unknown'}`;
-
-      const loginDecision = await AbuseControlService.consume(
-        rateLimitKey,
-        AbusePolicies.LOGIN_BY_IP_TENANT
-      );
-      if (!loginDecision.allowed) {
-        reply.header('Retry-After', String(loginDecision.retryAfterSeconds));
-        return reply.status(429).send({
-          error: 'Demasiados intentos de acceso. Por favor aguardá unos minutos.',
-          code: 'RATE_LIMIT_EXCEEDED'
-        });
+      // Control de abuso: protección dual anti-fuerza bruta y anti-bloqueo Wi-Fi.
+      // 1. Si presenta terminalId, se valida su bucket específico (5 intentos / 5 min).
+      // 2. Además, para evitar rotación maliciosa de terminalId desde una misma IP,
+      //    se evalúa el bucket IP del salón con un límite agregado prudente (25 intentos / 5 min).
+      // 3. Si no presenta terminalId, el bucket de la IP aplica el límite estricto (5 intentos / 5 min).
+      const ipKey = `login:tenant:${restaurant.id}:ip:${request.ip || 'unknown'}`;
+      if (body.terminalId?.trim()) {
+        const termKey = `login:tenant:${restaurant.id}:term:${body.terminalId.trim()}`;
+        const termDecision = await AbuseControlService.consume(termKey, AbusePolicies.LOGIN_BY_IP_TENANT);
+        if (!termDecision.allowed) {
+          reply.header('Retry-After', String(termDecision.retryAfterSeconds));
+          return reply.status(429).send({
+            error: 'Demasiados intentos de acceso desde este terminal. Por favor aguardá unos minutos.',
+            code: 'RATE_LIMIT_EXCEEDED'
+          });
+        }
+        const ipDecision = await AbuseControlService.consume(ipKey, { limit: 25, windowSeconds: 5 * 60 });
+        if (!ipDecision.allowed) {
+          reply.header('Retry-After', String(ipDecision.retryAfterSeconds));
+          return reply.status(429).send({
+            error: 'Demasiados intentos de acceso desde esta red. Por favor aguardá unos minutos.',
+            code: 'RATE_LIMIT_EXCEEDED'
+          });
+        }
+      } else {
+        const ipDecision = await AbuseControlService.consume(ipKey, AbusePolicies.LOGIN_BY_IP_TENANT);
+        if (!ipDecision.allowed) {
+          reply.header('Retry-After', String(ipDecision.retryAfterSeconds));
+          return reply.status(429).send({
+            error: 'Demasiados intentos de acceso. Por favor aguardá unos minutos.',
+            code: 'RATE_LIMIT_EXCEEDED'
+          });
+        }
       }
 
       const { staffUser } = await StaffService.login({

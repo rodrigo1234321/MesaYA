@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TableItem, AdminApi } from '../lib/api';
 import { Sector, SECTOR_LABELS, buildCanonicalClientTableUrl } from '@mesaya/shared';
-import { Plus, QrCode, Copy, Check, ExternalLink } from 'lucide-react';
+import { Plus, QrCode, Copy, Check, ExternalLink, Download } from 'lucide-react';
 import QRCode from 'qrcode';
 
 interface TablesManagerProps {
@@ -204,12 +204,24 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
               {activeQrTable.url}
             </p>
 
-            <button
-              onClick={() => setActiveQrTable(null)}
-              className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs active:scale-95 transition-all"
-            >
-              Cerrar
-            </button>
+            <div className="flex gap-2">
+              {qrDataUrl && (
+                <a
+                  href={qrDataUrl}
+                  download={`qr-${activeQrTable.label.toLowerCase().replace(/\s+/g, '-')}.png`}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Descargar PNG
+                </a>
+              )}
+              <button
+                onClick={() => setActiveQrTable(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs active:scale-95 transition-all"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

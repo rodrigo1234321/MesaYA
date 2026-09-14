@@ -1014,6 +1014,11 @@ function showInactiveState(message) {
 }
 
 function showExpiredState(message) {
+  try {
+    sessionStorage.removeItem('mesaya_token');
+  } catch (_) {}
+  currentToken = null;
+
   if (el.stateLoading) el.stateLoading.classList.add('hidden');
   if (el.actionsContainer) el.actionsContainer.classList.add('hidden');
   renderActiveCalls([]);

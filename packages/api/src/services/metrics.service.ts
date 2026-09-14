@@ -20,7 +20,8 @@ export class MetricsService {
       hour: 'numeric',
       minute: 'numeric',
       second: 'numeric',
-      hour12: false
+      hour12: false,
+      hourCycle: 'h23'
     });
     const parts = formatter.formatToParts(now);
     const getPart = (t: string) => parseInt(parts.find((p) => p.type === t)?.value || '0', 10);
@@ -39,7 +40,10 @@ export class MetricsService {
       orderBy: { openedAt: 'desc' }
     });
 
-    const shiftStart = currentShift?.openedAt ? currentShift.openedAt : today;
+    // Si el turno abierto tiene más de 24 hs (turno huérfano/olvidado), se acota a las últimas 24 hs
+    const shiftStart = currentShift?.openedAt
+      ? new Date(Math.max(currentShift.openedAt.getTime(), Date.now() - 24 * 60 * 60 * 1000))
+      : today;
 
     const calls = await prisma.callRequest.findMany({
       where: {

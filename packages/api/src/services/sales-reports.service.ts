@@ -5,7 +5,9 @@ import {
   PaymentMethodBreakdownDTO,
   WAITER_PAYMENT_METHOD_LABELS,
   WaiterPaymentMethod,
-  OrderStatus
+  OrderStatus,
+  CANONICAL_CONSUMO_STATUSES,
+  isOrderComputable
 } from '@mesaya/shared';
 
 export interface SalesReportQueryOptions {
@@ -46,7 +48,8 @@ export class SalesReportsService {
       hour: 'numeric',
       minute: 'numeric',
       second: 'numeric',
-      hour12: false
+      hour12: false,
+      hourCycle: 'h23'
     });
 
     const parts = formatter.formatToParts(now);
@@ -68,7 +71,8 @@ export class SalesReportsService {
         hour: 'numeric',
         minute: 'numeric',
         second: 'numeric',
-        hour12: false
+        hour12: false,
+        hourCycle: 'h23'
       }).formatToParts(utcDate);
 
       const invPart = (t: string) => parseInt(invParts.find((p) => p.type === t)?.value || '0', 10);
@@ -298,7 +302,19 @@ export class SalesReportsService {
       include: {
         orders: {
           where: { status: { in: acceptedStatuses }, createdAt: { lt: dateTo } },
-          select: { totalAmountMinor: true, totalAmount: true }
+          select: {
+            id: true,
+            status: true,
+            totalAmountMinor: true,
+            totalAmount: true,
+            payments: {
+              where: {
+                createdAt: { lt: dateTo },
+                status: { in: ['APPROVED', 'MANUAL_SETTLED'] }
+              },
+              select: { amountMinor: true, amount: true }
+            }
+          }
         },
         settlements: {
           where: { createdAt: { lt: dateTo } },
@@ -315,14 +331,23 @@ export class SalesReportsService {
 
     let pendienteAlCorteMinor = 0;
     for (const sess of openSessions) {
-      const sessConsumo = sess.orders.reduce(
+      const computableOrders = sess.orders.filter((o) => isOrderComputable(o.status));
+      const sessConsumo = computableOrders.reduce(
         (sum, o) => sum + (o.totalAmountMinor ?? Math.round(Number(o.totalAmount || 0) * 100)),
         0
       );
-      const sessPaid = sess.settlements.reduce(
+      const sessSettlementsPaid = sess.settlements.reduce(
         (sum, s) => sum + Math.max(0, s.amountMinor - s.adjustments.reduce((adjusted, a) => adjusted + a.amountMinor, 0)),
         0
       );
+      const sessDigitalPaid = computableOrders.reduce(
+        (sum, o) => sum + o.payments.reduce(
+          (pSum, p) => pSum + (p.amountMinor ?? Math.round(Number(p.amount || 0) * 100)),
+          0
+        ),
+        0
+      );
+      const sessPaid = sessSettlementsPaid + sessDigitalPaid;
       pendienteAlCorteMinor += Math.max(0, sessConsumo - sessPaid);
     }
 
@@ -409,7 +434,8 @@ export class SalesReportsService {
         table: { restaurantId },
         OR: [
           { createdAt: { gte: dateFrom, lt: dateTo } },
-          { settlements: { some: { createdAt: { gte: dateFrom, lt: dateTo } } } }
+          { settlements: { some: { createdAt: { gte: dateFrom, lt: dateTo } } } },
+          { orders: { some: { payments: { some: { createdAt: { gte: dateFrom, lt: dateTo }, status: { in: ['APPROVED', 'MANUAL_SETTLED'] } } } } } }
         ]
       },
       include: {
@@ -418,7 +444,8 @@ export class SalesReportsService {
           include: {
             items: {
               include: { menuItem: true }
-            }
+            },
+            payments: true
           },
           orderBy: { createdAt: 'asc' }
         },
@@ -449,8 +476,8 @@ export class SalesReportsService {
     const operations: SalesOperationDTO[] = [];
 
     for (const sess of sessions) {
-      // Filtrar tandas no canceladas
-      const validOrders = sess.orders.filter((o) => o.status !== OrderStatus.CANCELLED && o.status !== OrderStatus.DRAFT);
+      // Filtrar tandas computables en la cuenta
+      const validOrders = sess.orders.filter((o) => isOrderComputable(o.status));
       let consumoTotalMinor = 0;
       const tandas = validOrders.map((ord) => {
         const orderTotalMinor = ord.totalAmountMinor ?? Math.round(Number(ord.totalAmount || 0) * 100);
@@ -503,6 +530,18 @@ export class SalesReportsService {
           createdAt: s.createdAt.toISOString()
         };
       });
+
+      // Sumar pagos digitales legados aprobados sobre las comandas de la sesión
+      for (const ord of sess.orders) {
+        for (const p of ord.payments || []) {
+          if (p.status === 'APPROVED' || p.status === 'MANUAL_SETTLED') {
+            const pAmt = p.amountMinor ?? Math.round(Number(p.amount || 0) * 100);
+            const pTip = p.tipAmountMinor ?? Math.round(Number(p.tipAmount || 0) * 100);
+            cobradoTotalMinor += pAmt;
+            propinaTotalMinor += pTip;
+          }
+        }
+      }
 
       const saldoMinor = Math.max(0, consumoTotalMinor - cobradoTotalMinor);
       const status = sess.closedAt ? 'CLOSED' : saldoMinor === 0 && consumoTotalMinor > 0 ? 'SETTLED' : 'OPEN';

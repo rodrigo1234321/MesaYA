@@ -734,7 +734,10 @@ export class OrderService {
     });
     const settlements = await client.accountSettlement.findMany({
       where: { tableSessionId, status: 'SETTLED' },
-      include: { allocations: { orderBy: { orderId: 'asc' } } },
+      include: {
+        allocations: { orderBy: { orderId: 'asc' } },
+        adjustments: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }
+      },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
     });
     return { session, orders, settlements };
@@ -793,10 +796,23 @@ export class OrderService {
       }
     }
 
-    // Vía nueva B04 (tablas disjuntas de la legada: jamás se suma dos veces la misma fila).
+    // Vía nueva B04 (computando ajustes y devoluciones asociados a cada settlement).
+    let adjustmentsMinor = 0;
     for (const settlement of settlements) {
-      paidMinor += settlement.amountMinor;
-      tipMinor += settlement.tipMinor;
+      const refundConsumption = (settlement.adjustments || []).reduce(
+        (sum: number, a: any) => sum + (a.amountMinor || 0),
+        0
+      );
+      const refundTip = (settlement.adjustments || []).reduce(
+        (sum: number, a: any) => sum + (a.tipMinor || 0),
+        0
+      );
+      const effectiveConsumption = Math.max(0, settlement.amountMinor - refundConsumption);
+      const effectiveTip = Math.max(0, settlement.tipMinor - refundTip);
+
+      paidMinor += effectiveConsumption;
+      tipMinor += effectiveTip;
+      adjustmentsMinor += refundConsumption + refundTip;
     }
 
     const { saldoMinor } = calculateSessionBalance({
@@ -807,7 +823,7 @@ export class OrderService {
     });
     // Fingerprint completo del estado contable para control optimista B04: cubre
     // tandas (id, estado, total, created/updated, líneas estables), pagos
-    // (id, orderId, estado, importes, createdAt) y pending/draft con importes y
+    // (id, orderId, estado, importes, createdAt), settlements con adjustments y pending/draft con importes y
     // timestamps. Sin secretos: sin tokens de sesión, sin guestSessionId,
     // sin mpPaymentId. Cualquier cambio contable mueve la versión.
     const version = createHash('sha1')
@@ -831,8 +847,12 @@ export class OrderService {
             .join(';'),
           settlements
             .map(
-              (s: any) =>
-                `${s.id}:${s.amountMinor}:${s.tipMinor}:${s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt}`
+              (s: any) => {
+                const adjStr = (s.adjustments || [])
+                  .map((a: any) => `${a.id}:${a.amountMinor}:${a.tipMinor}`)
+                  .join(',');
+                return `${s.id}:${s.amountMinor}:${s.tipMinor}:${s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt}:adj[${adjStr}]`;
+              }
             )
             .join(';'),
           `consumo=${consumoMinor}`,

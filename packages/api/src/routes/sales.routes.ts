@@ -197,8 +197,14 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
           SalesReportsService.getSalesOperations(restaurantId, filters)
         ]);
 
-        // Generar CSV
-        const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+        // Generar CSV con protección contra inyección de fórmulas (=, +, -, @, \t, \r)
+        const csvCell = (value: unknown) => {
+          let str = String(value ?? '').replace(/"/g, '""');
+          if (/^[=+\-@\t\r]/.test(str)) {
+            str = `'${str}`;
+          }
+          return `"${str}"`;
+        };
         const headers = [
           'restaurantId',
           'currency',
