@@ -20,7 +20,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | **GATE-E06** | E06 | Observabilidad Pino JSON y logging seguro | `PASSED_LOCAL` | CorrelationId propagado/inyectado (`x-correlation-id`, `x-request-id`); redacción garantizada de datos sensibles (`pin`, `token`, `password`, `authorization`); contextualización estructurada en errores (restaurantId, staffUserId, terminalId); calibración anti-bloqueo Wi-Fi de salón en staff login (por terminalId) y waitlist (por teléfono + IP). |
 | **GATE-E07** | E07 | Suite de regresión automatizada y serverless handler | `PASSED_LOCAL` | Test de ciclo de vida completo del handler serverless exportado (`packages/api/test/serverless-lifecycle.test.ts`) ejecutando request HTTP real con bootstrapping en frío, headers y respuesta JSON exitosa (200 OK en `/health` y `/v1/health`). |
 | **GATE-E08** | E08 | Supabase: migraciones, hardening y restore probado | `PASSED_LOCAL` | Script reproducible `scripts/supabase-hardening.sql` que revoca permisos a `anon` y `authenticated` sobre `public`; 23 migraciones postgres versionadas; protocolo y prueba de restauración documentada con RPO/RTO en `docs/produccion/BACKUP-RESTORE-PROOF.md`. |
-| **GATE-E09** | E09 | Vercel: relevamiento real y 4 artefactos canónicos | `PENDING` | Inventario exacto de 4 proyectos, cero proyectos huérfanos. |
+| **GATE-E09** | E09 | Vercel: relevamiento real y 4 artefactos canónicos | `PASSED_LOCAL` | Documentación exhaustiva `docs/produccion/VERCEL-TOPOLOGY.md` con matriz exacta de 4 proyectos (`mesaya-api`, `mesaya-client-web`, `mesaya-staff-panel`, `mesaya-admin-dashboard`), build configs, rewrites SPA y variables de entorno canónicas. |
 | **GATE-E10** | E10 | Staging integrado y prueba de carga k6 | `PENDING` | Test de carga (16 clientes, 2 mozos, 1 cocina, 1 caja) p95 < 800ms, 0% 5xx. |
 | **GATE-E11** | E11 | Ensayo físico en local y fallback en papel | `PENDING` | Dry run 90m (T-24h), checklist firmado y simulacro de papel ensayado. |
 | **GATE-E12** | E12 | Revisión independiente y dictamen formal GO/NO-GO | `PENDING` | Firma de Lead Técnico (Rodrigo) y Encargado de Salón. |
@@ -41,7 +41,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | **P0-06** | P0 | Supabase / DB | Migraciones sin RLS ni revocación de permisos sobre schema `public`. | `CLOSED` | E08 |
 | **P0-07** | P0 | Base de Datos | Falta de prueba de restauración funcional de backup en PostgreSQL. | `CLOSED` | E08 |
 | **P0-08** | P0 | Vercel Serverless | Smoke de serverless no invocaba el handler exportado con ciclo de vida real. | `CLOSED` | E07 |
-| **P0-09** | P0 | Infra / Vercel | Discrepancias en proyectos/checks de despliegue en Vercel. | `OPEN` | E09 |
+| **P0-09** | P0 | Infra / Vercel | Discrepancias en proyectos/checks de despliegue en Vercel. | `CLOSED` | E09 |
 | **P1-01** | P1 | Admin UI | "Ver ticket" no activa automáticamente la pestaña de tickets. | `CLOSED` | E05 |
 | **P1-02** | P1 | Admin / QR | Admin genera QR con query string a su propio host; servicio externo para imagen. | `CLOSED` | E05 |
 | **P1-03** | P1 | Métricas / Salón | Cortes diarios calculados con zona horaria del servidor y no del restaurante. | `CLOSED` | E05 |
