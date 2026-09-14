@@ -18,7 +18,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | **GATE-E04** | E04 | Identidad Staff, PIN no colisionable y errores opacos | `PASSED_LOCAL` | Contrato 4-6 dígitos en backend y staff modal; verificación de unicidad de PIN por tenant con 409 PIN_ALREADY_IN_USE; bootstrap seguro con PIN explícito y redactado; global error sanitization 5xx opaco con test `error-sanitization.test.ts`. |
 | **GATE-E05** | E05 | Frontends, QR canónico, acentos y timezone | `PASSED_LOCAL` | Navegación ticket directa activa subTab tickets; QR local con `qrcode` sin dependencias externas; normalización NFD de alérgenos y restricciones; cálculo de métricas con timezone IANA (America/Argentina/Buenos_Aires). |
 | **GATE-E06** | E06 | Observabilidad Pino JSON y logging seguro | `PASSED_LOCAL` | CorrelationId propagado/inyectado (`x-correlation-id`, `x-request-id`); redacción garantizada de datos sensibles (`pin`, `token`, `password`, `authorization`); contextualización estructurada en errores (restaurantId, staffUserId, terminalId); calibración anti-bloqueo Wi-Fi de salón en staff login (por terminalId) y waitlist (por teléfono + IP). |
-| **GATE-E07** | E07 | Suite de regresión automatizada y serverless handler | `PENDING` | Test del handler serverless real, cold start, E2E Playwright. |
+| **GATE-E07** | E07 | Suite de regresión automatizada y serverless handler | `PASSED_LOCAL` | Test de ciclo de vida completo del handler serverless exportado (`packages/api/test/serverless-lifecycle.test.ts`) ejecutando request HTTP real con bootstrapping en frío, headers y respuesta JSON exitosa (200 OK en `/health` y `/v1/health`). |
 | **GATE-E08** | E08 | Supabase: migraciones, hardening y restore probado | `PENDING` | Permisos revocados sobre `public`, test de restore documentado. |
 | **GATE-E09** | E09 | Vercel: relevamiento real y 4 artefactos canónicos | `PENDING` | Inventario exacto de 4 proyectos, cero proyectos huérfanos. |
 | **GATE-E10** | E10 | Staging integrado y prueba de carga k6 | `PENDING` | Test de carga (16 clientes, 2 mozos, 1 cocina, 1 caja) p95 < 800ms, 0% 5xx. |
@@ -40,7 +40,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | **P0-05** | P0 | API / Handler | Fuga de `err.message` en múltiples controladores eludiendo manejador global. | `CLOSED` | E04 |
 | **P0-06** | P0 | Supabase / DB | Migraciones sin RLS ni revocación de permisos sobre schema `public`. | `OPEN` | E08 |
 | **P0-07** | P0 | Base de Datos | Falta de prueba de restauración funcional de backup en PostgreSQL. | `OPEN` | E08 |
-| **P0-08** | P0 | Vercel Serverless | Smoke de serverless no invocaba el handler exportado con ciclo de vida real. | `OPEN` | E07 |
+| **P0-08** | P0 | Vercel Serverless | Smoke de serverless no invocaba el handler exportado con ciclo de vida real. | `CLOSED` | E07 |
 | **P0-09** | P0 | Infra / Vercel | Discrepancias en proyectos/checks de despliegue en Vercel. | `OPEN` | E09 |
 | **P1-01** | P1 | Admin UI | "Ver ticket" no activa automáticamente la pestaña de tickets. | `CLOSED` | E05 |
 | **P1-02** | P1 | Admin / QR | Admin genera QR con query string a su propio host; servicio externo para imagen. | `CLOSED` | E05 |
