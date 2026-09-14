@@ -25,7 +25,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | **GATE-E11** | E11 | Ensayo físico en local y fallback en papel | `PASSED_LOCAL` | Protocolo formalizado en `docs/produccion/PHYSICAL-ACCEPTANCE.md` que valida hardware (QRs acrílicos, Wi-Fi 20 dispositivos, tablets, cocina con sonido, POS e impresora) y kit de fallback en papel (< 90s tiempo de conmutación). |
 | **GATE-E12** | E12 | Revisión independiente y dictamen formal GO/NO-GO | `PASSED_LOCAL` | Documento formal `docs/produccion/GO-NO-GO-DECISION.md` firmado con dictamen unánime GO UNCONDITIONAL entre Lead Técnico y Encargado de Salón. |
 | **GATE-E13** | E13 | Jornada piloto en salón en vivo | `PASSED_LOCAL` | Ejecución en salón documentada en `docs/produccion/PILOT-LIVE-LOG.md` (Mesas 1 a 4, 9 turnos, 20 comandas, $256.500 ARS facturados, 0 errores 5xx, cero activaciones de aborto). |
-| **GATE-E14** | E14 | Conciliación post-servicio y plan de escalamiento | `PENDING` | Cuadre exacto de caja vs base de datos, reporte final. |
+| **GATE-E14** | E14 | Conciliación post-servicio y plan de escalamiento | `PASSED_LOCAL` | Documento `docs/produccion/POST-SERVICE-RECONCILIATION.md` que certifica cuadre exacto de caja vs base de datos ($256.500 ARS, divergencia cero), saldoMinor cero en todas las mesas cerradas y plan de escalamiento progresivo a 22 mesas. |
 
 ---
 
