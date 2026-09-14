@@ -36,8 +36,9 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
           select: { id: true }
         });
         if (tenant && isRestaurantInConfiguredInstance(tenant.id)) {
+          // Clave combinada por teléfono y red para no penalizar a otros clientes en el mismo Wi-Fi del salón
           const decision = await AbuseControlService.consume(
-            `waitlist:tenant:${tenant.id}:ip:${ip}`,
+            `waitlist:tenant:${tenant.id}:phone:${phoneDigits.slice(-8)}:ip:${ip}`,
             AbusePolicies.WAITLIST_BY_IP_TENANT
           );
           if (!decision.allowed) {

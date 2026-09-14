@@ -38,8 +38,14 @@ export async function staffRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: 'Restaurante no encontrado' });
       }
 
+      // Calibración anti-bloqueo Wi-Fi: si el dispositivo presenta terminalId, el bucket es por terminal
+      // para no bloquear a otros mozos en el mismo router de salón.
+      const rateLimitKey = body.terminalId
+        ? `login:tenant:${restaurant.id}:term:${body.terminalId}`
+        : `login:tenant:${restaurant.id}:ip:${request.ip || 'unknown'}`;
+
       const loginDecision = await AbuseControlService.consume(
-        `login:tenant:${restaurant.id}:ip:${request.ip || 'unknown'}`,
+        rateLimitKey,
         AbusePolicies.LOGIN_BY_IP_TENANT
       );
       if (!loginDecision.allowed) {

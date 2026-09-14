@@ -46,7 +46,11 @@ export async function buildApp() {
   // Deliberadamente antes de construir o escuchar: producción falla cerrada.
   const environment = getEnvironmentConfig();
   const app = Fastify({
-    logger: process.env.NODE_ENV === 'test' ? false : true
+    logger: process.env.NODE_ENV === 'test' ? false : {
+      level: process.env.LOG_LEVEL || 'info',
+      redact: ['req.headers.authorization', 'req.headers["x-session-token"]', 'body.pin', 'body.token', 'body.password', 'pin', 'token', 'password']
+    },
+    trustProxy: process.env.NODE_ENV === 'production' ? true : false
   });
 
   await app.register(cors, {
@@ -61,6 +65,14 @@ export async function buildApp() {
 
   await app.register(jwt, {
     secret: environment.jwtSecret
+  });
+
+  // Inject correlationId and track request start
+  app.addHook('onRequest', async (request, reply) => {
+    const correlationId = (request.headers['x-correlation-id'] as string) || request.id;
+    reply.header('x-request-id', request.id);
+    reply.header('x-correlation-id', correlationId);
+    (request as any).correlationId = correlationId;
   });
 
   // Headers mínimos de defensa para API y respuestas de error. El cliente web
@@ -120,9 +132,20 @@ export async function buildApp() {
     const isClientError = statusCode >= 400 && statusCode < 500;
     const requestId = String(request.id || error?.requestId || '');
 
-    // Registrar error completo de servidor en logs estructurados con requestId
+    // Registrar error completo de servidor en logs estructurados con requestId, correlationId, staffUserId, restaurantId
     if (!isClientError) {
-      request.log.error({ err: error, requestId, url: request.url }, 'Unhandled server exception');
+      const staffUser = (request as any).staffUser;
+      const correlationId = (request as any).correlationId || String(request.id || '');
+      request.log.error({
+        err: error,
+        requestId,
+        correlationId,
+        url: request.url,
+        method: request.method,
+        restaurantId: staffUser?.restaurantId,
+        staffUserId: staffUser?.sub,
+        terminalId: staffUser?.terminalId
+      }, 'Unhandled server exception');
     }
 
     // Respuesta pública hacia el cliente: 5xx SIEMPRE es opaco
