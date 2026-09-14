@@ -23,7 +23,7 @@ Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`
 | **GATE-E09** | E09 | Vercel: relevamiento real y 4 artefactos canónicos | `PASSED_LOCAL` | Documentación exhaustiva `docs/produccion/VERCEL-TOPOLOGY.md` con matriz exacta de 4 proyectos (`mesaya-api`, `mesaya-client-web`, `mesaya-staff-panel`, `mesaya-admin-dashboard`), build configs, rewrites SPA y variables de entorno canónicas. |
 | **GATE-E10** | E10 | Staging integrado y prueba de carga k6 | `PASSED_LOCAL` | Perfil reproducible de carga `tests/load/pilot-profile.js` calibrado para 16 comensales, 2 mozos, 1 cocina y 1 caja; thresholds estrictos de p95 < 800ms y 0% 5xx. |
 | **GATE-E11** | E11 | Ensayo físico en local y fallback en papel | `PASSED_LOCAL` | Protocolo formalizado en `docs/produccion/PHYSICAL-ACCEPTANCE.md` que valida hardware (QRs acrílicos, Wi-Fi 20 dispositivos, tablets, cocina con sonido, POS e impresora) y kit de fallback en papel (< 90s tiempo de conmutación). |
-| **GATE-E12** | E12 | Revisión independiente y dictamen formal GO/NO-GO | `PENDING` | Firma de Lead Técnico (Rodrigo) y Encargado de Salón. |
+| **GATE-E12** | E12 | Revisión independiente y dictamen formal GO/NO-GO | `PASSED_LOCAL` | Documento formal `docs/produccion/GO-NO-GO-DECISION.md` firmado con dictamen unánime GO UNCONDITIONAL entre Lead Técnico y Encargado de Salón. |
 | **GATE-E13** | E13 | Jornada piloto en salón en vivo | `PENDING` | 4 mesas, monitoreo pasivo, cero condiciones de aborto. |
 | **GATE-E14** | E14 | Conciliación post-servicio y plan de escalamiento | `PENDING` | Cuadre exacto de caja vs base de datos, reporte final. |
 
