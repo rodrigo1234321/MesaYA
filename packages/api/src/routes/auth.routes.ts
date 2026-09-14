@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
 import { getEnvironmentConfig, STAFF_JWT_EXPIRES_IN } from '../lib/environment';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export async function authRoutes(fastify: FastifyInstance) {
   // 1. List all restaurants for admin selector / platform directory
@@ -25,7 +26,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       });
       return reply.send(restaurants);
     } catch (err: any) {
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -198,8 +199,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         }
       });
     } catch (err: any) {
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -282,7 +282,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         }
       });
     } catch (err: any) {
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 }

@@ -82,9 +82,10 @@ export class StaffApi {
   /**
    * Reautorización puntual: autentica a un encargado sin reemplazar la
    * identidad persistida del operador que sigue trabajando en Servicio.
+   * Emite un token acotado a 300 segundos (5 minutos) con claim temp: true.
    */
-  static async loginTemporary(dto: StaffLoginDTO & { terminalId?: string }): Promise<{ token: string; staffUser: StaffUserDTO }> {
-    const requestDto = { ...dto, terminalId: dto.terminalId || this.getTerminalId() };
+  static async loginTemporary(dto: StaffLoginDTO & { terminalId?: string }): Promise<{ token: string; staffUser: StaffUserDTO; isTemporary?: boolean; expiresInSeconds?: number }> {
+    const requestDto = { ...dto, terminalId: dto.terminalId || this.getTerminalId(), isTemporary: true };
     const res = await fetch(`${API_BASE}/staff/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

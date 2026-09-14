@@ -3,6 +3,7 @@ import { verifyStaffToken } from '../middlewares/auth.middleware';
 import { ServiceTaskKind } from '@mesaya/shared';
 import { ServiceTaskService } from '../services/service-task.service';
 import { ServiceWorkspaceService } from '../services/service-workspace.service';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 function staffContext(request: any) {
   return {
@@ -21,7 +22,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       const snapshot = await ServiceWorkspaceService.getSnapshot(id, request.staffUser?.restaurantId);
       return reply.send(snapshot);
     } catch (err: any) {
-      return reply.status(err.statusCode || 500).send({ error: err.message, code: err.code });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -31,7 +32,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       const claim = await ServiceTaskService.claimTask(taskType, targetId, staffContext(request));
       return reply.status(201).send(claim);
     } catch (err: any) {
-      return reply.status(err.statusCode || 500).send({ error: err.message, code: err.code, details: err.details });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -40,7 +41,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     try {
       return reply.send(await ServiceTaskService.releaseTask(taskType, targetId, staffContext(request)));
     } catch (err: any) {
-      return reply.status(err.statusCode || 500).send({ error: err.message, code: err.code, details: err.details });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -49,7 +50,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     try {
       return reply.send(await ServiceTaskService.resolveTask(taskType, targetId, staffContext(request)));
     } catch (err: any) {
-      return reply.status(err.statusCode || 500).send({ error: err.message, code: err.code, details: err.details });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -59,7 +60,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       const result = await ServiceTaskService.actTask(taskType, targetId, staffContext(request), (request.body as any) || {});
       return reply.send(result);
     } catch (err: any) {
-      return reply.status(err.statusCode || 500).send({ error: err.message, code: err.code, details: err.details });
+      return sendSanitizedError(reply, err);
     }
   });
 }

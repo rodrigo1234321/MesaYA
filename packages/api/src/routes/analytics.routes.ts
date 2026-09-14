@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { RTMSAnalyticsService } from '../services/rtms-analytics.service';
 import { requireRestaurantAccess, verifyManagerRole } from '../middlewares/auth.middleware';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export async function rtmsAnalyticsRoutes(fastify: FastifyInstance) {
   // 1. Resumen Global de RevPASH y Ocupación
@@ -18,11 +19,7 @@ export async function rtmsAnalyticsRoutes(fastify: FastifyInstance) {
       );
       return reply.send(summary);
     } catch (err: any) {
-      req.log.error(err);
-      return reply.status(err.statusCode || 500).send({
-        error: 'Error al calcular resumen de analytics',
-        message: err.message
-      });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -41,11 +38,7 @@ export async function rtmsAnalyticsRoutes(fastify: FastifyInstance) {
       );
       return reply.send(phases);
     } catch (err: any) {
-      req.log.error(err);
-      return reply.status(err.statusCode || 500).send({
-        error: 'Error al calcular métricas de fases',
-        message: err.message
-      });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -64,11 +57,7 @@ export async function rtmsAnalyticsRoutes(fastify: FastifyInstance) {
       );
       return reply.send(heatmap);
     } catch (err: any) {
-      req.log.error(err);
-      return reply.status(err.statusCode || 500).send({
-        error: 'Error al calcular mapa de calor',
-        message: err.message
-      });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -87,11 +76,7 @@ export async function rtmsAnalyticsRoutes(fastify: FastifyInstance) {
       );
       return reply.send(tables);
     } catch (err: any) {
-      req.log.error(err);
-      return reply.status(err.statusCode || 500).send({
-        error: 'Error al calcular rendimiento de mesas',
-        message: err.message
-      });
+      return sendSanitizedError(reply, err);
     }
   });
 }

@@ -7,7 +7,7 @@ import { WaitlistManager } from './components/WaitlistManager';
 import { RewardsManager } from './components/RewardsManager';
 import { ServiceWorkspace } from './components/ServiceWorkspace';
 import { playChimeAlert, unlockAudio, getAudioState } from './lib/audio';
-import { Bell, ExternalLink, Gift, LayoutDashboard, UserRound, Users, Volume2, VolumeX } from 'lucide-react';
+import { Bell, ExternalLink, Gift, LayoutDashboard, LockKeyhole, UserRound, Users, Volume2, VolumeX } from 'lucide-react';
 
 type ActiveTab = 'service' | 'waitlist' | 'rewards';
 
@@ -34,6 +34,31 @@ export const App: React.FC = () => {
         setCurrentUser(null);
       });
   }, []);
+
+  // Inactividad de terminal: bloqueo automático tras 5 min de inactividad
+  // preservando el ID de terminal para re-ingreso inmediato por PIN.
+  useEffect(() => {
+    if (!currentUser) return;
+    const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        StaffApi.logout();
+        setCurrentUser(null);
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    const events = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+    };
+  }, [currentUser]);
 
   // E07: Servicio es la única pantalla operativa. El snapshot centralizado ya
   // incluye llamados, cocina, cuentas y mapa; no se usa polling legacy.
@@ -85,7 +110,20 @@ export const App: React.FC = () => {
           <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 shrink-0"><LayoutDashboard className="w-5 h-5" /></div>
           <div className="min-w-0"><h1 className="font-extrabold text-base text-white tracking-tight truncate">{currentUser.restaurantName}</h1><div className="flex items-center gap-2 mt-0.5"><span className="text-xs font-semibold text-indigo-300 truncate">{currentUser.name}</span><span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">{currentUser.role}</span></div></div>
         </div>
-        <div className="flex items-center space-x-2 shrink-0"><button type="button" onClick={() => { unlockAudio(); playChimeAlert(); }} title="Probar sonido de timbre" aria-label="Probar sonido de timbre" className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-semibold"><Volume2 className="w-4 h-4 text-indigo-400" /><span className="hidden sm:inline">Probar timbre</span></button><button type="button" onClick={handleLogout} title="Cambiar operador en este terminal" className="px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-indigo-300 flex items-center gap-1.5 text-[11px] font-bold"><UserRound className="w-4 h-4" /><span className="hidden sm:inline">Cambiar operador</span></button></div>
+        <div className="flex items-center space-x-2 shrink-0">
+          <button type="button" onClick={() => { unlockAudio(); playChimeAlert(); }} title="Probar sonido de timbre" aria-label="Probar sonido de timbre" className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-semibold">
+            <Volume2 className="w-4 h-4 text-indigo-400" />
+            <span className="hidden sm:inline">Probar timbre</span>
+          </button>
+          <button type="button" onClick={handleLogout} title="Bloquear terminal (requiere PIN)" className="px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-700/60 text-slate-300 hover:text-amber-300 flex items-center gap-1.5 text-[11px] font-bold">
+            <LockKeyhole className="w-4 h-4 text-amber-400" />
+            <span className="hidden sm:inline">Bloquear</span>
+          </button>
+          <button type="button" onClick={handleLogout} title="Cambiar operador en este terminal" className="px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-indigo-300 flex items-center gap-1.5 text-[11px] font-bold">
+            <UserRound className="w-4 h-4" />
+            <span className="hidden sm:inline">Cambiar operador</span>
+          </button>
+        </div>
       </div>
       </header>
 

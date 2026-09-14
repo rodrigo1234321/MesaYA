@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { FeedbackService } from '../services/feedback.service';
 import { FeedbackDTO } from '@mesaya/shared';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export async function feedbackRoutes(fastify: FastifyInstance) {
   fastify.post('/feedback', async (request, reply) => {
@@ -17,8 +18,7 @@ export async function feedbackRoutes(fastify: FastifyInstance) {
       const result = await FeedbackService.submitFeedback(body);
       return reply.status(201).send(result);
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message, code: err.code });
+      return sendSanitizedError(reply, err);
     }
   });
 }

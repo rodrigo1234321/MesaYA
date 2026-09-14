@@ -73,4 +73,28 @@ describe('Staff PIN Uniqueness and Validation (P0-04)', () => {
     expect(sOther.id).toBeDefined();
     expect(sOther.name).toBe('Mozo Rest 2');
   });
+
+  it('garantiza unicidad de PIN bajo carreras concurrentes simultáneas (Promise.allSettled)', async () => {
+    const results = await Promise.allSettled([
+      StaffService.createStaff(restaurantId, 'Mozo Concurrente 1', '8888', 'WAITER'),
+      StaffService.createStaff(restaurantId, 'Mozo Concurrente 2', '8888', 'WAITER')
+    ]);
+
+    const fulfilled = results.filter(r => r.status === 'fulfilled');
+    const rejected = results.filter(r => r.status === 'rejected');
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    const rejectionReason = (rejected[0] as PromiseRejectedResult).reason;
+    expect(rejectionReason?.statusCode).toBe(409);
+    expect(rejectionReason?.code).toBe('PIN_ALREADY_IN_USE');
+
+    const inDb = await prisma.staffUser.count({
+      where: {
+        restaurantId,
+        pinFingerprint: StaffService.calculatePinFingerprint(restaurantId, '8888')
+      }
+    });
+    expect(inDb).toBe(1);
+  });
 });

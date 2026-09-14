@@ -10,7 +10,7 @@ import { sendSanitizedError } from '../lib/errorHandler';
 export async function staffRoutes(fastify: FastifyInstance) {
   fastify.post('/staff/login', async (request, reply) => {
     try {
-      const body = request.body as StaffLoginDTO & { terminalId?: string };
+      const body = request.body as StaffLoginDTO & { terminalId?: string; isTemporary?: boolean };
       if (
         !body ||
         typeof body.restaurantSlug !== 'string' ||
@@ -77,17 +77,22 @@ export async function staffRoutes(fastify: FastifyInstance) {
         restaurantSlug: restaurant.slug,
         pin: body.pin.trim()
       });
+      const isTemporary = Boolean(body.isTemporary);
+      const expiresIn = isTemporary ? '300s' : STAFF_JWT_EXPIRES_IN;
       const token = fastify.jwt.sign({
         sub: staffUser.id,
         role: staffUser.role,
         restaurantId: staffUser.restaurantId,
         assignedSector: staffUser.assignedSector,
-        terminalId: body.terminalId
-      }, { expiresIn: STAFF_JWT_EXPIRES_IN });
+        terminalId: body.terminalId,
+        temp: isTemporary
+      }, { expiresIn });
 
       return reply.send({
         token,
-        staffUser
+        staffUser,
+        isTemporary,
+        expiresInSeconds: isTemporary ? 300 : 43200
       });
     } catch (err: any) {
       return sendSanitizedError(reply, err);

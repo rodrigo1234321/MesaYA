@@ -1,8 +1,18 @@
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { StaffLoginDTO, StaffUserDTO, Sector, isValidPinFormat } from '@mesaya/shared';
 
 export class StaffService {
+  /**
+   * Calcula una huella determinística indexable para garantizar unicidad
+   * de PIN por restaurante a nivel motor de base de datos bajo concurrencia.
+   */
+  static calculatePinFingerprint(restaurantId: string, pin: string): string {
+    const pepper = process.env.ENCRYPTION_SECRET_KEY || 'mesaya-pin-salt';
+    return crypto.createHmac('sha256', pepper).update(`${restaurantId}:${pin}`).digest('hex');
+  }
+
   static async login(dto: StaffLoginDTO): Promise<{ staffUser: StaffUserDTO; rawUser: any }> {
     const restaurant = await prisma.restaurant.findUnique({
       where: { slug: dto.restaurantSlug }
@@ -14,16 +24,35 @@ export class StaffService {
       throw error;
     }
 
-    const staffUsers = await prisma.staffUser.findMany({
-      where: { restaurantId: restaurant.id }
+    const pinFingerprint = StaffService.calculatePinFingerprint(restaurant.id, dto.pin);
+
+    // Búsqueda directa O(1) indexada por huella determinística
+    let matchedUser = await prisma.staffUser.findFirst({
+      where: { restaurantId: restaurant.id, pinFingerprint }
     });
 
-    let matchedUser = null;
-    for (const user of staffUsers) {
-      const isMatch = await bcrypt.compare(dto.pin, user.pinHash);
-      if (isMatch) {
-        matchedUser = user;
-        break;
+    // Fallback compatible para filas legadas sin pinFingerprint
+    if (!matchedUser) {
+      const legacyUsers = await prisma.staffUser.findMany({
+        where: { restaurantId: restaurant.id, pinFingerprint: null }
+      });
+      for (const user of legacyUsers) {
+        const isMatch = await bcrypt.compare(dto.pin, user.pinHash);
+        if (isMatch) {
+          matchedUser = user;
+          // Backfill asíncrono seguro
+          await prisma.staffUser.update({
+            where: { id: user.id },
+            data: { pinFingerprint }
+          }).catch(() => undefined);
+          break;
+        }
+      }
+    } else {
+      // Verificación de doble factor bcrypt para defensa en profundidad
+      const isMatch = await bcrypt.compare(dto.pin, matchedUser.pinHash);
+      if (!isMatch) {
+        matchedUser = null;
       }
     }
 
@@ -78,13 +107,26 @@ export class StaffService {
       throw error;
     }
 
-    // Prevención de PIN duplicado por restaurante (P0-04)
-    const existingStaff = await prisma.staffUser.findMany({
-      where: { restaurantId },
+    const pinFingerprint = StaffService.calculatePinFingerprint(restaurantId, cleanPin);
+
+    // Prevención en lectura para mensajes amigables
+    const existingWithFingerprint = await prisma.staffUser.findFirst({
+      where: { restaurantId, pinFingerprint },
+      select: { name: true }
+    });
+    if (existingWithFingerprint) {
+      const error: any = new Error(`El PIN elegido ya está asignado a otro colaborador (${existingWithFingerprint.name}) de este restaurante`);
+      error.statusCode = 409;
+      error.code = 'PIN_ALREADY_IN_USE';
+      throw error;
+    }
+
+    // Comprobación de registros legados sin fingerprint
+    const legacyStaff = await prisma.staffUser.findMany({
+      where: { restaurantId, pinFingerprint: null },
       select: { id: true, name: true, pinHash: true }
     });
-
-    for (const existing of existingStaff) {
+    for (const existing of legacyStaff) {
       const isDuplicate = await bcrypt.compare(cleanPin, existing.pinHash);
       if (isDuplicate) {
         const error: any = new Error(`El PIN elegido ya está asignado a otro colaborador (${existing.name}) de este restaurante`);
@@ -95,21 +137,34 @@ export class StaffService {
     }
 
     const pinHash = await bcrypt.hash(cleanPin, 10);
-    return prisma.staffUser.create({
-      data: {
-        restaurantId,
-        name: cleanName,
-        pinHash,
-        role,
-        assignedSector: assignedSector || null
-      },
-      select: {
-        id: true,
-        name: true,
-        role: true,
-        assignedSector: true,
-        createdAt: true
+    try {
+      return await prisma.staffUser.create({
+        data: {
+          restaurantId,
+          name: cleanName,
+          pinHash,
+          pinFingerprint,
+          role,
+          assignedSector: assignedSector || null
+        },
+        select: {
+          id: true,
+          name: true,
+          role: true,
+          assignedSector: true,
+          createdAt: true
+        }
+      });
+    } catch (dbErr: any) {
+      // Si dos solicitudes concurrentes intentan crear el mismo PIN simultáneamente,
+      // la restricción única @@unique([restaurantId, pinFingerprint]) dispara P2002.
+      if (dbErr?.code === 'P2002' || /unique constraint/i.test(dbErr?.message || '')) {
+        const error: any = new Error('El PIN elegido ya está asignado a otro colaborador de este restaurante');
+        error.statusCode = 409;
+        error.code = 'PIN_ALREADY_IN_USE';
+        throw error;
       }
-    });
+      throw dbErr;
+    }
   }
 }

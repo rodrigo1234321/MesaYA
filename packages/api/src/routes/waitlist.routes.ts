@@ -5,6 +5,7 @@ import { JoinWaitlistDTO } from '@mesaya/shared';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
 import { prisma } from '../lib/prisma';
 import { isRestaurantInConfiguredInstance } from '../lib/environment';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
   /**
@@ -55,8 +56,7 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
         const entry = await WaitlistService.joinWaitlist(body);
         return reply.status(201).send(entry);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -73,8 +73,7 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
         const entry = await WaitlistService.getPublicStatus(request.params.id, request.query.phone || '');
         return reply.send(entry);
       } catch (err: any) {
-        const status = err.statusCode || 404;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -93,8 +92,7 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
         const queue = await WaitlistService.getQueue(id, staffRestaurantId);
         return reply.send({ queue });
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -113,8 +111,7 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
         const entry = await WaitlistService.callGuest(id, staffRestaurantId);
         return reply.send(entry);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -150,8 +147,7 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.send(entry);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );

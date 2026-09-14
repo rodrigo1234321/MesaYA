@@ -9,6 +9,7 @@ import {
   STATE_EMOJIS
 } from '@mesaya/shared';
 import { verifyStaffToken, verifyManagerRole } from '../middlewares/auth.middleware';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export async function tableStateRoutes(fastify: FastifyInstance) {
   /**
@@ -94,8 +95,7 @@ export async function tableStateRoutes(fastify: FastifyInstance) {
         });
       }
 
-      request.log.error(err);
-      return reply.status(err.statusCode || 500).send({ error: err.message || 'Error al procesar acción de mesa' });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -167,8 +167,7 @@ export async function tableStateRoutes(fastify: FastifyInstance) {
       if (status !== 500) {
         return reply.status(status).send({ error: code, message: err.message, details: err.details });
       }
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message || 'Error en override de estado' });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -215,8 +214,7 @@ export async function tableStateRoutes(fastify: FastifyInstance) {
         }))
       });
     } catch (err: any) {
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message || 'Error al obtener historial' });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -266,8 +264,7 @@ export async function tableStateRoutes(fastify: FastifyInstance) {
         })
       });
     } catch (err: any) {
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message || 'Error al consultar estados' });
+      return sendSanitizedError(reply, err);
     }
   });
 }

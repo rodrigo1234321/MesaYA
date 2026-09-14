@@ -38,6 +38,6 @@ export function sendSanitizedError(reply: FastifyReply, err: any) {
     message: publicMessage,
     statusCode,
     requestId,
-    ...(err?.details ? { details: err.details } : {})
+    ...(err?.details !== undefined ? { details: err.details } : {})
   });
 }

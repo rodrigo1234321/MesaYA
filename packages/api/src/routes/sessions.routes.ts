@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { SessionService } from '../services/session.service';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export async function sessionRoutes(fastify: FastifyInstance) {
   fastify.get('/sessions/:token', async (request, reply) => {
@@ -36,12 +37,15 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       );
       return reply.send(sessionData);
     } catch (err: any) {
-      return reply.status(err.statusCode || 404).send({
-        error: err.message || 'Restaurante o mesa no encontrados',
-        code: err.code || 'NOT_FOUND',
-        details: err.details,
-        valid: false
-      });
+      if (err?.statusCode === 404) {
+        return reply.status(404).send({
+          error: err.message || 'Restaurante o mesa no encontrados',
+          code: err.code || 'NOT_FOUND',
+          details: err.details,
+          valid: false
+        });
+      }
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -64,10 +68,13 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       const sessionData = await SessionService.getOrCreateActiveDemoSession(decoded);
       return reply.send(sessionData);
     } catch (err: any) {
-      return reply.status(err.statusCode || 404).send({
-        error: err.message || 'Mesa no encontrada',
-        valid: false
-      });
+      if (err?.statusCode === 404) {
+        return reply.status(404).send({
+          error: err.message || 'Mesa no encontrada',
+          valid: false
+        });
+      }
+      return sendSanitizedError(reply, err);
     }
   });
 }

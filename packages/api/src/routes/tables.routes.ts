@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/prisma';
 import { Sector, TableFSMState } from '@mesaya/shared';
 import { verifyStaffToken, verifyManagerRole } from '../middlewares/auth.middleware';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export async function tableRoutes(fastify: FastifyInstance) {
   fastify.get('/restaurants/:id/tables', { preHandler: [verifyStaffToken] }, async (request, reply) => {
@@ -77,8 +78,7 @@ export async function tableRoutes(fastify: FastifyInstance) {
 
       return reply.status(201).send(table);
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -109,8 +109,7 @@ export async function tableRoutes(fastify: FastifyInstance) {
       const result = await SessionService.closeTableSession(id, closeOptions);
       return reply.send(result);
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message, code: err.code, details: err.details });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -126,8 +125,7 @@ export async function tableRoutes(fastify: FastifyInstance) {
       const token = await SessionService.createNewSessionForTable(id);
       return reply.send({ success: true, token });
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message, code: err.code, details: err.details });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -142,8 +140,7 @@ export async function tableRoutes(fastify: FastifyInstance) {
       await prisma.table.delete({ where: { id } });
       return reply.send({ success: true });
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 }

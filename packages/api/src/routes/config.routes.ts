@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { ConfigService } from '../services/config.service';
 import { requireRestaurantAccess, verifyManagerRole } from '../middlewares/auth.middleware';
 import { UpdateModuleConfigDTO } from '@mesaya/shared';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export const configRoutes: FastifyPluginAsync = async (fastify) => {
   /**
@@ -60,8 +61,7 @@ export const configRoutes: FastifyPluginAsync = async (fastify) => {
         const config = await ConfigService.getAdminConfig(id);
         return reply.send(config);
       } catch (err: any) {
-        request.log.error(err);
-        return reply.status(500).send({ error: err.message || 'Error al obtener la configuración' });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -86,19 +86,10 @@ export const configRoutes: FastifyPluginAsync = async (fastify) => {
         );
         return reply.send(updated);
       } catch (err: any) {
-        request.log.error(err);
         if (err?.code === 'CAPABILITY_NOT_AVAILABLE' && err?.statusCode === 409) {
-          return reply.status(409).send({
-            error: err.message,
-            code: err.code,
-            field: err.field,
-            capability: err.capability
-          });
+          err.details = { field: err.field, capability: err.capability };
         }
-        return reply.status(err?.statusCode || 500).send({
-          error: err.message || 'Error al actualizar la configuración modular',
-          code: err.code
-        });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -118,8 +109,7 @@ export const configRoutes: FastifyPluginAsync = async (fastify) => {
         const logs = await ConfigService.getAuditLogs(id, limit);
         return reply.send(logs);
       } catch (err: any) {
-        request.log.error(err);
-        return reply.status(500).send({ error: err.message || 'Error al consultar logs de auditoría' });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -153,7 +143,7 @@ export const configRoutes: FastifyPluginAsync = async (fastify) => {
           message: `¡Sumas ${points} puntos MesaYA Rewards con este consumo!`
         });
       } catch (err: any) {
-        return reply.status(500).send({ error: err.message });
+        return sendSanitizedError(reply, err);
       }
     }
   );

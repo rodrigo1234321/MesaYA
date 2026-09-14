@@ -3,6 +3,7 @@ import { SalesReportsService } from '../services/sales-reports.service';
 import { ReceiptService } from '../services/receipt.service';
 import { FiscalService } from '../services/fiscal.service';
 import { verifyManagerRole, requireRestaurantAccess } from '../middlewares/auth.middleware';
+import { sendSanitizedError } from '../lib/errorHandler';
 import { prisma } from '../lib/prisma';
 
 export const salesRoutes: FastifyPluginAsync = async (fastify) => {
@@ -37,8 +38,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.send(summary);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -74,8 +74,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.send({ operations: ops });
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -124,8 +123,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         );
         return reply.send(pdfBuffer);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -157,8 +155,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(201).send(adjustment);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -273,8 +270,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         );
         return reply.send(csvContent);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -307,8 +303,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(201).send(receipt);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -328,8 +323,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         const receipt = await ReceiptService.getReceiptById(restaurantId, receiptId);
         return reply.send(receipt);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -352,8 +346,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         reply.header('Content-Disposition', `inline; filename="${receipt.receiptNumber}.pdf"`);
         return reply.send(pdfBuffer);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -399,8 +392,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(201).send(created);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -420,8 +412,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         const docs = await FiscalService.listFiscalDocuments(restaurantId);
         return reply.send({ documents: docs });
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );

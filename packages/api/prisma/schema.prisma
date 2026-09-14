@@ -586,10 +586,13 @@ model StaffUser {
   restaurant       Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   name             String
   pinHash          String
+  pinFingerprint   String?     // huella determinística HMAC (P0-04 concurrencia)
   role             String      @default("WAITER") // WAITER | MANAGER
   assignedSector   String?     // e.g. SALON_PRINCIPAL
   pushSubscription String?     // JSON serialized
   createdAt        DateTime    @default(now())
+
+  @@unique([restaurantId, pinFingerprint])
 }
 
 model Feedback {
