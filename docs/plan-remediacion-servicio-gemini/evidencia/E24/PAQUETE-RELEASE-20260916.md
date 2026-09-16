@@ -10,12 +10,12 @@ Regla: este archivo no autoriza deploy, migración, seed, publicación ni uso de
 |---|---|
 | Worktree | `C:/Users/rodri/Desktop/AI/Projects/mdpmesasvivas-servicio-remediacion` |
 | Rama | `codex/servicio-remediacion` |
-| Base/HEAD | `c321b4076784757623f8a7d0e95089964a921d15` |
+| Base/HEAD | `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4` |
 | Estado | Árbol limpio; commit de release publicado en `codex/servicio-remediacion` |
-| SHA de salida desplegable | `c321b4076784757623f8a7d0e95089964a921d15` |
+| SHA de salida desplegable | `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4` |
 | Datos reales modificados | No |
 
-El SHA es reproducible y ya pasó la CI del repositorio. Eso no certifica todavía
+El SHA es reproducible y pasó la CI del repositorio en el run `35160962710`. Eso no certifica todavía
 la migración cloud ni que un deployment Vercel existente sirva este candidato.
 
 ## Inventario local preparado
@@ -82,7 +82,8 @@ apagados y que los bundles Vite sólo contengan URLs públicas.
 
 `.github/workflows/release-migrate.yml` está activo y exige ejecución manual
 (`workflow_dispatch`) contra el Environment GitHub `production`. Ofrece un
-preflight de sólo lectura por defecto y una operación `migrate` explícita. El job usa
+preflight de sólo lectura por defecto, un `backup-drill` opcional y una operación
+`migrate` explícita. El job usa
 únicamente estas dos referencias de secreto, cuyos valores nunca deben entrar al
 repositorio ni al chat:
 
@@ -94,8 +95,11 @@ que llama al script auditado de `migrate deploy`; no hace seed ni `db push`.
 La consulta del Environment `Production` devolvió que no había reglas de
 protección observadas. Los nombres de los dos secretos requeridos están
 configurados en el Environment; sus valores nunca se leyeron ni registraron.
-La CI del candidato pasó en el run `35159908559` y el preflight remoto de sólo
-lectura pasó en `35160057353`. Vercel también informó que un valor sensible
+La CI del candidato actual pasó en el run `35160962710` y el preflight remoto de sólo
+lectura pasó en `35160057353` sobre el SHA anterior compatible. El `backup-drill`
+quedó preparado para copiar sólo `public` a un PostgreSQL efímero, restaurarlo,
+comparar schema/filas/relaciones y borrar el dump; no se ejecutó y no conserva un
+artefacto durable. Vercel también informó que un valor sensible
 no podía descargarse con `env run`; por eso no se usó como puente para consultar
 la base y no se hizo ninguna mutación remota.
 
@@ -133,8 +137,10 @@ backup/restore, carga ni que el deployment sea el candidato de remediación.
 4. Ejecutar bootstrap idempotente con PIN entregado por canal seguro; no usar
    seed demo ni registrar el PIN.
 5. Aplicar hardening de Data API/permisos, inventariar schema y probar aislamiento.
-6. Tomar backup del destino autorizado, guardar checksum y restaurarlo en otra base aislada;
-   conciliar tablas, relaciones, cuentas, cobros, recibos, sesiones y mesa.
+6. Con autorización explícita para transferir temporalmente `public` al runner,
+   ejecutar el `backup-drill` preparado, o aportar una evidencia externa durable;
+   guardar checksum y restaurar en otra base aislada; conciliar tablas,
+   relaciones, cuentas, cobros, recibos, sesiones y mesa.
 7. Construir y desplegar los cuatro proyectos a staging desde el mismo SHA;
    registrar deployment ID, URL, Node/región y variables por nombre, sin valores.
 8. Verificar HTTPS, CORS, QR canónica, health, login, recorrido navegador y
@@ -169,6 +175,8 @@ Un rollback Vercel sólo cambia código; no revierte SQL ni recupera datos.
 - Mapping SHA → cuatro deployments.
 - Proyecto PostgreSQL staging aislado, migraciones, hardening y smoke real.
 - Backup con checksum, restore en base separada, conciliación y RPO/RTO medidos.
+- El `backup-drill` del workflow está preparado pero no ejecutado; sólo cubre
+  `public`, usa un runner efímero y no deja un artefacto retenido.
 - HTTPS/CORS/QR reales, carga k6 sobre PostgreSQL y revisión de costos/plan.
 - `supabase`, `psql`, `pg_dump` y `pg_restore` no están instalados en este host;
   falta un entorno autorizado que los provea o un mecanismo equivalente.
@@ -185,6 +193,6 @@ Un rollback Vercel sólo cambia código; no revierte SQL ni recupera datos.
 ### Acciones no realizadas
 
 No se creó ni modificó ningún proyecto o variable Vercel, no se desplegó, no se
-migró, no se hizo seed, no se tomó/restauró backup real, no se hizo merge, no se
-imprimieron QR y no se usó dinero o clientela real. La rama candidata sí se
-publicó en GitHub para habilitar CI y preflight.
+migró, no se hizo seed, no se ejecutó el `backup-drill` ni se tomó/restauró un
+backup real, no se hizo merge, no se imprimieron QR y no se usó dinero o clientela
+real. La rama candidata sí se publicó en GitHub para habilitar CI y preflight.

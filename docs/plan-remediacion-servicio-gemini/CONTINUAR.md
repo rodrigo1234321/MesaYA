@@ -257,8 +257,8 @@
 - **Alcance:** preparación del paquete de release, rollback, backup/restore,
   QR, observabilidad y soporte; publicación controlada del candidato y CI.
 - **Resultado:** el commit candidato actual es
-  `c321b4076784757623f8a7d0e95089964a921d15`; se publicó la rama
-  `codex/servicio-remediacion`, CI `35159908559` pasó completamente y el
+  `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`; se publicó la rama
+  `codex/servicio-remediacion`, CI `35160962710` pasó completamente y el
   preflight remoto de sólo lectura `35160057353` también pasó. Se
   confirmó la existencia de cuatro proyectos (`api`,
   `client-web`, `staff-panel`, `admin-dashboard`) y se documentaron sus roots,
@@ -279,8 +279,9 @@
   La API de secrets de GitHub ahora devuelve `total_count=2` y confirma sólo
   los nombres `MESAYA_PG_DATABASE_URL` y `MESAYA_PG_DIRECT_URL`; los valores no
   fueron leídos. `Production` continúa sin reglas de protección observadas.
-  `release-migrate` sólo se ejecutó en modo `preflight`; `migrate` sigue sin
-  ejecutarse y los deployments Ready anteriores no exponen `gitCommitSha`.
+  `release-migrate` sólo se ejecutó en modo `preflight`; el modo manual
+  `backup-drill` quedó preparado pero no ejecutado, y `migrate` sigue sin
+  ejecutarse. Los deployments Ready anteriores no exponen `gitCommitSha`.
 - **Gate:** `VERIFIED_LOCAL` documental + CI del candidato y preflight cloud de
   sólo lectura; `PENDING_CLOUD` para PostgreSQL completo, hardening,
   backup/restore, mapping SHA/deploy, HTTPS/CORS/QR,
@@ -295,8 +296,10 @@
 La autorización de producción ya fue dada por el usuario. Los secretos de
 migración están configurados, el SHA limpio pasó CI y el preflight remoto
 confirmó el destino; el canal permanece bloqueado hasta demostrar
-backup/restore del destino y fijar su alcance. Luego: ejecutar el workflow
-manual auditado en modo `migrate`, desplegar ese mismo SHA en
+backup/restore del destino y fijar su alcance. El `backup-drill` preparado
+requiere autorización explícita para copiar temporalmente el esquema `public`
+al runner de GitHub, o una evidencia externa equivalente. Luego: ejecutar el
+workflow manual auditado en modo `migrate`, desplegar ese mismo SHA en
 los cuatro proyectos Vercel y probar health/CORS/QR/login y el flujo con datos
 de prueba. Repetir E22 sobre PostgreSQL y después habilitar E23 con personas y
 equipos. No pegar secretos en el chat.

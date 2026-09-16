@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-16
 Worktree: `C:/Users/rodri/Desktop/AI/Projects/mdpmesasvivas-servicio-remediacion`
-HEAD observado: `c321b4076784757623f8a7d0e95089964a921d15`
+HEAD observado: `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`
 
 ## Comandos y resultados
 
@@ -37,12 +37,15 @@ HEAD observado: `c321b4076784757623f8a7d0e95089964a921d15`
 | comprobación de herramientas `supabase/psql/pg_dump/pg_restore` | — | No disponibles en este host; S30 queda pendiente |
 | CI `35159908559` sobre `c321b4076784757623f8a7d0e95089964a921d15` | 0 | Jobs `postgres` y `build-and-test` verdes: build/smoke PG, suite PG, paridad, rutas y SQLite |
 | preflight remoto `35160057353` sobre `c321b4076784757623f8a7d0e95089964a921d15` | 0 | `CLOUD_PREFLIGHT=PASS`, mismo destino en ambas conexiones, `_prisma_migrations` presente y esquema núcleo completo |
+| CI `35160962710` sobre `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4` | 0 | Jobs `postgres` y `build-and-test` verdes después de agregar el modo manual `backup-drill` |
+| `gh workflow view release-migrate.yml --ref codex/servicio-remediacion --yaml` | 0 | Workflow válido; `preflight`, `backup-drill` y `migrate` están separados y la operación por defecto sigue siendo de sólo lectura |
 
 Las consultas Vercel y GitHub fueron de lectura salvo la publicación autorizada
 de la rama/commit candidato y la ejecución del workflow `release-migrate` en
 modo `preflight`. No se ejecutaron `vercel deploy`,
 `vercel env add/rm`, `vercel link`, `supabase`, `migrate deploy`, `db push`,
-`seed`, `gh workflow run ... operation=migrate` ni comandos de backup contra un
+`seed`, `gh workflow run ... operation=migrate` ni `gh workflow run ...
+operation=backup-drill`; tampoco se ejecutaron comandos de backup contra un
 destino remoto. El
 intento de `vercel env run` no se considera acceso a la base: al no poder
 descargar un valor sensible, el proceso que continuó usó el entorno local y no
@@ -62,12 +65,13 @@ OpenCode corriendo.
 - Los artefactos JSON de E22 quedan referenciados por su sanitización previa;
   E24 no los vuelve a exportar ni duplica sus datos sensibles.
 - `evidencia/E24/DESBLOQUEO-CLOUD.md` fue agregado como guía de desbloqueo sin
-  Docker; es documentación, no una ejecución de migración o backup.
+  Docker; el workflow `backup-drill` quedó preparado, pero es documentación de
+  ejecución condicionada, no una ejecución de migración o backup.
 
 ## Dictamen
 
 `PASS_LOCAL` para preparación documental y CI del candidato; el preflight remoto
-de sólo lectura pasó. `PENDING_CLOUD` para S23/S30 completo, deployment,
-dominio, variables efectivas, hardening, backup/restore, carga PostgreSQL y
-costos.
+de sólo lectura pasó. `PENDING_CLOUD` para S23/S30 completo, backup/restore
+(drill preparado pero no ejecutado), deployment, dominio, variables efectivas,
+hardening, carga PostgreSQL y costos.
 `PENDING_HUMAN` para E23 y aprobación operativa. Dictamen actual: **NO-GO**.

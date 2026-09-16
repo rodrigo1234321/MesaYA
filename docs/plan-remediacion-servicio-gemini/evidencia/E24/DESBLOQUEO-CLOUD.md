@@ -47,8 +47,11 @@ equipos reales.
 La consulta autorizada de GitHub devolvió `total_count=2` para secrets de
 `Production`, con los nombres requeridos configurados. La rama
 `codex/servicio-remediacion` contiene el commit candidato
-`c321b4076784757623f8a7d0e95089964a921d15`; la CI `35159908559` terminó en
+`9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`; la CI `35160962710` terminó en
 éxito y el preflight remoto de sólo lectura `35160057353` confirmó el mismo
-destino y el esquema núcleo. No se realizó migración/deploy ni backup/restore
-real, y Vercel muestra secretos ocultos que no permite exportar. El workflow
-manual ofrece `preflight` por defecto y `migrate` sólo como operación explícita.
+destino y el esquema núcleo sobre el SHA anterior compatible. No se realizó
+migración/deploy ni backup/restore real, y Vercel muestra secretos ocultos que
+no permite exportar. El workflow manual ofrece `preflight` por defecto,
+`backup-drill` opcional de esquema `public` en runner efímero y `migrate` sólo
+como operación explícita. El drill no se ejecutará sin autorización expresa
+para esa transferencia temporal o sin evidencia externa equivalente.

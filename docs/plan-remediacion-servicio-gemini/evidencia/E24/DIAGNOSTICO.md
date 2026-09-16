@@ -1,9 +1,10 @@
 # E24 — Diagnóstico de preparación de release
 
 Fecha: 2026-09-16
-Entrada: `c321b4076784757623f8a7d0e95089964a921d15`
-Alcance: lectura local, lectura remota Vercel y preflight PostgreSQL remoto;
-sin mutaciones de base, migración ni deploy.
+Entrada: `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`
+Alcance: lectura local, lectura remota Vercel, preflight PostgreSQL remoto y
+preparación de un workflow de backup/restore; sin transferencia de datos,
+migración ni deploy.
 
 ## Lo que está bien
 
@@ -28,9 +29,11 @@ sin mutaciones de base, migración ni deploy.
    dos URLs y presencia del historial Prisma/esquema núcleo, pero no reemplaza
    una migración ni el backup/restore.
 2. No hay prueba S30 completa ejecutada en PostgreSQL: faltan herramientas
-   locales y evidencia de backup/restauración aislada. El documento existente
-   de backup es procedimiento/documentación, no evidencia suficiente del gate
-   cloud actual.
+   locales y evidencia de backup/restauración aislada. Se preparó un
+   `backup-drill` manual de alcance `public` que usaría un PostgreSQL efímero
+   en GitHub y borraría el dump al terminar, pero sigue sin ejecutarse y no
+   produce retención durable; el documento existente continúa siendo
+   procedimiento/documentación, no evidencia suficiente del gate cloud actual.
 3. El commit candidato está limpio y publicado, pero los deployment IDs visibles
    están registrados sin mapping probado
    entre ellos, su SHA fuente y este candidato. El smoke baseline no sustituye
@@ -45,12 +48,14 @@ sin mutaciones de base, migración ni deploy.
 7. El canal remoto de migración ya tiene los dos secretos explícitos y el
    preflight de sólo lectura pasó; el Environment `Production` no mostró reglas
    de protección. Vercel sí tiene secretos ocultos, pero no permite descargarlos.
-   No se migró ni modificó la base.
+   El workflow ahora incluye un drill aislado preparado, pero no se ejecutó el
+   drill, no se migró ni se modificó la base.
 
 ## Decisión
 
 E24 queda preparada y verificada en alcance local/documental más preflight cloud
 de sólo lectura. Aunque el usuario autorizó avanzar hacia producción, el estado
 global de MesaYA sigue siendo `NO-GO` para producción, con `PENDING_CLOUD` y
-`PENDING_HUMAN`, porque faltan backup/restore, migración, deployment trazable y
-E23. Ningún documento de preparación ni preflight reemplaza S30 ni E23.
+`PENDING_HUMAN`, porque faltan backup/restore (el drill preparado aún no fue
+autorizado ni ejecutado), migración, deployment trazable y E23. Ningún documento
+de preparación ni preflight reemplaza S30 ni E23.

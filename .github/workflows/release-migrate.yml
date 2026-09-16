@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: 'Operación cloud: preflight de sólo lectura o migración'
+        description: 'Operación cloud: preflight, backup-drill aislado o migración'
         required: true
         type: choice
         default: preflight
