@@ -10,14 +10,13 @@ Regla: este archivo no autoriza deploy, migración, seed, publicación ni uso de
 |---|---|
 | Worktree | `C:/Users/rodri/Desktop/AI/Projects/mdpmesasvivas-servicio-remediacion` |
 | Rama | `codex/servicio-remediacion` |
-| Base/HEAD | `7bcddf6bf298f6cb15da70579fb49b9ecd7d1c83` |
-| Estado | Árbol sucio con cambios E00–E22 preservados; sin commit de release |
-| SHA de salida desplegable | **NO DISPONIBLE** hasta separar, revisar y commitear el candidato |
+| Base/HEAD | `66802e642b9248b1396bb75fdc063941663c251a` |
+| Estado | Árbol limpio; commit de release publicado en `codex/servicio-remediacion` |
+| SHA de salida desplegable | `66802e642b9248b1396bb75fdc063941663c251a` |
 | Datos reales modificados | No |
 
-Mientras el árbol permanezca sucio no existe un artefacto reproducible que pueda
-mapearse de forma honesta a un deployment. El HEAD anterior es la base de trabajo,
-no un certificado de la integración completa.
+El SHA es reproducible y ya pasó la CI del repositorio. Eso no certifica todavía
+la migración cloud ni que un deployment Vercel existente sirva este candidato.
 
 ## Inventario local preparado
 
@@ -92,9 +91,9 @@ repositorio ni al chat:
 El workflow ejecuta `npm --workspace=@mesaya/api run prisma:postgres:migrate`,
 que llama al script auditado de `migrate deploy`; no hace seed ni `db push`.
 La consulta del Environment `Production` devolvió que no había reglas de
-protección observadas, y los listados de secretos de repositorio/environment no
-devolvieron nombres. Esto deja el canal sin evidencia de autenticación y
-aprobación suficiente para migrar. Vercel también informó que un valor sensible
+protección observadas. Los nombres de los dos secretos requeridos están
+configurados en el Environment; sus valores nunca se leyeron ni registraron.
+La CI del candidato pasó en el run `35158415568`. Vercel también informó que un valor sensible
 no podía descargarse con `env run`; por eso no se usó como puente para consultar
 la base y no se hizo ninguna mutación remota.
 
@@ -131,7 +130,7 @@ backup/restore, carga ni que el deployment sea el candidato de remediación.
 4. Ejecutar bootstrap idempotente con PIN entregado por canal seguro; no usar
    seed demo ni registrar el PIN.
 5. Aplicar hardening de Data API/permisos, inventariar schema y probar aislamiento.
-6. Tomar backup de staging, guardar checksum y restaurarlo en otra base aislada;
+6. Tomar backup del destino autorizado, guardar checksum y restaurarlo en otra base aislada;
    conciliar tablas, relaciones, cuentas, cobros, recibos, sesiones y mesa.
 7. Construir y desplegar los cuatro proyectos a staging desde el mismo SHA;
    registrar deployment ID, URL, Node/región y variables por nombre, sin valores.

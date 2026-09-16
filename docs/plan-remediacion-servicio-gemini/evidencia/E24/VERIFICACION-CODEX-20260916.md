@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-16
 Worktree: `C:/Users/rodri/Desktop/AI/Projects/mdpmesasvivas-servicio-remediacion`
-HEAD observado: `7bcddf6bf298f6cb15da70579fb49b9ecd7d1c83`
+HEAD observado: `66802e642b9248b1396bb75fdc063941663c251a`
 
 ## Comandos y resultados
 
@@ -27,16 +27,18 @@ HEAD observado: `7bcddf6bf298f6cb15da70579fb49b9ecd7d1c83`
 | `vercel env ls --project ...` | 0 | Nombres/tipo/ambiente; sólo representación truncada, sin valores completos guardados |
 | `gh workflow list --repo rodrigo1234321/MesaYA` | 0 | `ci` y `release-migrate` activos; el release es `workflow_dispatch` |
 | `gh api .../environments/Production` | 0 | Environment existente; sin reglas de protección observadas |
-| `gh secret list` repo + `--env Production` | 0 | No devolvió nombres de secretos/variables visibles; no se solicitaron valores |
-| `gh api .../environments/Production/secrets` | 0 | `total_count=0`; consulta autorizada, sin secrets configurados/visibles |
+| `gh secret list` repo + `--env Production` | 0 | Environment con `MESAYA_PG_DATABASE_URL` y `MESAYA_PG_DIRECT_URL`; no se solicitaron valores |
+| `gh api .../environments/Production/secrets` | 0 | `total_count=2`; sólo se verificaron nombres, nunca valores |
 | `gh run list --workflow release-migrate.yml --limit 5` | 0 | No hay ejecuciones del workflow de migración |
 | `vercel inspect <alias> --json` (API + 3 SPAs) | 0 | Deployments Ready confirmados; metadatos públicos sin `gitCommitSha` |
 | `vercel env ls --project api production` | 0 | Cuatro variables `Secret` ocultas en producción; sus valores no son exportables |
 | `vercel env run -e production --project api ...` | — | Vercel informó que un valor sensible no podía descargarse; no hubo consulta ni mutación PostgreSQL |
 | smoke HTTP repetido `health`, SPAs y preflight CORS | 0 | Baseline remoto confirmado: health/SPAs 200, origin válida 204 con CORS/credenciales, origin no autorizada 404 sin CORS |
 | comprobación de herramientas `supabase/psql/pg_dump/pg_restore` | — | No disponibles en este host; S30 queda pendiente |
+| CI `35158415568` sobre `66802e642b9248b1396bb75fdc063941663c251a` | 0 | Jobs `postgres` y `build-and-test` verdes: build/smoke PG, suite PG, paridad, rutas y SQLite |
 
-Las consultas Vercel y GitHub fueron de lectura. No se ejecutaron `vercel deploy`,
+Las consultas Vercel y GitHub fueron de lectura salvo la publicación autorizada
+de la rama/commit candidato. No se ejecutaron `vercel deploy`,
 `vercel env add/rm`, `vercel link`, `supabase`, `migrate deploy`, `db push`,
 `seed`, `gh workflow run` ni comandos de backup contra un destino remoto. El
 intento de `vercel env run` no se considera acceso a la base: al no poder
@@ -61,7 +63,7 @@ OpenCode corriendo.
 
 ## Dictamen
 
-`PASS_LOCAL` para preparación documental. `PENDING_CLOUD` para S23/S30,
+`PASS_LOCAL` para preparación documental y CI del candidato. `PENDING_CLOUD` para S23/S30,
 deployment, dominio, variables efectivas, canal seguro de migración, backup/
 restore, carga PostgreSQL y costos.
 `PENDING_HUMAN` para E23 y aprobación operativa. Dictamen actual: **NO-GO**.

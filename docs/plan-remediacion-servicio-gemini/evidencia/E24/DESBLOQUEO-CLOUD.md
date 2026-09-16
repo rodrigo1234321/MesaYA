@@ -42,9 +42,12 @@ resultado, se desplegará ese mismo SHA en `api`, `client-web`, `staff-panel` y
 E22 sobre PostgreSQL y se mantendrá E23 pendiente hasta contar con operadores y
 equipos reales.
 
-## Estado observado al crear esta guía
+## Estado observado en la actualización de esta guía
 
-La consulta autorizada de GitHub devolvió `total_count=0` para secrets de
-`Production`, no hay ejecuciones de `release-migrate`, la rama local no existe
-remotamente y Vercel muestra secretos ocultos que no permite exportar. No se
-realizó ninguna mutación remota.
+La consulta autorizada de GitHub devolvió `total_count=2` para secrets de
+`Production`, con los nombres requeridos configurados. La rama
+`codex/servicio-remediacion` contiene el commit
+`66802e642b9248b1396bb75fdc063941663c251a`, y la CI `35158415568` terminó en
+éxito. No hay ejecuciones de `release-migrate`, no se realizó migración/deploy
+ni backup/restore real, y Vercel muestra secretos ocultos que no permite
+exportar.
