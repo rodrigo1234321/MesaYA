@@ -97,8 +97,10 @@ La consulta del Environment `Production` devolvió que no había reglas de
 protección observadas. Los nombres de los dos secretos requeridos están
 configurados en el Environment; sus valores nunca se leyeron ni registraron.
 La CI del candidato actual pasó en el run `35160962710` y el preflight remoto de sólo
-lectura pasó nuevamente en `35162520660` sobre la rama actual; el primer éxito fue
-`35160057353` sobre el SHA anterior compatible. El `backup-drill`
+lectura pasó nuevamente en `35163274570` sobre el HEAD actual
+`78cef6fc754e46fe47a60a1447426f7c447d760b`; también pasó en `35162520660` sobre
+el SHA de documentación previo y el primer éxito fue `35160057353` sobre el SHA
+anterior compatible. El `backup-drill`
 quedó preparado para copiar sólo `public` a un PostgreSQL efímero, restaurarlo,
 comparar schema/filas/relaciones y borrar el dump; no se ejecutó y no conserva un
 artefacto durable. Vercel también informó que un valor sensible
@@ -183,7 +185,7 @@ Un rollback Vercel sólo cambia código; no revierte SQL ni recupera datos.
 - HTTPS/CORS/QR reales, carga k6 sobre PostgreSQL y revisión de costos/plan.
 - `supabase`, `psql`, `pg_dump` y `pg_restore` no están instalados en este host;
   falta un entorno autorizado que los provea o un mecanismo equivalente.
-- El preflight remoto pasó en `35160057353`; los valores de secretos no se
+- El preflight remoto pasó en `35163274570` sobre el HEAD actual; los valores de secretos no se
   solicitaron ni se registran aquí.
 
 ### PENDING_HUMAN
