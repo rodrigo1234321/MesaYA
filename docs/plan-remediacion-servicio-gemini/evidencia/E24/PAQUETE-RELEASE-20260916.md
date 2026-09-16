@@ -97,7 +97,8 @@ La consulta del Environment `Production` devolvió que no había reglas de
 protección observadas. Los nombres de los dos secretos requeridos están
 configurados en el Environment; sus valores nunca se leyeron ni registraron.
 La CI del candidato actual pasó en el run `35160962710` y el preflight remoto de sólo
-lectura pasó en `35160057353` sobre el SHA anterior compatible. El `backup-drill`
+lectura pasó nuevamente en `35162520660` sobre la rama actual; el primer éxito fue
+`35160057353` sobre el SHA anterior compatible. El `backup-drill`
 quedó preparado para copiar sólo `public` a un PostgreSQL efímero, restaurarlo,
 comparar schema/filas/relaciones y borrar el dump; no se ejecutó y no conserva un
 artefacto durable. Vercel también informó que un valor sensible

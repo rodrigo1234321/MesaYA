@@ -259,7 +259,8 @@
 - **Resultado:** el commit candidato actual es
   `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`; se publicó la rama
   `codex/servicio-remediacion`, CI `35160962710` pasó completamente y el
-  preflight remoto de sólo lectura `35160057353` también pasó. Se
+  preflight remoto de sólo lectura `35162520660` volvió a pasar. El primer
+  éxito fue `35160057353`. Se
   confirmó la existencia de cuatro proyectos (`api`,
   `client-web`, `staff-panel`, `admin-dashboard`) y se documentaron sus roots,
   Node 22, región, aliases y deployments visibles. La lectura actual también
@@ -282,7 +283,8 @@
   La API de secrets de GitHub ahora devuelve `total_count=2` y confirma sólo
   los nombres `MESAYA_PG_DATABASE_URL` y `MESAYA_PG_DIRECT_URL`; los valores no
   fueron leídos. `Production` continúa sin reglas de protección observadas.
-  `release-migrate` sólo se ejecutó en modo `preflight`; el modo manual
+  `release-migrate` sólo se ejecutó en modo `preflight` (último run
+  `35162520660`); el modo manual
   `backup-drill` quedó preparado pero no ejecutado, y `migrate` sigue sin
   ejecutarse. Los deployments Ready actuales exponen SHAs anteriores, no el
   candidato `9e4a4a0`; la publicación del candidato en los cuatro proyectos

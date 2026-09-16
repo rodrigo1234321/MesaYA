@@ -39,6 +39,7 @@ HEAD observado: `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`
 | preflight remoto `35160057353` sobre `c321b4076784757623f8a7d0e95089964a921d15` | 0 | `CLOUD_PREFLIGHT=PASS`, mismo destino en ambas conexiones, `_prisma_migrations` presente y esquema núcleo completo |
 | CI `35160962710` sobre `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4` | 0 | Jobs `postgres` y `build-and-test` verdes después de agregar el modo manual `backup-drill` |
 | `gh workflow view release-migrate.yml --ref codex/servicio-remediacion --yaml` | 0 | Workflow válido; `preflight`, `backup-drill` y `migrate` están separados y la operación por defecto sigue siendo de sólo lectura |
+| preflight remoto `35162520660` sobre `50f7c82d65564d7d0f361c9959762b4aea98b69d` | 0 | `CLOUD_PREFLIGHT=PASS`; mismo destino, `_prisma_migrations` presente y esquema núcleo completo; `backup_drill` y `migrate` omitidos |
 
 Las consultas Vercel y GitHub fueron de lectura salvo la publicación autorizada
 de la rama/commit candidato y la ejecución del workflow `release-migrate` en
