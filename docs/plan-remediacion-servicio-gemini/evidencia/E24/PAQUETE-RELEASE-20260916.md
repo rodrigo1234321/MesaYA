@@ -115,7 +115,8 @@ probar backup/restore y fijar el alcance operativo.
 ## Smoke HTTP remoto de baseline
 
 Se ejecutaron únicamente peticiones de lectura contra los aliases productivos
-visibles el 2026-09-16. No se les atribuye el SHA local.
+visibles el 2026-09-16 y se repitieron en esta verificación. No se les atribuye
+el SHA local.
 
 - `https://api-mesa-ya.vercel.app/health` → HTTP 200.
 - `https://api-mesa-ya.vercel.app/v1/health` → HTTP 200.

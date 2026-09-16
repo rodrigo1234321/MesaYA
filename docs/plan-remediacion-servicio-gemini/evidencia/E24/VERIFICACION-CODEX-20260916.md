@@ -41,6 +41,7 @@ HEAD observado: `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`
 | `gh workflow view release-migrate.yml --ref codex/servicio-remediacion --yaml` | 0 | Workflow válido; `preflight`, `backup-drill` y `migrate` están separados y la operación por defecto sigue siendo de sólo lectura |
 | preflight remoto `35162520660` sobre `50f7c82d65564d7d0f361c9959762b4aea98b69d` | 0 | `CLOUD_PREFLIGHT=PASS`; mismo destino, `_prisma_migrations` presente y esquema núcleo completo; `backup_drill` y `migrate` omitidos |
 | preflight remoto `35163274570` sobre `78cef6fc754e46fe47a60a1447426f7c447d760b` | 0 | `CLOUD_PREFLIGHT=PASS`; mismo destino, `_prisma_migrations` presente y esquema núcleo completo; `backup_drill` y `migrate` omitidos |
+| smoke HTTP directo repetido sobre aliases productivos | 0 | `/health` y `/v1/health` 200; las tres SPAs 200/HTML; CORS permitido 204 con origin explícita y credenciales; origin inválida 404 sin CORS |
 
 Las consultas Vercel y GitHub fueron de lectura salvo la publicación autorizada
 de la rama/commit candidato y la ejecución del workflow `release-migrate` en
