@@ -1,8 +1,9 @@
 # E24 — Diagnóstico de preparación de release
 
 Fecha: 2026-09-16
-Entrada: `7bcddf6bf298f6cb15da70579fb49b9ecd7d1c83`
-Alcance: lectura local y lectura remota Vercel; sin mutaciones.
+Entrada: `c321b4076784757623f8a7d0e95089964a921d15`
+Alcance: lectura local, lectura remota Vercel y preflight PostgreSQL remoto;
+sin mutaciones de base, migración ni deploy.
 
 ## Lo que está bien
 
@@ -23,12 +24,15 @@ Alcance: lectura local y lectura remota Vercel; sin mutaciones.
 
 ## Falencias/bloqueos reales
 
-1. No hay commit limpio de release; el worktree conserva cambios de muchas
-   etapas. No puede declararse un artefacto desplegable.
-2. No hay prueba S30 ejecutada en PostgreSQL: faltan herramientas y entorno
-   autorizado. El documento existente de backup es procedimiento/documentación,
-   no evidencia suficiente del gate cloud actual.
-3. Los deployment IDs visibles están registrados, pero no hay mapping probado
+1. El preflight remoto confirmó conectividad, coincidencia de destino entre las
+   dos URLs y presencia del historial Prisma/esquema núcleo, pero no reemplaza
+   una migración ni el backup/restore.
+2. No hay prueba S30 completa ejecutada en PostgreSQL: faltan herramientas
+   locales y evidencia de backup/restauración aislada. El documento existente
+   de backup es procedimiento/documentación, no evidencia suficiente del gate
+   cloud actual.
+3. El commit candidato está limpio y publicado, pero los deployment IDs visibles
+   están registrados sin mapping probado
    entre ellos, su SHA fuente y este candidato. El smoke baseline no sustituye
    la verificación del candidato ni permite afirmar que los valores efectivos de
    variables sean correctos; no se descargaron valores completos.
@@ -38,17 +42,15 @@ Alcance: lectura local y lectura remota Vercel; sin mutaciones.
 6. Documentos históricos discrepan en nombres de proyectos y en el conteo de
    migraciones; deben reconciliarse en el release candidate/staging, no por
    suposición.
-7. El canal remoto de migración no está listo para ejecución demostrable:
-   `release-migrate.yml` requiere dos secretos explícitos, el Environment
-   `Production` no mostró reglas de protección y `gh secret list` no devolvió
-   nombres para repo/environment; la consulta REST confirmó `total_count=0` con
-   permisos administrativos. Vercel sí tiene secretos ocultos, pero no permite
-   descargarlos. No se consultó ni modificó la base.
+7. El canal remoto de migración ya tiene los dos secretos explícitos y el
+   preflight de sólo lectura pasó; el Environment `Production` no mostró reglas
+   de protección. Vercel sí tiene secretos ocultos, pero no permite descargarlos.
+   No se migró ni modificó la base.
 
 ## Decisión
 
-E24 queda preparada y verificada sólo en el alcance local/documental. Aunque el
-usuario autorizó avanzar hacia producción, el estado global de MesaYA sigue
-siendo `NO-GO` para producción, con `PENDING_CLOUD` y `PENDING_HUMAN`, porque
-faltan canal seguro de migración, backup/restore y SHA trazable. Ningún documento
-de preparación reemplaza S30 ni E23.
+E24 queda preparada y verificada en alcance local/documental más preflight cloud
+de sólo lectura. Aunque el usuario autorizó avanzar hacia producción, el estado
+global de MesaYA sigue siendo `NO-GO` para producción, con `PENDING_CLOUD` y
+`PENDING_HUMAN`, porque faltan backup/restore, migración, deployment trazable y
+E23. Ningún documento de preparación ni preflight reemplaza S30 ni E23.

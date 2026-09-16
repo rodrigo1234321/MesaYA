@@ -256,9 +256,10 @@
 
 - **Alcance:** preparación del paquete de release, rollback, backup/restore,
   QR, observabilidad y soporte; publicación controlada del candidato y CI.
-- **Resultado:** se creó el commit reproducible
-  `66802e642b9248b1396bb75fdc063941663c251a`, se publicó la rama
-  `codex/servicio-remediacion` y CI `35158415568` pasó completamente. Se
+- **Resultado:** el commit candidato actual es
+  `c321b4076784757623f8a7d0e95089964a921d15`; se publicó la rama
+  `codex/servicio-remediacion`, CI `35159908559` pasó completamente y el
+  preflight remoto de sólo lectura `35160057353` también pasó. Se
   confirmó la existencia de cuatro proyectos (`api`,
   `client-web`, `staff-panel`, `admin-dashboard`) y se documentaron sus roots,
   Node 22, región y deployments visibles. Se enumeraron nombres de variables
@@ -269,18 +270,20 @@
 - **Verificación:** manifiesto de instancia en modo producción exit 0; plan de
   provisioning `PLAN_ONLY` exit 0; tests de manifiesto exit 0; checker E22 exit
   0; consultas Vercel de lectura exit 0. Supabase CLI y `psql/pg_dump/pg_restore`
-  no están disponibles, por lo que S30 sigue pendiente. GitHub tiene activo el
-  workflow manual `release-migrate`; no se observaron reglas de protección en
-  `Production`, y sus dos nombres de secretos requeridos están configurados.
+  no están disponibles, por lo que S30 completo sigue pendiente; el preflight
+  remoto de sólo lectura pasó. GitHub tiene activo el workflow manual
+  `release-migrate`; no se observaron reglas de protección en `Production`, y
+  sus dos nombres de secretos requeridos están configurados.
   Vercel no pudo descargar un valor sensible en `env run`. Una corrida fresca de `npm run test:local` pasó
   796 tests (3 omitidos) en 88 archivos (1 omitido) y limpió su sandbox.
   La API de secrets de GitHub ahora devuelve `total_count=2` y confirma sólo
   los nombres `MESAYA_PG_DATABASE_URL` y `MESAYA_PG_DIRECT_URL`; los valores no
   fueron leídos. `Production` continúa sin reglas de protección observadas.
-  No se ejecutó todavía `release-migrate` y los deployments Ready anteriores no
-  exponen `gitCommitSha`.
-- **Gate:** `VERIFIED_LOCAL` documental + CI del candidato; `PENDING_CLOUD` para
-  PostgreSQL, hardening, backup/restore, mapping SHA/deploy, HTTPS/CORS/QR,
+  `release-migrate` sólo se ejecutó en modo `preflight`; `migrate` sigue sin
+  ejecutarse y los deployments Ready anteriores no exponen `gitCommitSha`.
+- **Gate:** `VERIFIED_LOCAL` documental + CI del candidato y preflight cloud de
+  sólo lectura; `PENDING_CLOUD` para PostgreSQL completo, hardening,
+  backup/restore, mapping SHA/deploy, HTTPS/CORS/QR,
   carga y costos;
   `PENDING_HUMAN` para E23 y aprobación operativa. Dictamen actual: `NO-GO`.
 - **Evidencia:** `evidencia/E24/PAQUETE-RELEASE-20260916.md`,
@@ -290,9 +293,10 @@
 ## Próxima acción exacta
 
 La autorización de producción ya fue dada por el usuario. Los secretos de
-migración están configurados y el SHA limpio ya pasó CI; el canal permanece
-bloqueado hasta demostrar backup/restore del destino y fijar el alcance de la
-base. Luego: ejecutar el workflow manual auditado, desplegar ese mismo SHA en
+migración están configurados, el SHA limpio pasó CI y el preflight remoto
+confirmó el destino; el canal permanece bloqueado hasta demostrar
+backup/restore del destino y fijar su alcance. Luego: ejecutar el workflow
+manual auditado en modo `migrate`, desplegar ese mismo SHA en
 los cuatro proyectos Vercel y probar health/CORS/QR/login y el flujo con datos
 de prueba. Repetir E22 sobre PostgreSQL y después habilitar E23 con personas y
 equipos. No pegar secretos en el chat.

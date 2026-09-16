@@ -10,9 +10,9 @@ Regla: este archivo no autoriza deploy, migración, seed, publicación ni uso de
 |---|---|
 | Worktree | `C:/Users/rodri/Desktop/AI/Projects/mdpmesasvivas-servicio-remediacion` |
 | Rama | `codex/servicio-remediacion` |
-| Base/HEAD | `66802e642b9248b1396bb75fdc063941663c251a` |
+| Base/HEAD | `c321b4076784757623f8a7d0e95089964a921d15` |
 | Estado | Árbol limpio; commit de release publicado en `codex/servicio-remediacion` |
-| SHA de salida desplegable | `66802e642b9248b1396bb75fdc063941663c251a` |
+| SHA de salida desplegable | `c321b4076784757623f8a7d0e95089964a921d15` |
 | Datos reales modificados | No |
 
 El SHA es reproducible y ya pasó la CI del repositorio. Eso no certifica todavía
@@ -81,7 +81,8 @@ apagados y que los bundles Vite sólo contengan URLs públicas.
 ## Canal remoto de migración observado
 
 `.github/workflows/release-migrate.yml` está activo y exige ejecución manual
-(`workflow_dispatch`) contra el Environment GitHub `production`. El job usa
+(`workflow_dispatch`) contra el Environment GitHub `production`. Ofrece un
+preflight de sólo lectura por defecto y una operación `migrate` explícita. El job usa
 únicamente estas dos referencias de secreto, cuyos valores nunca deben entrar al
 repositorio ni al chat:
 
@@ -93,13 +94,15 @@ que llama al script auditado de `migrate deploy`; no hace seed ni `db push`.
 La consulta del Environment `Production` devolvió que no había reglas de
 protección observadas. Los nombres de los dos secretos requeridos están
 configurados en el Environment; sus valores nunca se leyeron ni registraron.
-La CI del candidato pasó en el run `35158415568`. Vercel también informó que un valor sensible
+La CI del candidato pasó en el run `35159908559` y el preflight remoto de sólo
+lectura pasó en `35160057353`. Vercel también informó que un valor sensible
 no podía descargarse con `env run`; por eso no se usó como puente para consultar
 la base y no se hizo ninguna mutación remota.
 
 La autorización explícita del usuario para avanzar hacia producción queda
-registrada, pero sólo puede ejecutarse después de configurar los secretos por un
-canal seguro, probar backup/restore y fijar un SHA reproducible.
+registrada. Los secretos están configurados y el preflight remoto confirmó el
+destino y el esquema núcleo; la migración sólo puede ejecutarse después de
+probar backup/restore y fijar el alcance operativo.
 
 ## Smoke HTTP remoto de baseline
 
@@ -163,15 +166,14 @@ Un rollback Vercel sólo cambia código; no revierte SQL ni recupera datos.
 
 ### PENDING_CLOUD
 
-- Commit limpio de release y mapping SHA → cuatro deployments.
+- Mapping SHA → cuatro deployments.
 - Proyecto PostgreSQL staging aislado, migraciones, hardening y smoke real.
 - Backup con checksum, restore en base separada, conciliación y RPO/RTO medidos.
 - HTTPS/CORS/QR reales, carga k6 sobre PostgreSQL y revisión de costos/plan.
 - `supabase`, `psql`, `pg_dump` y `pg_restore` no están instalados en este host;
   falta un entorno autorizado que los provea o un mecanismo equivalente.
-- El workflow remoto requiere que `MESAYA_PG_DATABASE_URL` y
-  `MESAYA_PG_DIRECT_URL` estén configuradas en el Environment `Production`;
-  sus valores no se solicitaron ni se registran aquí.
+- El preflight remoto pasó en `35160057353`; los valores de secretos no se
+  solicitaron ni se registran aquí.
 
 ### PENDING_HUMAN
 
@@ -183,5 +185,6 @@ Un rollback Vercel sólo cambia código; no revierte SQL ni recupera datos.
 ### Acciones no realizadas
 
 No se creó ni modificó ningún proyecto o variable Vercel, no se desplegó, no se
-migró, no se hizo seed, no se tomó/restauró backup real, no se hizo push/merge,
-no se imprimieron QR y no se usó dinero o clientela real.
+migró, no se hizo seed, no se tomó/restauró backup real, no se hizo merge, no se
+imprimieron QR y no se usó dinero o clientela real. La rama candidata sí se
+publicó en GitHub para habilitar CI y preflight.
