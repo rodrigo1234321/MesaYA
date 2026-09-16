@@ -45,16 +45,28 @@ jobs:
             sudo apt-get install -y postgresql-client
           fi
 
-          runtime_db="$(psql "${MESAYA_PG_DATABASE_URL}" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT current_database()')"
-          direct_db="$(psql "${MESAYA_PG_DIRECT_URL}" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT current_database()')"
+          strip_prisma_options() {
+            INPUT_URL="$1" node --input-type=module -e '
+              const url = new URL(process.env.INPUT_URL);
+              url.searchParams.delete("pgbouncer");
+              process.stdout.write(url.toString());
+            '
+          }
+
+          # `pgbouncer` es una opción de Prisma, no de libpq/psql. Se elimina
+          # sólo para este SELECT; la URL original queda intacta para migrate.
+          runtime_psql_url="$(strip_prisma_options "${MESAYA_PG_DATABASE_URL}")"
+          direct_psql_url="$(strip_prisma_options "${MESAYA_PG_DIRECT_URL}")"
+          runtime_db="$(psql "${runtime_psql_url}" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT current_database()')"
+          direct_db="$(psql "${direct_psql_url}" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT current_database()')"
           test -n "${runtime_db}" || { echo "La conexión runtime no devolvió identidad de base"; exit 1; }
           test "${runtime_db}" = "${direct_db}" || { echo "Las conexiones runtime y directa no apuntan a la misma base"; exit 1; }
 
-          migration_table="$(psql "${MESAYA_PG_DIRECT_URL}" -X -A -t -v ON_ERROR_STOP=1 -c \
+          migration_table="$(psql "${direct_psql_url}" -X -A -t -v ON_ERROR_STOP=1 -c \
             "SELECT CASE WHEN to_regclass('public._prisma_migrations') IS NULL THEN 'MISSING' ELSE 'PRESENT' END")"
           test "${migration_table}" = "PRESENT" || { echo "Falta public._prisma_migrations en el destino"; exit 1; }
 
-          missing_core="$(psql "${MESAYA_PG_DIRECT_URL}" -X -A -t -v ON_ERROR_STOP=1 -c "
+          missing_core="$(psql "${direct_psql_url}" -X -A -t -v ON_ERROR_STOP=1 -c "
             SELECT count(*)
             FROM (VALUES
               ('Restaurant'), ('Table'), ('TableSession'), ('Order'),
