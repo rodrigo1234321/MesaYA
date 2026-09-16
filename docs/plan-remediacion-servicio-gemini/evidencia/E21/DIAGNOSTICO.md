@@ -24,3 +24,12 @@ El log baseline citado en el handoff (`_orchestration/runs/mesaya-remediacion-e2
 ## Límite
 
 Sin herramienta de ejecución en esta corrida: focal, matriz y `git diff --check` quedan PENDIENTES de la supervisión. Gate `IMPLEMENTED_NEEDS_REVIEW`.
+
+## Verificación posterior de continuidad
+
+Este archivo conserva el diagnóstico inicial de OpenCode, realizado sin shell.
+La nota anterior quedó superada por la verificación posterior documentada en
+`reportes/E21.md` y `evidencia/E21/VERIFICACION-CODEX-20260916.md`: Codex ejecutó
+la focal, la regresión, el build, la matriz y `git diff --check`, todos con exit
+0. Por lo tanto, E21 figura actualmente como `VERIFIED_LOCAL` técnico en
+`CONTROL.md`; los gates `PENDING_CLOUD` y `PENDING_HUMAN` siguen separados.
