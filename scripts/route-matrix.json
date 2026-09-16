@@ -91,8 +91,8 @@
   { "method": "GET", "path": "/v1/tables/states/:restaurantId", "auth": "STAFF", "note": "Snapshot FSM del tenant (etapa 17)." },
   { "method": "POST", "path": "/v1/waitlist/join", "auth": "ANON", "note": "Público con rate-limit IP+tenant; sin PII en respuesta (etapas 16/25)." }
   ,{ "method": "GET", "path": "/v1/waitlist/:id/status", "auth": "ANON", "note": "Estado del propio ticket validado por teléfono; no expone PII ni lista." }
-  ,{ "method": "POST", "path": "/v1/staff/sessions/:sessionId/settle", "auth": "MANAGER", "note": "B04: liquidación por cuenta; MANAGER + tenant + idempotencyKey + versión (C4)." }
-  ,{ "method": "POST", "path": "/v1/staff/sessions/:sessionId/settle-and-close", "auth": "MANAGER", "note": "E03: comando atómico Cobrar y cerrar; MANAGER + tenant + idempotencyKey + versión total + TO_CLEAN." }
+  ,{ "method": "POST", "path": "/v1/staff/sessions/:sessionId/settle", "auth": "STAFF", "note": "B04: liquidación por cuenta; mozo con WAITER_CASH y flag allowWaitersToCollectCash o manager; verifySettlementAuthorization nunca anónimo (E12/E21)." }
+  ,{ "method": "POST", "path": "/v1/staff/sessions/:sessionId/settle-and-close", "auth": "STAFF", "note": "E03: comando atómico Cobrar y cerrar; mozo con WAITER_CASH y flag o manager; idempotencyKey + versión total + TO_CLEAN (E12/E21)." }
   ,{ "method": "POST", "path": "/v1/staff/tables/:tableId/orders", "auth": "STAFF", "note": "S05: pedido presencial por tanda atómica, origen y actor auditados." }
   ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/sales/summary", "auth": "MANAGER", "note": "Resumen financiero de ventas y cobros por período del tenant (etapa 3)." }
   ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/sales/summary/pdf", "auth": "MANAGER", "note": "Reporte resumen de ventas y cobros en formato A4 PDF informativo (etapa 4)." }
@@ -104,4 +104,6 @@
   ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/receipts/:receiptId/pdf", "auth": "MANAGER", "note": "Descarga del PDF térmico 80 mm informativo (etapa 4)." }
   ,{ "method": "POST", "path": "/v1/admin/restaurants/:restaurantId/fiscal-documents", "auth": "MANAGER", "note": "Carga manual y asociación de comprobante fiscal externo (etapa 5)." }
   ,{ "method": "GET", "path": "/v1/admin/restaurants/:restaurantId/fiscal-documents", "auth": "MANAGER", "note": "Listado de comprobantes fiscales asociados del tenant (etapa 5)." }
+  ,{ "method": "POST", "path": "/v1/staff/restaurants/:id/service-tasks/act", "auth": "STAFF", "note": "E14: alias con alcance de restaurante para el puesto de salón/cocina; verifyStaffToken + tenant explícito (E21)." }
+  ,{ "method": "POST", "path": "/v1/staff/terminal/provision", "auth": "ANON", "note": "E21: aprovisionamiento de credencial de puesto; el PIN del encargado se valida dentro de la ruta, sin preHandler de staff." }
 ]

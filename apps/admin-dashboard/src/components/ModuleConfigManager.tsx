@@ -66,6 +66,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
     if (!config) return;
     const capabilityByField: Partial<Record<keyof RestaurantModuleConfigDTO, CapabilityKey>> = {
       allowSplitBill: 'split_bill',
+      allowWaitersToCollectCash: 'waiter_cash_collection',
       enableUpsell: 'upsell',
       enableSmartTips: 'smart_tips',
       enableWaitlistPreOrder: 'waitlist_preorder',
@@ -145,6 +146,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
           </p>
         </div>
         <button
+          type="button"
           onClick={loadConfig}
           className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 mx-auto active:scale-95 transition-all shadow-md shadow-indigo-600/20"
         >
@@ -186,10 +188,13 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs font-bold">
+          <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs font-bold" role="tablist" aria-label="Vistas de configuración del local">
             <button
+              type="button"
+              role="tab"
+              aria-selected={activeSubTab === 'modules'}
               onClick={() => setActiveSubTab('modules')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
+              className={`px-3 py-1.5 rounded-lg transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
                 activeSubTab === 'modules'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -198,6 +203,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               Interruptores
             </button>
             <button
+              type="button"
+              role="tab"
+              aria-selected={activeSubTab === 'audit'}
               onClick={() => setActiveSubTab('audit')}
               className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
                 activeSubTab === 'audit'
@@ -211,6 +219,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
           </div>
 
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving}
             className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/30 active:scale-95 transition-all disabled:opacity-50"
@@ -223,14 +232,14 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
 
       {/* Notifications */}
       {successMsg && (
-        <div className="flex items-center gap-2 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold animate-in fade-in">
+        <div role="status" className="flex items-center gap-2 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
           <span>{successMsg}</span>
         </div>
       )}
 
       {errorMsg && (
-        <div className="flex items-center gap-2 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold animate-in fade-in">
+        <div role="alert" className="flex items-center gap-2 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold animate-in fade-in">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
           <span>{errorMsg}</span>
         </div>
@@ -280,6 +289,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 </div>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={config.allowSplitBill}
+                  aria-label="Dividir cuenta"
                   disabled={capabilityBlocked('split_bill') && !config.allowSplitBill}
                   onClick={() => handleToggle('allowSplitBill')}
                   className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -293,6 +305,31 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                   />
                 </button>
                 {capabilityStatus('split_bill')}
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                <div>
+                  <p className="text-xs font-bold text-slate-200">Cobro en efectivo por mozos</p>
+                  <p className="text-[11px] text-slate-400">Permite a los mozos liquidar pagos en efectivo sin solicitar PIN de encargado</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={config.allowWaitersToCollectCash}
+                  id="toggle-waiter-cash-collection"
+                  onClick={() => handleToggle('allowWaitersToCollectCash')}
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                    config.allowWaitersToCollectCash ? 'bg-emerald-500' : 'bg-slate-700'
+                  }`}
+                  aria-label="Habilitar cobro en efectivo por mozos"
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      config.allowWaitersToCollectCash ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+                {capabilityStatus('waiter_cash_collection')}
               </div>
             </div>
           </div>
@@ -319,6 +356,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 </div>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={config.allowOrdering}
+                  aria-label="Permitir comandas digitales"
                   onClick={() => handleToggle('allowOrdering')}
                   className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
                     config.allowOrdering ? 'bg-indigo-600' : 'bg-slate-700'
@@ -339,6 +379,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 </div>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={config.requireWaiterValidation}
+                  aria-label="Modo manual de revisión por el mozo"
                   onClick={() => handleToggle('requireWaiterValidation')}
                   className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
                     config.requireWaiterValidation ? 'bg-indigo-600' : 'bg-slate-700'
@@ -386,6 +429,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </div>
               <button
                 type="button"
+                role="switch"
+                aria-checked={config.enableUpsell}
+                aria-label="Smart Upselling"
                 disabled={capabilityBlocked('upsell') && !config.enableUpsell}
                 onClick={() => handleToggle('enableUpsell')}
                 className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -427,6 +473,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 </div>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={config.enableSmartTips}
+                  aria-label="Sugerencia de propinas"
                   disabled={capabilityBlocked('smart_tips') && !config.enableSmartTips}
                   onClick={() => handleToggle('enableSmartTips')}
                   className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -482,6 +531,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </div>
               <button
                 type="button"
+                role="switch"
+                aria-checked={config.enableWaitlist}
+                aria-label="Fila virtual inteligente"
                 disabled={capabilityBlocked('waitlist') && !config.enableWaitlist}
                 onClick={() => handleToggle('enableWaitlist')}
                 className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -504,6 +556,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </div>
               <button
                 type="button"
+                role="switch"
+                aria-checked={config.enableWaitlistPreOrder && config.enableWaitlist}
+                aria-label="Permitir pre-order en espera"
                 disabled={!config.enableWaitlist}
                 onClick={() => handleToggle('enableWaitlistPreOrder')}
                 className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 ${
@@ -534,6 +589,9 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </div>
               <button
                 type="button"
+                role="switch"
+                aria-checked={config.enableRewards}
+                aria-label="MesaYA Rewards"
                 disabled={capabilityBlocked('rewards') && !config.enableRewards}
                 onClick={() => handleToggle('enableRewards')}
                 className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -595,6 +653,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </p>
             </div>
             <button
+              type="button"
               onClick={loadConfig}
               className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1"
             >

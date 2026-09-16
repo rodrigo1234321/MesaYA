@@ -29,24 +29,55 @@ let orderHistory = [];
 // modo manual explícito del local debe poner una comanda delante del mozo.
 let activeOrderPolicy = { allowOrdering: true, requireWaiterValidation: false };
 let isCartSubmitting = false;
+// E17: una sola mutación por intención de agregar. Mutex lógico inmediato:
+// el segundo clic durante el envío se ignora; tras el éxito, una nueva unidad
+// intencional vuelve a estar permitida (el mutex se libera en `finally`).
+let dishAddInFlight = false;
+const cartRemoveInFlight = new Set();
 let cartSubmitIdempotencyKey = null;
+// E17: contexto del borrador para invalidar el estado auxiliar cuando cambia
+// la mesa/sesión. Nunca incluye tokens.
+let lastCartContextKey = null;
+let lastCartSubmitStorageKey = null;
 let networkState = 'unknown';
 let networkStatusTimer = null;
 let modalFocusStack = [];
 let suppressModalFocusRestore = false;
 
+function sanitizeCartKeyPart(value, fallback, maxLength) {
+  const clean = String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, maxLength);
+  return clean || fallback;
+}
+
+function getCartContextParts() {
+  const slug = (currentSession && currentSession.restaurant && currentSession.restaurant.slug)
+    || getTableParams().restaurantSlug
+    || 'noresto';
+  const table = (currentSession && currentSession.table && currentSession.table.label)
+    || getTableParams().tableLabel
+    || 'notable';
+  const sessionVersion = (currentSession && (
+    currentSession.tableSessionId
+    || currentSession.sessionId
+    || currentSession.id
+    || currentSession.expiresAt
+  )) || 'nosession';
+  const orderId = activeOrder && activeOrder.id ? String(activeOrder.id) : 'draft';
+  return {
+    slug: sanitizeCartKeyPart(slug, 'noresto', 64),
+    table: sanitizeCartKeyPart(table, 'notable', 64),
+    session: sanitizeCartKeyPart(sessionVersion, 'nosession', 64),
+    order: sanitizeCartKeyPart(orderId, 'draft', 64)
+  };
+}
+
+// E17: la clave auxiliar del borrador está ligada a restaurante/mesa/orden.
+// No usa tokens crudos ni los guarda como identificador de almacenamiento:
+// el servidor es la fuente de verdad y el borrador siempre se recarga desde
+// la API (loadActiveOrder), sin sumar estado local y respuesta remota.
 function getCartSubmitStorageKey() {
-  try {
-    const token = (currentToken || getToken() || '').trim();
-    const orderId = activeOrder?.id ? String(activeOrder.id).trim() : '';
-    const orderPart = orderId ? orderId.slice(0, 64) : 'draft';
-    const tokenPart = token ? token.slice(0, 16) : 'notoken';
-    const safeTokenPart = tokenPart.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 16) || 'notoken';
-    const safeOrderPart = orderPart.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'draft';
-    return `mesaya_cart_submit_${safeTokenPart}_${safeOrderPart}`.slice(0, 200);
-  } catch (_) {
-    return 'mesaya_cart_submit_fallback';
-  }
+  const parts = getCartContextParts();
+  return `mesaya_cart_submit_${parts.slug}_${parts.table}_${parts.session}_${parts.order}`.slice(0, 200);
 }
 
 function readPersistedCartSubmitKey(storageKey) {
@@ -60,13 +91,19 @@ function readPersistedCartSubmitKey(storageKey) {
 
 function getOrCreateCartSubmitIdempotencyKey() {
   const storageKey = getCartSubmitStorageKey();
+  if (lastCartSubmitStorageKey && lastCartSubmitStorageKey !== storageKey) {
+    try { sessionStorage.removeItem(lastCartSubmitStorageKey); } catch (_) {}
+  }
+  lastCartSubmitStorageKey = storageKey;
   const existing = readPersistedCartSubmitKey(storageKey);
   if (existing) {
     cartSubmitIdempotencyKey = existing;
     return existing;
   }
-  const orderIdPartRaw = activeOrder?.id ? String(activeOrder.id) : (currentToken || getToken() || 'draft').slice(0, 12);
-  const orderIdPart = orderIdPartRaw.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'draft';
+  const parts = getCartContextParts();
+  const orderIdPart = parts.order !== 'draft'
+    ? parts.order
+    : `draft-${parts.slug}-${parts.table}`.slice(0, 64);
   let newKey = null;
   try {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -74,12 +111,11 @@ function getOrCreateCartSubmitIdempotencyKey() {
     }
   } catch (_) { newKey = null; }
   if (!newKey) {
-    const tokenPart = (currentToken || getToken() || '').trim().slice(0, 16).replace(/[^A-Za-z0-9_-]/g, '') || 'notoken';
-    const base = `${orderIdPart}:${tokenPart}`;
+    const base = `${orderIdPart}:${parts.slug}:${parts.table}:${parts.session}`;
     let hash = 0;
     for (let i = 0; i < base.length; i++) hash = ((hash << 5) - hash + base.charCodeAt(i)) | 0;
     const hex = Math.abs(hash).toString(36);
-    newKey = `cart_${orderIdPart}_${tokenPart}_${hex}_fallback`;
+    newKey = `cart_${orderIdPart}_${hex}_fallback`;
   }
   newKey = newKey.slice(0, 200);
   cartSubmitIdempotencyKey = newKey;
@@ -90,7 +126,31 @@ function getOrCreateCartSubmitIdempotencyKey() {
 function clearPersistedCartSubmitKey(storageKey) {
   const key = storageKey || getCartSubmitStorageKey();
   try { sessionStorage.removeItem(key); } catch (_) {}
+  if (lastCartSubmitStorageKey === key) lastCartSubmitStorageKey = null;
   cartSubmitIdempotencyKey = null;
+}
+
+// E17: invalida el estado auxiliar del borrador ante sesión vencida, mesa
+// distinta o borrador enviado. No restaura pedidos viejos: el borrador se
+// recarga siempre desde el servidor.
+function invalidateCartSubmitState() {
+  if (lastCartSubmitStorageKey) {
+    try { sessionStorage.removeItem(lastCartSubmitStorageKey); } catch (_) {}
+    lastCartSubmitStorageKey = null;
+  }
+  try { sessionStorage.removeItem(getCartSubmitStorageKey()); } catch (_) {}
+  cartSubmitIdempotencyKey = null;
+}
+
+// E17: si cambió el contexto restaurante/mesa, el estado auxiliar anterior
+// queda inválido y se limpia sin restaurar nada local.
+function trackCartSessionContext() {
+  const parts = getCartContextParts();
+  const contextKey = `${parts.slug}::${parts.table}::${parts.session}`;
+  if (lastCartContextKey && lastCartContextKey !== contextKey) {
+    invalidateCartSubmitState();
+  }
+  lastCartContextKey = contextKey;
 }
 
 // ==========================================
@@ -480,6 +540,27 @@ function isLikelyNetworkError(error) {
   if (!error) return false;
   if (error.name === 'AbortError' || error.name === 'TypeError') return true;
   return /fetch|network|connection|timeout|failed/i.test(String(error.message || error));
+}
+
+// E17: mutaciones del carrito (agregar/quitar/enviar) en una sola tentativa
+// con timeout razonable. Un reintento automático tras una respuesta tardía o
+// una pérdida de red post-commit duplicaría la intención, porque
+// /orders/items no tiene clave de idempotencia en el backend. Las consultas
+// GET conservan fetchWithRetry; ante error de red se reconcilia con el
+// servidor y se pide verificación antes de reintentar de forma consciente.
+async function fetchMutationOnce(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    markOnline();
+    return res;
+  } catch (err) {
+    clearTimeout(id);
+    if (isLikelyNetworkError(err)) markOffline();
+    throw err;
+  }
 }
 
 function showNetworkStatus(online, message) {
@@ -952,6 +1033,9 @@ async function init(overrideToken) {
 
     currentSession = data;
     currentToken = data.token;
+    // E17: si cambió la mesa/restaurante, el estado auxiliar del borrador
+    // anterior queda inválido y se limpia sin restaurar pedidos viejos.
+    trackCartSessionContext();
     markOnline();
     if (data.token) {
       sessionStorage.setItem('mesaya_token', data.token);
@@ -1018,6 +1102,16 @@ function showExpiredState(message) {
     sessionStorage.removeItem('mesaya_token');
   } catch (_) {}
   currentToken = null;
+  // E17: sesión vencida invalida el estado auxiliar del borrador y libera los
+  // mutex. No se restaura nada local al cambiar de mesa o sesión: el borrador
+  // se recarga siempre desde el servidor.
+  invalidateCartSubmitState();
+  dishAddInFlight = false;
+  cartRemoveInFlight.clear();
+  isCartSubmitting = false;
+  activeOrder = null;
+  orderHistory = [];
+  renderCart();
 
   if (el.stateLoading) el.stateLoading.classList.add('hidden');
   if (el.actionsContainer) el.actionsContainer.classList.add('hidden');
@@ -1074,6 +1168,117 @@ const MENU_TAG_MAP = {
   POPULAR: { label: 'Más Pedido', emoji: '🔥', class: 'text-orange-400 bg-orange-400/10 border-orange-400/30' }
 };
 
+// E19: filtros públicos determinísticos por preferencia dietaria confirmada.
+// Sólo usan los tags estructurados declarados por el local (GLUTEN_FREE,
+// VEGAN, VEGETARIAN). Nunca se infiere por nombre, descripción, imagen,
+// categoría o IA: desconocido no es coincidencia.
+const MENU_DIET_FILTERS = [
+  { id: 'ALL', label: 'Todas', tag: null },
+  { id: 'GLUTEN_FREE', label: 'Sin TACC', tag: 'GLUTEN_FREE' },
+  { id: 'VEGAN', label: 'Vegano', tag: 'VEGAN' },
+  { id: 'VEGETARIAN', label: 'Vegetariano', tag: 'VEGETARIAN' }
+];
+const MENU_DIET_TAGS = new Set(['GLUTEN_FREE', 'VEGAN', 'VEGETARIAN']);
+const MENU_DIET_UNKNOWN_NOTICE = 'Sin información alimentaria confirmada — consultá al personal antes de pedir.';
+const MENU_DIET_BAR_NOTICE = 'Las etiquetas las declara el local y no certifican ausencia de alérgenos ni contaminación cruzada. Si tenés alergia, consultá al personal antes de pedir.';
+
+// E19: estado local pequeño y determinístico. Sobrevive a re-ejecuciones de
+// renderDynamicMenu por respuesta de red o cambio de tema.
+let menuDietFilter = 'ALL';
+let menuCategoryFilter = 'ALL';
+
+function normalizeMenuItemTags(item) {
+  if (!item || !Array.isArray(item.tags)) return [];
+  return item.tags.filter((tag) => typeof tag === 'string');
+}
+
+function getMenuItemDietTags(item) {
+  return normalizeMenuItemTags(item).filter((tag) => MENU_DIET_TAGS.has(tag));
+}
+
+// E19: el filtro dietario sólo pasa con el tag confirmado presente. En modo
+// ALL todo sigue visible, incluidos los productos sin datos dietarios.
+function dishMatchesDietFilter(item, dietFilter) {
+  const filter = dietFilter || menuDietFilter || 'ALL';
+  if (filter === 'ALL') return true;
+  if (!MENU_DIET_TAGS.has(filter)) return true;
+  return normalizeMenuItemTags(item).includes(filter);
+}
+
+function dishMatchesCategoryFilter(categoryKey, categoryFilter) {
+  const filter = categoryFilter || menuCategoryFilter || 'ALL';
+  if (filter === 'ALL') return true;
+  return categoryKey === filter;
+}
+
+function getMenuDietNoticeForItem(item) {
+  const dietTags = getMenuItemDietTags(item);
+  if (dietTags.length === 0) return MENU_DIET_UNKNOWN_NOTICE;
+  const labels = dietTags.map((tag) => {
+    const known = MENU_TAG_MAP[tag];
+    return known ? `${known.emoji} ${known.label}` : tag;
+  }).join(' · ');
+  return `Etiquetas declaradas por el local: ${labels}. Consultá al personal ante alergias.`;
+}
+
+function setMenuDietFilter(filterId) {
+  const next = MENU_DIET_FILTERS.some((option) => option.id === filterId) ? filterId : 'ALL';
+  menuDietFilter = next;
+  syncMenuFilterControls();
+  if (lastMenuResponse) renderDynamicMenu(lastMenuResponse);
+}
+
+function setMenuCategoryFilter(categoryKey) {
+  menuCategoryFilter = categoryKey || 'ALL';
+  syncMenuFilterControls();
+  if (lastMenuResponse) renderDynamicMenu(lastMenuResponse);
+}
+
+function clearMenuFilters() {
+  menuDietFilter = 'ALL';
+  menuCategoryFilter = 'ALL';
+  syncMenuFilterControls();
+  if (lastMenuResponse) renderDynamicMenu(lastMenuResponse);
+}
+
+function syncMenuFilterControls() {
+  document.querySelectorAll('#menuDietFilters [data-diet-filter]').forEach((button) => {
+    const active = button.getAttribute('data-diet-filter') === menuDietFilter;
+    button.setAttribute('aria-pressed', String(active));
+    button.classList.toggle('bg-amber-500/20', active);
+    button.classList.toggle('text-amber-200', active);
+    button.classList.toggle('border-amber-500/50', active);
+  });
+  const select = document.getElementById('menuCategoryFilterSelect');
+  if (select && select.value !== menuCategoryFilter) {
+    const hasOption = Array.from(select.options).some((option) => option.value === menuCategoryFilter);
+    select.value = hasOption ? menuCategoryFilter : 'ALL';
+    if (!hasOption) menuCategoryFilter = 'ALL';
+  }
+}
+
+function updateMenuFilterStatus(visibleCount, totalCount) {
+  const status = document.getElementById('menuFilterStatus');
+  if (!status) return;
+  const dietLabel = (MENU_DIET_FILTERS.find((option) => option.id === menuDietFilter) || {}).label || 'Todas';
+  const categoryLabel = menuCategoryFilter === 'ALL' ? 'todas las categorías' : 'la categoría elegida';
+  status.textContent = visibleCount === 0
+    ? `Sin platos para esta combinación (${dietLabel} · ${categoryLabel}). Probá con Todas o limpiá los filtros.`
+    : `Mostrando ${visibleCount} de ${totalCount} platos (${dietLabel} · ${categoryLabel}).`;
+}
+
+function bindMenuFilterControls() {
+  if (bindMenuFilterControls.bound) return;
+  bindMenuFilterControls.bound = true;
+  document.querySelectorAll('#menuDietFilters [data-diet-filter]').forEach((button) => {
+    button.addEventListener('click', () => setMenuDietFilter(button.getAttribute('data-diet-filter')));
+  });
+  document.getElementById('menuCategoryFilterSelect')?.addEventListener('change', (event) => {
+    setMenuCategoryFilter(event.target.value);
+  });
+  document.getElementById('menuFiltersClear')?.addEventListener('click', clearMenuFilters);
+}
+
 function openDishDetailSheet(item, categoryId) {
   const trigger = document.activeElement;
   selectedDishForOrder = item;
@@ -1122,6 +1327,13 @@ function openDishDetailSheet(item, categoryId) {
       featSpan.textContent = '⭐ Especialidad de la Casa';
       tagsEl.appendChild(featSpan);
     }
+  }
+
+  // E19: información alimentaria honesta en el detalle. Nunca se inventa una
+  // etiqueta: sin tags confirmados se indica desconocido y consulta.
+  const dietInfoEl = document.getElementById('dishSheetDietInfo');
+  if (dietInfoEl) {
+    dietInfoEl.textContent = getMenuDietNoticeForItem(item);
   }
 
   // Suggest pairing depending on dish name / keywords
@@ -1375,7 +1587,7 @@ function renderCart() {
     }).join('');
 
     el.cartItemsList.querySelectorAll('[data-cart-remove]').forEach((button) => {
-      button.addEventListener('click', () => removeCartItem(button.getAttribute('data-cart-remove')));
+      button.addEventListener('click', () => removeCartItem(button.getAttribute('data-cart-remove'), button));
     });
   }
 
@@ -1460,8 +1672,14 @@ async function loadActiveOrder(options = {}) {
 
   try {
     const res = await fetchWithRetry(`${API_BASE}/orders/session/${encodeURIComponent(currentToken)}`);
-    if (!res.ok) return;
     const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 410) {
+        const message = data.error || 'Sesión finalizada o expirada.';
+        showExpiredState(message);
+      }
+      return;
+    }
     activeOrder = data.order || null;
     orderHistory = Array.isArray(data.history)
       ? data.history
@@ -1476,7 +1694,32 @@ async function loadActiveOrder(options = {}) {
   }
 }
 
+// E17 (intención 4c8d02f): feedback inmediato y reseteo de la acción del
+// plato. El botón se bloquea antes de la primera llamada y se restaura en
+// `finally`, de modo que un segundo clic durante el envío se ignora y una
+// nueva unidad intencional tras el éxito vuelve a estar permitida.
+function setDishOrderButtonBusy(busy, busyLabel) {
+  const btn = document.getElementById('btnOrderSpecificDish');
+  if (!btn) return;
+  btn.disabled = busy;
+  btn.setAttribute('aria-disabled', String(busy));
+  btn.classList.toggle('opacity-50', busy);
+  btn.classList.toggle('cursor-not-allowed', busy);
+  const label = btn.querySelector('span');
+  if (!label) return;
+  if (busy) {
+    if (!btn.dataset.e17Label) btn.dataset.e17Label = label.textContent;
+    label.textContent = busyLabel || 'Agregando…';
+  } else if (btn.dataset.e17Label) {
+    label.textContent = btn.dataset.e17Label;
+    delete btn.dataset.e17Label;
+  }
+}
+
 async function addDishToCart(item, quantity, notes) {
+  // E17: una intención produce una mutación. El mutex lógico es inmediato,
+  // antes de la primera llamada: un `disabled` visual solo no alcanza.
+  if (dishAddInFlight) return;
   if (!currentToken) {
     showToast('La mesa todavía no tiene una sesión activa.', 'warning');
     return;
@@ -1499,8 +1742,10 @@ async function addDishToCart(item, quantity, notes) {
   }
   const guestSessionIdToSend = getGuestSessionId();
 
+  dishAddInFlight = true;
+  setDishOrderButtonBusy(true, `Agregando ${quantity}x…`);
   try {
-    const res = await fetchWithRetry(`${API_BASE}/orders/items`, {
+    const res = await fetchMutationOnce(`${API_BASE}/orders/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1511,7 +1756,7 @@ async function addDishToCart(item, quantity, notes) {
         guestName: guestNameToSend,
         guestSessionId: guestSessionIdToSend
       })
-    });
+    }, 10000);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       // C04 + B06: mensajes accionables sin pérdida silenciosa
@@ -1530,8 +1775,10 @@ async function addDishToCart(item, quantity, notes) {
         return;
       }
       if (res.status === 410) {
-        setDishSheetError(data.error || 'Sesión finalizada o expirada.');
-        showToast(data.error || 'Sesión de mesa finalizada.', 'error');
+        const message = data.error || 'Sesión finalizada o expirada.';
+        showExpiredState(message);
+        setDishSheetError(message);
+        showToast(message, 'error');
         return;
       }
       setDishSheetError(data.error || 'No se pudo agregar el plato.');
@@ -1540,32 +1787,64 @@ async function addDishToCart(item, quantity, notes) {
     }
     setDishSheetError('');
     setCartError('');
+    // El servidor es la fuente de verdad: se adopta su respuesta sin sumar
+    // estado local y remoto dos veces. Historial y cuenta se recargan desde
+    // la API; guestName se preserva en sessionStorage.
     activeOrder = data;
     renderCart();
     // FIX cliente→API: no expulsar al carrito; cerrar solo el sheet y volver a la carta
     closeDishDetailSheet();
     ensureMenuModalOpen();
+    // E17 (intención 4c8d02f): resetear la acción del plato tras el agregado
+    // para que una nueva unidad sea una intención nueva y explícita.
+    setDishOrderQuantity(1);
     const cartCount = Array.isArray(activeOrder?.items) ? activeOrder.items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0) : quantity;
     showToast(`Agregado (${quantity}x ${item.name}) — carrito: ${cartCount}. Seguí agregando o abrí el carrito.`, 'success', 4500);
   } catch (_) {
-    setDishSheetError('No se pudo conectar con la comanda. Reintentá; no se duplicó.');
-    showToast('No se pudo conectar con la comanda.', 'error');
+    // E17: sin retry ciego ni promesa falsa. La mutación fue una sola
+    // tentativa y /orders/items no es idempotente: no se puede afirmar que
+    // nada se duplicó. Se reconcilia con el servidor y se pide verificación
+    // antes de reintentar de forma consciente.
+    setDishSheetError('No se pudo confirmar el agregado. Revisá el carrito: si el plato aparece, no lo agregues de nuevo.');
+    showToast('No se pudo confirmar el agregado. Revisá el carrito antes de reintentar.', 'warning');
+    await loadActiveOrder({ silent: true });
+  } finally {
+    dishAddInFlight = false;
+    setDishOrderButtonBusy(false);
   }
 }
 
-async function removeCartItem(itemId) {
+async function removeCartItem(itemId, triggerButton) {
   if (!itemId || !currentToken) return;
+  // E17: un clic por ítem por vez; el segundo durante el envío se ignora.
+  if (cartRemoveInFlight.has(itemId)) return;
+  cartRemoveInFlight.add(itemId);
+  const btn = triggerButton instanceof Element ? triggerButton : null;
+  const priorLabel = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.setAttribute('aria-disabled', 'true');
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+    btn.textContent = 'Quitando…';
+  }
   try {
-    const res = await fetchWithRetry(`${API_BASE}/orders/items/${encodeURIComponent(itemId)}`, {
+    const res = await fetchMutationOnce(`${API_BASE}/orders/items/${encodeURIComponent(itemId)}`, {
       method: 'DELETE',
       headers: { 'x-session-token': currentToken }
-    });
+    }, 10000);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (res.status === 409 || res.status === 404) {
         setCartError(data.error || 'El carrito cambió (otro comensal lo editó o ya fue enviado). Se recargó.');
         await loadActiveOrder({ silent: true });
         showToast(data.error || 'Carrito actualizado por otro cambio. Revisá antes de seguir.', 'warning');
+        return;
+      }
+      if (res.status === 410) {
+        const message = data.error || 'Sesión finalizada o expirada.';
+        showExpiredState(message);
+        setCartError(message);
+        showToast(message, 'error');
         return;
       }
       setCartError(data.error || 'No se pudo quitar el plato.');
@@ -1581,8 +1860,22 @@ async function removeCartItem(itemId) {
       showToast('Plato quitado del borrador.', 'info');
     }
   } catch (_) {
-    setCartError('No se pudo conectar al quitar. No se perdió lo enviado.');
-    showToast('No se pudo conectar con la comanda.', 'error');
+    // E17: sin retry ciego. La mutación fue una sola tentativa: se reconcilia
+    // con el servidor y se pide verificación antes de reintentar.
+    setCartError('No se pudo confirmar si se quitó el plato. Revisá el carrito antes de reintentar.');
+    showToast('No se pudo confirmar el cambio. Revisá el carrito antes de reintentar.', 'warning');
+    await loadActiveOrder({ silent: true });
+  } finally {
+    cartRemoveInFlight.delete(itemId);
+    // renderCart recrea los botones (restaura su estado); si el botón
+    // original sobrevivió, se restaura su estado visible aquí.
+    renderCart();
+    if (btn && btn.isConnected) {
+      btn.disabled = false;
+      btn.setAttribute('aria-disabled', 'false');
+      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+      if (btn.textContent === 'Quitando…') btn.textContent = priorLabel || 'Quitar';
+    }
   }
 }
 
@@ -1605,11 +1898,15 @@ async function submitCart() {
   const idempotencyKey = getOrCreateCartSubmitIdempotencyKey();
   setCartError('');
   try {
-    const res = await fetchWithRetry(`${API_BASE}/orders/submit`, {
+    // E17: el envío es una sola tentativa (1, 10000). La idempotencia la
+    // garantiza la clave estable por borrador que el backend pinnea a una
+    // tanda (SubmitReceipt): ante timeout se reintenta con la MISMA clave y
+    // el replay devuelve la tanda original sin duplicar.
+    const res = await fetchMutationOnce(`${API_BASE}/orders/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionToken: currentToken, idempotencyKey })
-    });
+    }, 10000);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (res.status === 422 && data.code === 'ITEM_NOT_AVAILABLE') {
@@ -1625,7 +1922,14 @@ async function submitCart() {
         showToast(data.error || 'El pedido ya fue enviado o hay conflicto. Revisá el carrito.', 'warning');
         return;
       }
-      if (res.status === 410 || res.status === 403) {
+      if (res.status === 410) {
+        const message = data.error || 'Sesión finalizada o expirada.';
+        showExpiredState(message);
+        setCartError(message);
+        showToast(message, 'error');
+        return;
+      }
+      if (res.status === 403) {
         setCartError(data.error || 'No se pudo enviar.');
         showToast(data.error || 'No se pudo enviar la comanda.', 'error');
         return;
@@ -1757,6 +2061,16 @@ function renderDynamicMenu(menuResponse) {
   const { restaurant, categories } = menuResponse;
   if (!categories || categories.length === 0) return;
 
+  // E19: el estado de filtros sobrevive a re-ejecuciones (red/tema). Si la
+  // categoría guardada ya no existe en la nueva respuesta, volver a Todas.
+  const knownCategoryKeys = new Set(categories.map((_, idx) => `dynamic-cat-${idx}`));
+  if (menuCategoryFilter !== 'ALL' && !knownCategoryKeys.has(menuCategoryFilter)) {
+    menuCategoryFilter = 'ALL';
+  }
+  if (!MENU_DIET_FILTERS.some((option) => option.id === menuDietFilter)) {
+    menuDietFilter = 'ALL';
+  }
+
   const templateId = restaurant.templateId || 'GOURMET_OBSIDIAN';
   const allItems = categories.flatMap(c => c.items);
 
@@ -1825,13 +2139,42 @@ function renderDynamicMenu(menuResponse) {
   // La carta completa (modal) y sus insignias por plato siguen intactas.
   // (Bloque de story cards removido; ver historial git.)
 
+  // E19: selector de categoría combinable con la preferencia dietaria. Las
+  // pills de navegación por scroll se conservan; el select filtra sin
+  // depender de scroll y se puede probar de forma determinística.
+  const categorySelect = document.getElementById('menuCategoryFilterSelect');
+  if (categorySelect) {
+    const optionsHtml = ['<option value="ALL">Todas las categorías</option>'].concat(
+      categories.map((cat, idx) => `<option value="dynamic-cat-${idx}">${escapeHtml(cat.name)}</option>`)
+    ).join('');
+    if (categorySelect.dataset.e19Options !== optionsHtml) {
+      categorySelect.innerHTML = optionsHtml;
+      categorySelect.dataset.e19Options = optionsHtml;
+    }
+  }
+  syncMenuFilterControls();
+  bindMenuFilterControls();
+
   // 3. Render Modal Menu Categories & Food Items by Template
   const menuContainer = el.dynamicMenuCategoriesContainer || document.getElementById('dynamicMenuCategoriesContainer');
   if (menuContainer) {
     const romanNumerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+    const totalItems = categories.reduce((sum, cat) => sum + (Array.isArray(cat.items) ? cat.items.length : 0), 0);
+    const filteredCategories = categories
+      .map((cat, idx) => ({ cat, idx }))
+      .filter(({ idx }) => dishMatchesCategoryFilter(`dynamic-cat-${idx}`, menuCategoryFilter))
+      .map(({ cat, idx }) => ({
+        cat,
+        idx,
+        visibleItems: (Array.isArray(cat.items) ? cat.items : []).filter((item) => dishMatchesDietFilter(item, menuDietFilter))
+      }));
+    const visibleCount = filteredCategories.reduce((sum, entry) => sum + entry.visibleItems.length, 0);
 
-    menuContainer.innerHTML = categories.map((cat, idx) => {
-      const itemsHtml = cat.items.map(item => {
+    if (visibleCount === 0) {
+      menuContainer.innerHTML = `<div class="space-y-2 py-8 text-center"><p id="menuFilterEmpty" role="status" aria-live="polite" class="text-xs font-bold text-slate-200">Sin platos para esta combinación. Probá con Todas o limpiá los filtros.</p><p class="text-[11px] leading-relaxed text-slate-400">${escapeHtml(MENU_DIET_BAR_NOTICE)}</p></div>`;
+    } else {
+    menuContainer.innerHTML = filteredCategories.map(({ cat, idx, visibleItems }) => {
+      const itemsHtml = visibleItems.map(item => {
         const formattedPrice = `$${Number(item.price).toLocaleString('es-AR')}`;
         const tagsHtml = (item.tags || []).map(t => {
           const tagObj = MENU_TAG_MAP[t];
@@ -2002,6 +2345,9 @@ function renderDynamicMenu(menuResponse) {
         });
       });
     });
+    } // E19: cierra la rama con resultados (la rama vacía usa menuFilterEmpty).
+    // E19: cantidad/estado anunciado para lector de pantalla.
+    updateMenuFilterStatus(visibleCount, totalItems);
   }
 }
 
@@ -2466,6 +2812,11 @@ function bindEvents() {
   }
 
   if (el.btnOrderFromMenu) el.btnOrderFromMenu.addEventListener('click', openCartModal);
+
+  // E19: filtros dietarios + categoría (controles estáticos; opciones y estado
+  // se sincronizan en cada renderDynamicMenu sin perder la selección).
+  bindMenuFilterControls();
+  syncMenuFilterControls();
 
   if (el.btnCloseModalCart) el.btnCloseModalCart.addEventListener('click', () => {
     closeCartModal();

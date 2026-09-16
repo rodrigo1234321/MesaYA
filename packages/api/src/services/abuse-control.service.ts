@@ -14,6 +14,11 @@ export interface RateLimitDecision {
 /** Límites deliberadamente pequeños y explícitos para superficies costosas o públicas. */
 export const AbusePolicies = {
   LOGIN_BY_IP_TENANT: { limit: 5, windowSeconds: 5 * 60 },
+  LOGIN_REQUEST_BURST_IP: { limit: 60, windowSeconds: 60 },
+  LOGIN_REQUEST_BURST_TERM: { limit: 30, windowSeconds: 60 },
+  LOGIN_FAILURES_PER_TERMINAL: { limit: 5, windowSeconds: 5 * 60 },
+  LOGIN_FAILURES_PER_IP: { limit: 5, windowSeconds: 5 * 60 },
+  LOGIN_FAILURES_IP_AGGREGATE: { limit: 25, windowSeconds: 5 * 60 },
   // Permite reintentos legítimos (p. ej. llamado al mozo y luego cuenta) sin
   // relajar la deduplicación de activos, que sigue siendo una clave única.
   CALL_BY_SESSION: { limit: 10, windowSeconds: 60 },
@@ -31,6 +36,37 @@ function sleep(ms: number): Promise<void> {
  * count-then-create. La clave única hace segura la carrera de creación.
  */
 export class AbuseControlService {
+  static check(key: string, policy: RateLimitPolicy): Promise<RateLimitDecision> {
+    return this.checkWithClient(prisma, key, policy);
+  }
+
+  static async checkWithClient(client: any, key: string, policy: RateLimitPolicy): Promise<RateLimitDecision> {
+    const bucketModel = client?.rateLimitBucket;
+    if (!bucketModel) {
+      return { allowed: true, remaining: policy.limit, retryAfterSeconds: 0 };
+    }
+    const now = new Date();
+    const existing = await bucketModel.findUnique({ where: { key } }).catch(() => null);
+    if (!existing || new Date(existing.expiresAt) <= now) {
+      return { allowed: true, remaining: policy.limit, retryAfterSeconds: 0 };
+    }
+    if (existing.count >= policy.limit) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((new Date(existing.expiresAt).getTime() - now.getTime()) / 1000));
+      return { allowed: false, remaining: 0, retryAfterSeconds };
+    }
+    return { allowed: true, remaining: Math.max(0, policy.limit - existing.count), retryAfterSeconds: 0 };
+  }
+
+  static reset(key: string): Promise<void> {
+    return this.resetWithClient(prisma, key);
+  }
+
+  static async resetWithClient(client: any, key: string): Promise<void> {
+    const bucketModel = client?.rateLimitBucket;
+    if (!bucketModel) return;
+    await bucketModel.deleteMany({ where: { key } }).catch(() => undefined);
+  }
+
   static consume(key: string, policy: RateLimitPolicy): Promise<RateLimitDecision> {
     return this.consumeWithClient(prisma, key, policy);
   }

@@ -157,6 +157,10 @@ export interface StaffLoginDTO {
   pin: string;
   /** Identificador del terminal físico compartido; nunca es un secreto. */
   terminalId?: string;
+  isTemporary?: boolean;
+  purpose?: string;
+  tableId?: string;
+  sessionId?: string;
 }
 
 export interface StaffUserDTO {
@@ -329,6 +333,7 @@ export interface ServiceWorkspaceDTO {
   floorPlan: FloorPlanResponseDTO;
   tasks: ServiceTaskDTO[];
   accounts: ServiceAccountDTO[];
+  allowWaitersToCollectCash?: boolean;
   summary: {
     totalTasks: number;
     pendingCalls: number;
@@ -623,6 +628,7 @@ export type CapabilityKey =
   | 'waiter_validation'
   | 'manual_payment'
   | 'digital_payment'
+  | 'waiter_cash_collection'
   | 'split_bill'
   | 'waitlist'
   | 'waitlist_preorder'
@@ -653,6 +659,7 @@ export interface RestaurantModuleConfigDTO {
   restaurantId: string;
   paymentMode: PaymentMode;
   allowSplitBill: boolean;
+  allowWaitersToCollectCash: boolean;
   allowOrdering: boolean;
   syncSocialCart: boolean;
   requireWaiterValidation: boolean;
@@ -674,6 +681,7 @@ export interface RestaurantModuleConfigDTO {
 export interface UpdateModuleConfigDTO {
   paymentMode?: PaymentMode;
   allowSplitBill?: boolean;
+  allowWaitersToCollectCash?: boolean;
   allowOrdering?: boolean;
   syncSocialCart?: boolean;
   requireWaiterValidation?: boolean;

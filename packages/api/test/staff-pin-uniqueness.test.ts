@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { prisma } from '../src/lib/prisma';
 import { StaffService } from '../src/services/staff.service';
 
@@ -96,5 +96,107 @@ describe('Staff PIN Uniqueness and Validation (P0-04)', () => {
       }
     });
     expect(inDb).toBe(1);
+  });
+
+  describe('E04 — Rotación de huella de PIN y legado (S24)', () => {
+    const originalPepper = process.env.STAFF_PIN_PEPPER;
+    const originalPrevPepper = process.env.STAFF_PIN_PEPPER_PREVIOUS;
+
+    afterEach(() => {
+      if (originalPepper !== undefined) {
+        process.env.STAFF_PIN_PEPPER = originalPepper;
+      } else {
+        delete process.env.STAFF_PIN_PEPPER;
+      }
+      if (originalPrevPepper !== undefined) {
+        process.env.STAFF_PIN_PEPPER_PREVIOUS = originalPrevPepper;
+      } else {
+        delete process.env.STAFF_PIN_PEPPER_PREVIOUS;
+      }
+    });
+
+    it('soporta login exitoso y rollover automatico de huella cuando se rota la clave con clave anterior configurada', async () => {
+      // 1. Configurar pepper inicial (v1) y crear colaborador
+      process.env.STAFF_PIN_PEPPER = 'pepper-version-1';
+      delete process.env.STAFF_PIN_PEPPER_PREVIOUS;
+
+      const user = await StaffService.createStaff(restaurantId, 'Mozo Rotacion', '5555', 'WAITER');
+      const initialFingerprint = StaffService.calculatePinFingerprint(restaurantId, '5555', 'pepper-version-1');
+
+      const inDbBefore = await prisma.staffUser.findUnique({ where: { id: user.id } });
+      expect(inDbBefore?.pinFingerprint).toBe(initialFingerprint);
+
+      // 2. Rotar claves: nueva = v2, previa = v1
+      process.env.STAFF_PIN_PEPPER = 'pepper-version-2';
+      process.env.STAFF_PIN_PEPPER_PREVIOUS = 'pepper-version-1';
+
+      const expectedNewFingerprint = StaffService.calculatePinFingerprint(restaurantId, '5555', 'pepper-version-2');
+
+      // 3. Mozo hace login con su PIN '5555'
+      const loginResult = await StaffService.login({
+        restaurantSlug: 'restaurant-test-pin',
+        pin: '5555'
+      });
+
+      expect(loginResult.staffUser.id).toBe(user.id);
+      expect(loginResult.staffUser.name).toBe('Mozo Rotacion');
+
+      // 4. Verificar que se produjo el rollover automático en DB a la nueva huella
+      const inDbAfter = await prisma.staffUser.findUnique({ where: { id: user.id } });
+      expect(inDbAfter?.pinFingerprint).toBe(expectedNewFingerprint);
+    });
+
+    it('impide crear colaboradores con un PIN que colisiona con una huella previa pendiente de rollover', async () => {
+      process.env.STAFF_PIN_PEPPER = 'pepper-v1';
+      delete process.env.STAFF_PIN_PEPPER_PREVIOUS;
+
+      await StaffService.createStaff(restaurantId, 'Mozo Antiguo', '9999', 'WAITER');
+
+      // Rotar pepper
+      process.env.STAFF_PIN_PEPPER = 'pepper-v2';
+      process.env.STAFF_PIN_PEPPER_PREVIOUS = 'pepper-v1';
+
+      // Intentar crear otro colaborador con el mismo PIN '9999' bajo el nuevo pepper
+      await expect(
+        StaffService.createStaff(restaurantId, 'Mozo Nuevo Duplicado', '9999', 'WAITER')
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'PIN_ALREADY_IN_USE',
+        message: expect.stringContaining('El PIN elegido ya está asignado a otro colaborador')
+      });
+    });
+
+    it('soporta login y backfill seguro para filas legadas con pinFingerprint null', async () => {
+      process.env.STAFF_PIN_PEPPER = 'pepper-modern';
+      delete process.env.STAFF_PIN_PEPPER_PREVIOUS;
+
+      // Insertar usuario legado directamente sin pinFingerprint
+      const bcrypt = await import('bcryptjs');
+      const hash = await bcrypt.hash('3333', 10);
+      const legacyUser = await prisma.staffUser.create({
+        data: {
+          restaurantId,
+          name: 'Mozo Legado',
+          role: 'WAITER',
+          pinHash: hash,
+          pinFingerprint: null
+        }
+      });
+
+      expect(legacyUser.pinFingerprint).toBeNull();
+
+      // Login del usuario legado
+      const loginResult = await StaffService.login({
+        restaurantSlug: 'restaurant-test-pin',
+        pin: '3333'
+      });
+
+      expect(loginResult.staffUser.id).toBe(legacyUser.id);
+
+      // Verificar que se hizo backfill de la huella moderna
+      const inDbAfter = await prisma.staffUser.findUnique({ where: { id: legacyUser.id } });
+      const expectedFingerprint = StaffService.calculatePinFingerprint(restaurantId, '3333', 'pepper-modern');
+      expect(inDbAfter?.pinFingerprint).toBe(expectedFingerprint);
+    });
   });
 });

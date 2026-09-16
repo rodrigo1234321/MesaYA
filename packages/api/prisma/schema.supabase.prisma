@@ -44,6 +44,7 @@ model Restaurant {
   upsellEvents UpsellEvent[]
   settlements AccountSettlement[]
   receipts    ReceiptSnapshot[]
+  receiptCounters ReceiptCounter[]
   fiscalDocuments FiscalDocumentAssociation[]
 }
 
@@ -56,8 +57,9 @@ model RestaurantModuleConfig {
   restaurant              Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   
   // Módulo 1: Cobro y Cierre de Mesa (Flags de interfaz)
-  paymentMode             String      @default("WAITER_ONLY") // WAITER_ONLY | DIGITAL_MP | HYBRID
-  allowSplitBill          Boolean     @default(false)
+  paymentMode               String      @default("WAITER_ONLY") // WAITER_ONLY | DIGITAL_MP | HYBRID
+  allowSplitBill            Boolean     @default(false)
+  allowWaitersToCollectCash Boolean     @default(false)
   
   // Módulo 2: Comandas & Carrito Colaborativo
   allowOrdering           Boolean     @default(true)
@@ -438,6 +440,26 @@ model ReceiptSnapshot {
   @@unique([restaurantId, receiptNumber])
   @@index([restaurantId, createdAt])
   @@index([tableSessionId, createdAt])
+}
+
+// ==========================================
+// 4d-bis. CONTADOR ATÓMICO DE TICKETS POR LOCAL/PERÍODO (E15).
+// La unicidad de (restaurantId, period) permite reservar secuencias con un
+// solo UPDATE atómico bajo concurrencia. Se inicializa sobre el máximo de
+// tickets ya persistidos del período: convive con numeración histórica sin
+// reiniciarla. Los huecos por reintento son esperables (ticket informativo,
+// no secuencia fiscal sin huecos).
+// ==========================================
+model ReceiptCounter {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  period       String     // YYYYMMDD del ticket (mismo criterio que el prefijo TK-YYYYMMDD-)
+  lastNumber   Int        @default(0)
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([restaurantId, period])
+  @@index([restaurantId, updatedAt])
 }
 
 model PaymentAdjustment {

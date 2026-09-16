@@ -20,6 +20,7 @@ function baseConfig(overrides: Partial<RestaurantModuleConfigDTO> = {}): Restaur
     enableWaitlistPreOrder: false,
     enableRewards: false,
     pointsPerHundredPesos: 1,
+    allowWaitersToCollectCash: false,
     ...overrides
   };
 }
@@ -169,9 +170,9 @@ describe('Etapa 00 — ConfigService.buildCapabilities (unit)', () => {
     }
   });
 
-  it('capabilities object has exactly 11 keys', () => {
+  it('capabilities object has exactly 12 keys', () => {
     const caps = ConfigService.buildCapabilities(baseConfig());
-    expect(Object.keys(caps.capabilities)).toHaveLength(11);
+    expect(Object.keys(caps.capabilities)).toHaveLength(12);
   });
 
   it('all entries distinguish stored configuration from effective availability', () => {

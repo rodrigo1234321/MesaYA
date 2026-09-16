@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { prisma } from '../lib/prisma';
 import {
   ReceiptSnapshotDTO,
@@ -9,6 +9,12 @@ import {
   calculateOrderItemTotalMinor,
   calculateSessionBalance
 } from '@mesaya/shared';
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Intentos de reserva/emisión ante contención (ambiguos, nunca infinitos). */
+const RECEIPT_ALLOCATE_ATTEMPTS = 12;
+const RECEIPT_CREATE_ATTEMPTS = 10;
 
 export interface GenerateReceiptInput {
   restaurantId: string;
@@ -32,17 +38,170 @@ export class ReceiptService {
   }
 
   /**
-   * Genera un número secuencial amigable para el ticket: TK-YYYYMMDD-XXXX
+   * Período del ticket (YYYYMMDD): partición del contador y prefijo del número.
+   */
+  static receiptPeriod(date = new Date()): string {
+    return date.toISOString().slice(0, 10).replace(/-/g, '');
+  }
+
+  static formatReceiptNumber(period: string, sequence: number): string {
+    return `TK-${period}-${sequence.toString().padStart(4, '0')}`;
+  }
+
+  /**
+   * Estimación NO atómica del próximo número, sólo para visualización previa.
+   * La unicidad real la garantiza allocateReceiptSequence (un UPDATE atómico
+   * por local/período). Nunca usar este valor para reservar bajo concurrencia:
+   * dos lecturas simultáneas devuelven el mismo candidato (defecto count+1).
    */
   static async getNextReceiptNumber(restaurantId: string): Promise<string> {
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const count = await prisma.receiptSnapshot.count({
-      where: {
-        restaurantId,
-        receiptNumber: { startsWith: `TK-${todayStr}` }
-      }
+    const period = this.receiptPeriod();
+    const seed = await this.readNumberSeed(restaurantId, period);
+    return this.formatReceiptNumber(period, seed + 1);
+  }
+
+  /** Máximo entre el contador persistido y los tickets históricos del período. */
+  private static async readNumberSeed(restaurantId: string, period: string): Promise<number> {
+    let counterSeed = 0;
+    try {
+      const rows = await prisma.$queryRaw<Array<{ lastNumber: number | bigint }>>`
+        SELECT "lastNumber" FROM "ReceiptCounter"
+        WHERE "restaurantId" = ${restaurantId} AND "period" = ${period}
+      `;
+      if (rows.length > 0) counterSeed = Number(rows[0].lastNumber);
+    } catch (err) {
+      throw this.asCounterUnavailableError(err);
+    }
+    const legacySeed = await this.readLegacyNumberSeed(restaurantId, period);
+    return Math.max(counterSeed, legacySeed);
+  }
+
+  /**
+   * Sufijo máximo entre tickets ya persistidos: la numeración histórica
+   * convive sin reiniciarse. Aproximado por diseño (orden lexicográfico sobre
+   * sufijo zero-padded); cualquier colisión residual se resuelve avanzando el
+   * contador en el reintento de create, nunca reutilizando números.
+   */
+  private static async readLegacyNumberSeed(restaurantId: string, period: string): Promise<number> {
+    const prefix = `TK-${period}-`;
+    const latest = await prisma.receiptSnapshot.findMany({
+      where: { restaurantId, receiptNumber: { startsWith: prefix } },
+      select: { receiptNumber: true },
+      orderBy: { receiptNumber: 'desc' },
+      take: 1
     });
-    return `TK-${todayStr}-${(count + 1).toString().padStart(4, '0')}`;
+    const match = latest[0]?.receiptNumber.match(/-(\d+)$/);
+    return match ? parseInt(match[1], 10) || 0 : 0;
+  }
+
+  /**
+   * Reserva atómicamente la siguiente secuencia del local/período (E15).
+   * Un único UPDATE sobre la fila (restaurantId, period) serializa a los
+   * competidores en PostgreSQL y SQLite: cada llamada obtiene un valor
+   * distinto aunque haya decenas de solicitudes concurrentes. Los huecos por
+   * colisión/reintento son esperables: el ticket es informativo, no una
+   * secuencia fiscal sin huecos.
+   */
+  private static async allocateReceiptSequence(restaurantId: string, period: string): Promise<number> {
+    for (let attempt = 0; attempt < RECEIPT_ALLOCATE_ATTEMPTS; attempt += 1) {
+      let rows: Array<{ lastNumber: number | bigint }>;
+      try {
+        rows = await prisma.$queryRaw<Array<{ lastNumber: number | bigint }>>`
+          UPDATE "ReceiptCounter"
+          SET "lastNumber" = "lastNumber" + 1, "updatedAt" = CURRENT_TIMESTAMP
+          WHERE "restaurantId" = ${restaurantId} AND "period" = ${period}
+          RETURNING "lastNumber"
+        `;
+      } catch (err) {
+        if (this.isMissingTableOrColumn(err)) throw this.asCounterUnavailableError(err);
+        if (this.isTransientWriteError(err)) {
+          await sleep(10 + attempt * 10);
+          continue;
+        }
+        throw err;
+      }
+      if (rows.length > 0) return Number(rows[0].lastNumber);
+      await this.ensureCounterRow(restaurantId, period);
+      // La fila puede seguir ausente por contención de escritura: retroceso
+      // breve y reintento acotado, sin ocultar el fallo.
+      await sleep(5 + attempt * 5);
+    }
+    throw this.receiptFailure(
+      'RECEIPT_COUNTER_EXHAUSTED',
+      'No se pudo reservar número de ticket tras varios intentos por contención'
+    );
+  }
+
+  /** Crea la fila del contador inicializada sobre los tickets existentes. */
+  private static async ensureCounterRow(restaurantId: string, period: string): Promise<void> {
+    const seed = await this.readLegacyNumberSeed(restaurantId, period);
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO "ReceiptCounter" ("id", "restaurantId", "period", "lastNumber", "updatedAt")
+        VALUES (${randomUUID()}, ${restaurantId}, ${period}, ${seed}, CURRENT_TIMESTAMP)
+        ON CONFLICT ("restaurantId", "period") DO NOTHING
+      `;
+    } catch (err) {
+      if (this.isMissingTableOrColumn(err)) throw this.asCounterUnavailableError(err);
+      // Contención de escritura (un competidor crea la fila a la vez): no es
+      // fallo, el bucle reintenta el UPDATE atómico.
+      if (this.isTransientWriteError(err)) return;
+      throw err;
+    }
+  }
+
+  private static isMissingTableOrColumn(err: any): boolean {
+    const message = `${err?.message || err || ''}`;
+    return (
+      err?.code === 'P2022' ||
+      message.includes('Unknown argument') ||
+      message.includes('no such table') ||
+      message.includes('no such column') ||
+      message.includes('42P01') ||
+      message.includes('42703') ||
+      message.includes('does not exist')
+    );
+  }
+
+  private static isTransientWriteError(err: any): boolean {
+    const message = `${err?.message || err || ''}`.toLowerCase();
+    return (
+      err?.code === 'P2034' ||
+      message.includes('database is locked') ||
+      message.includes('sqlite_busy') ||
+      message.includes(' busy') ||
+      message.includes('locked') ||
+      message.includes('timed out') ||
+      message.includes('timeout') ||
+      message.includes('could not serialize') ||
+      message.includes('deadlock') ||
+      message.includes('40001') ||
+      message.includes('55p03')
+    );
+  }
+
+  /**
+   * La ausencia del contador o del esquema E15 es un error explícito 503,
+   * nunca un fallback silencioso que simule persistencia.
+   */
+  private static asCounterUnavailableError(err: any): Error {
+    if (this.isMissingTableOrColumn(err)) {
+      const explicit: any = new Error(
+        'Contador de tickets no disponible: falta aplicar la migración E15 (ReceiptCounter) o regenerar el cliente Prisma. Sin contador no se emiten tickets.'
+      );
+      explicit.statusCode = 503;
+      explicit.code = 'RECEIPT_COUNTER_UNAVAILABLE';
+      explicit.cause = err;
+      return explicit;
+    }
+    return err;
+  }
+
+  private static receiptFailure(code: string, message: string): Error {
+    const err: any = new Error(message);
+    err.statusCode = 503;
+    err.code = code;
+    return err;
   }
 
   /**
@@ -188,14 +347,13 @@ export class ReceiptService {
     }
 
     const saldoMinor = Math.max(0, consumoMinor - paidMinor);
-    let receiptNumber = await this.getNextReceiptNumber(input.restaurantId);
+    const period = this.receiptPeriod();
 
-    const snapshotData: any = {
+    const snapshotBase: any = {
       restaurantName: restaurant.name,
       restaurantAddress: 'Mar del Plata, Buenos Aires',
       restaurantTimezone: restaurant.timezone || 'America/Argentina/Buenos_Aires',
       legalNotice: 'Comprobante informativo — No válido como factura',
-        receiptNumber,
         receiptType: input.receiptType,
         settlementId: input.settlementId || null,
       printedAt: new Date().toISOString(),
@@ -213,21 +371,36 @@ export class ReceiptService {
       items
     };
 
-    // 2. Hash SHA-256 canónico e inmutable del snapshot
-    let contentHash = createHash('sha256')
-      .update(JSON.stringify(snapshotData))
-      .digest('hex');
-    snapshotData.contentHash = contentHash;
+    // Número, hash y PDF quedan ligados en una ÚNICA escritura: si el proceso
+    // muere antes del create no hay fila a medio persistir; si muere después,
+    // la fila ya contiene número+hash+PDF y es reimprimible tras reinicio.
+    // El cobro (settlement) ya está confirmado antes de este punto y nunca se
+    // revierte porque falle el render: un fallo de PDF es 503 explícito.
+    // Ante P2002 por misma idempotencyKey se devuelve la fila ganadora; ante
+    // P2002 por número (ticket histórico fuera del contador) se reserva un
+    // número nuevo sin reutilizar el colisionado.
+    for (let attempt = 0; attempt < RECEIPT_CREATE_ATTEMPTS; attempt += 1) {
+      const sequence = await this.allocateReceiptSequence(input.restaurantId, period);
+      const receiptNumber = this.formatReceiptNumber(period, sequence);
+      const snapshotData: any = { ...snapshotBase, receiptNumber };
+      // 2. Hash SHA-256 canónico e inmutable del snapshot final (con número).
+      const contentHash = createHash('sha256')
+        .update(JSON.stringify(snapshotData))
+        .digest('hex');
+      snapshotData.contentHash = contentHash;
 
-    // El PDF se genera a partir del snapshot final y se guarda junto con él.
-    // Si dos solicitudes calculan el mismo número correlativo, se reintenta con
-    // el siguiente número; si compiten por la misma idempotencyKey se recupera
-    // la fila ganadora sin crear un segundo ticket.
-    let pdfBuffer = this.generateThermalPdfBuffer(snapshotData);
-    let created: any = null;
-    for (let attempt = 0; attempt < 4; attempt += 1) {
+      let pdfBuffer: Buffer;
       try {
-        created = await prisma.receiptSnapshot.create({
+        pdfBuffer = this.generateThermalPdfBuffer(snapshotData);
+      } catch {
+        throw this.receiptFailure(
+          'RECEIPT_RENDER_FAILED',
+          'No se pudo renderizar el ticket informativo; el cobro confirmado queda intacto'
+        );
+      }
+
+      try {
+        const created = await prisma.receiptSnapshot.create({
           data: {
             restaurantId: input.restaurantId,
             tableSessionId: input.tableSessionId,
@@ -235,53 +408,42 @@ export class ReceiptService {
             receiptType: input.receiptType,
             receiptNumber,
             snapshotData: JSON.stringify(snapshotData),
-            // Compatibilidad con clientes Prisma generados antes de la migración:
-            // el PDF queda persistido en el campo existente y luego se proyecta
-            // a pdfData cuando el esquema nuevo está disponible.
+            contentHash,
+            pdfVersion: 1,
+            pdfData: pdfBuffer,
+            // Se conserva el data-URI en pdfPath para clientes generados antes
+            // de la migración E15 que sólo leen ese campo; el DTO lo sigue
+            // ocultando y el PDF canónico vive en pdfData.
             pdfPath: `data:application/pdf;base64,${pdfBuffer.toString('base64')}`,
             status: 'GENERATED',
             idempotencyKey: key
           }
         });
-        try {
-          await prisma.$executeRaw`
-            UPDATE "ReceiptSnapshot"
-            SET "contentHash" = ${contentHash}, "pdfVersion" = ${1}, "pdfData" = ${pdfBuffer}
-            WHERE "id" = ${created.id}
-          `;
-        } catch (persistenceError) {
-          // El proceso local puede seguir usando un cliente generado antes de
-          // estos campos; snapshotData/pdfPath ya conservan hash y PDF completos.
-          console.warn('No se pudo proyectar la persistencia extendida del ticket:', persistenceError);
-        }
-        break;
+        return this.formatReceipt(created);
       } catch (err: any) {
-        if (err?.code !== 'P2002') throw err;
-
-        const replay = await prisma.receiptSnapshot.findUnique({ where: { idempotencyKey: key } });
-        if (replay) return this.formatReceipt(replay);
-        if (attempt === 3) throw err;
-
-        receiptNumber = await this.getNextReceiptNumber(input.restaurantId);
-        snapshotData.receiptNumber = receiptNumber;
-        const nextHash = createHash('sha256')
-          .update(JSON.stringify({ ...snapshotData, contentHash: undefined }))
-          .digest('hex');
-        delete snapshotData.contentHash;
-        contentHash = nextHash;
-        snapshotData.contentHash = nextHash;
-        pdfBuffer = this.generateThermalPdfBuffer(snapshotData);
+        if (err?.code === 'P2002') {
+          const replay = await prisma.receiptSnapshot.findUnique({ where: { idempotencyKey: key } });
+          if (replay) return this.formatReceipt(replay);
+          continue;
+        }
+        if (this.isTransientWriteError(err)) {
+          await sleep(10 + attempt * 10);
+          continue;
+        }
+        if (this.isMissingTableOrColumn(err)) {
+          throw this.receiptFailure(
+            'RECEIPT_SCHEMA_UPGRADE_REQUIRED',
+            'Esquema de tickets desactualizado (faltan columnas/campos de persistencia E15 o regenerar el cliente Prisma); no se emitió el ticket'
+          );
+        }
+        throw err;
       }
     }
 
-    if (!created) {
-      const err: any = new Error('No se pudo persistir el ticket informativo');
-      err.statusCode = 503;
-      err.code = 'RECEIPT_PERSIST_FAILED';
-      throw err;
-    }
-
-    return this.formatReceipt(created);
+    throw this.receiptFailure(
+      'RECEIPT_NUMBER_EXHAUSTED',
+      'No se pudo emitir el ticket informativo tras varios intentos por contención'
+    );
   }
 
   /**
@@ -309,8 +471,10 @@ export class ReceiptService {
         WHERE "id" = ${receiptId} AND "restaurantId" = ${restaurantId}
       `;
       if (extended[0]?.pdfData) return Buffer.from(extended[0].pdfData);
-    } catch {
-      // Clientes/procesos locales anteriores a la migración no tienen aún pdfData.
+    } catch (err) {
+      // Sólo se tolera esquema anterior (sin columna pdfData): se sigue con
+      // pdfPath. Cualquier otro fallo de lectura se propaga, no se oculta.
+      if (!this.isMissingTableOrColumn(err)) throw err;
     }
 
     const receipt = await prisma.receiptSnapshot.findFirst({
@@ -427,6 +591,7 @@ export class ReceiptService {
     lines.push(`Período:        ${fromStr} a ${toStr} (${timezone})`);
     lines.push(`Generado el:    ${genStr}`);
     lines.push(`Modalidad:      ${summary.period}`);
+    lines.push(`Turno:          ${summary.shiftLabel || 'Día calendario (período seleccionado)'}`);
     lines.push(subsep);
     lines.push(`MÉTRICAS CLAVE DEL PERÍODO`);
     lines.push(subsep);
@@ -436,6 +601,7 @@ export class ReceiptService {
     lines.push(`  Consumo confirmado en período:       ${fmtMoney(summary.consumoConfirmadoMinor).padStart(20, ' ')}`);
     lines.push(`  Consumo efectivamente cobrado:       ${fmtMoney(summary.consumoCobradoMinor).padStart(20, ' ')}`);
     lines.push(`  Propinas cobradas:                   ${fmtMoney(summary.propinasCobradasMinor).padStart(20, ' ')}`);
+    lines.push(`  Devoluciones del período:             ${fmtMoney(summary.devolucionesMinor).padStart(20, ' ')}`);
     lines.push(`  TOTAL RECIBIDO (Consumo + Propinas): ${fmtMoney(summary.totalRecibidoMinor).padStart(20, ' ')}`);
     lines.push(`  Pendiente al corte (mesas abiertas): ${fmtMoney(summary.pendienteAlCorteMinor).padStart(20, ' ')}`);
     lines.push(``);
@@ -444,7 +610,7 @@ export class ReceiptService {
     lines.push(subsep);
     lines.push(`DESGLOSE POR MEDIO DE COBRO`);
     lines.push(subsep);
-    lines.push(`MEDIO                          PAGOS       CONSUMO       PROPINA         TOTAL`);
+    lines.push(`MEDIO                     PAGOS    CONSUMO    PROPINA DEVOLUCIÓN      TOTAL`);
     lines.push(subsep);
 
     for (const b of summary.byMethod) {
@@ -452,8 +618,9 @@ export class ReceiptService {
       const count = b.paymentsCount.toString().padStart(6, ' ');
       const cons = fmtMoney(b.consumoMinor).padStart(14, ' ');
       const tip = fmtMoney(b.tipMinor).padStart(13, ' ');
+      const refund = fmtMoney(b.refundMinor).padStart(14, ' ');
       const tot = fmtMoney(b.totalMinor).padStart(14, ' ');
-      lines.push(`${label} ${count} ${cons} ${tip} ${tot}`);
+      lines.push(`${label} ${count} ${cons} ${tip} ${refund} ${tot}`);
     }
 
     lines.push(subsep);
@@ -461,8 +628,9 @@ export class ReceiptService {
     const totCount = summary.paymentsCount.toString().padStart(6, ' ');
     const totCons = fmtMoney(summary.consumoCobradoMinor).padStart(14, ' ');
     const totTip = fmtMoney(summary.propinasCobradasMinor).padStart(13, ' ');
+    const totRefund = fmtMoney(summary.devolucionesMinor).padStart(14, ' ');
     const totTotal = fmtMoney(summary.totalRecibidoMinor).padStart(14, ' ');
-    lines.push(`${totLabel} ${totCount} ${totCons} ${totTip} ${totTotal}`);
+    lines.push(`${totLabel} ${totCount} ${totCons} ${totTip} ${totRefund} ${totTotal}`);
     lines.push(sep);
     lines.push(`Aviso legal: Este documento es un reporte de gestión operativa interna emitido`);
     lines.push(`por el sistema RTMS. No posee validez legal ni fiscal como factura o ticket AFIP.`);

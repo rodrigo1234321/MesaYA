@@ -19,6 +19,8 @@ export type EnvironmentConfig = {
   instanceRestaurantId: string | undefined;
   jwtSecret: string;
   encryptionSecret: string;
+  staffPinPepper: string;
+  staffPinPepperPrevious?: string;
   corsOrigins: string[];
   publicOnboardingEnabled: boolean;
 };
@@ -81,12 +83,21 @@ export function getEnvironmentConfig(env: NodeJS.ProcessEnv = process.env): Envi
   }
   const jwtSecret = normalizeSecret(env.JWT_SECRET);
   const encryptionSecret = normalizeSecret(env.ENCRYPTION_SECRET_KEY);
+  const rawStaffPinPepper = normalizeSecret(env.STAFF_PIN_PEPPER);
+  const staffPinPepperPrevious = normalizeSecret(env.STAFF_PIN_PEPPER_PREVIOUS);
+  const staffPinPepper = rawStaffPinPepper || encryptionSecret || DEVELOPMENT_ENCRYPTION_SECRET;
 
   if (isProduction) {
     assertProductionSecret('JWT_SECRET', jwtSecret);
     assertProductionSecret('ENCRYPTION_SECRET_KEY', encryptionSecret);
     if (jwtSecret === encryptionSecret) {
       throw new Error('JWT_SECRET y ENCRYPTION_SECRET_KEY deben ser secretos distintos en producción.');
+    }
+    if (rawStaffPinPepper) {
+      assertProductionSecret('STAFF_PIN_PEPPER', rawStaffPinPepper);
+    }
+    if (staffPinPepperPrevious) {
+      assertProductionSecret('STAFF_PIN_PEPPER_PREVIOUS', staffPinPepperPrevious);
     }
   }
 
@@ -96,6 +107,8 @@ export function getEnvironmentConfig(env: NodeJS.ProcessEnv = process.env): Envi
     instanceRestaurantId,
     jwtSecret: jwtSecret || DEVELOPMENT_JWT_SECRET,
     encryptionSecret: encryptionSecret || DEVELOPMENT_ENCRYPTION_SECRET,
+    staffPinPepper,
+    staffPinPepperPrevious,
     corsOrigins: parseCorsOrigins(env.CORS_ORIGIN, isProduction),
     // `PILOT_PUBLIC_ONBOARDING_ENABLED` se conserva como alias para no romper
     // instalaciones existentes; las nuevas usan el nombre neutral.

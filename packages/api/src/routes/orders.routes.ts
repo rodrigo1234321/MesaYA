@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { OrderService } from '../services/order.service';
 import { prisma } from '../lib/prisma';
-import { verifyStaffToken, verifyManagerRole } from '../middlewares/auth.middleware';
+import { verifyStaffToken, verifyManagerRole, verifySettlementAuthorization } from '../middlewares/auth.middleware';
 import { AddOrderItemDTO, ClaimItemDTO, SplitMode, OrderStatus } from '@mesaya/shared';
 import { sendSanitizedError } from '../lib/errorHandler';
 
@@ -228,7 +228,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/staff/sessions/:sessionId/settle',
-    { preHandler: [verifyStaffToken, verifyManagerRole] },
+    { preHandler: [verifySettlementAuthorization] },
     async (request, reply) => {
       const { sessionId } = request.params;
       const body = request.body || ({} as any);
@@ -273,7 +273,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/staff/sessions/:sessionId/settle-and-close',
-    { preHandler: [verifyStaffToken, verifyManagerRole] },
+    { preHandler: [verifySettlementAuthorization] },
     async (request, reply) => {
       const { sessionId } = request.params;
       const body = request.body || ({} as any);

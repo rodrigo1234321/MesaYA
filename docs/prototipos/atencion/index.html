@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MesaYA — Prototipo Navegable de Atención (E02)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #f59e0b;
+      --primary-hover: #d97706;
+      --success: #10b981;
+      --success-hover: #059669;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --info: #3b82f6;
+      --info-hover: #2563eb;
+      --warning: #eab308;
+      --focus-ring: 0 0 0 3px rgba(245, 158, 11, 0.4);
+      --touch-min: 48px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* BARRA SUPERIOR DE PUESTO Y ESTADO */
+    header {
+      background-color: #0b1120;
+      border-bottom: 1px solid var(--card-border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: -0.5px;
+    }
+
+    .station-badge {
+      background: #1e293b;
+      border: 1px solid var(--card-border);
+      color: #cbd5e1;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .status-section {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 0.85rem;
+    }
+
+    .connection-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot-green { background-color: var(--success); box-shadow: 0 0 8px var(--success); }
+    .dot-red { background-color: var(--danger); box-shadow: 0 0 8px var(--danger); }
+
+    .operator-card {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #1e293b;
+      padding: 4px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+    }
+
+    .operator-name {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .btn-switch-op {
+      background: #334155;
+      color: #f1f5f9;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+    }
+    .btn-switch-op:hover { background: #475569; }
+
+    /* PANEL DE SIMULACIÓN Y PRUEBAS (HERRAMIENTAS DE EVALUACIÓN) */
+    .test-controls {
+      background: #131c2e;
+      border-bottom: 1px solid #1e293b;
+      padding: 8px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.82rem;
+      color: #94a3b8;
+    }
+
+    .test-controls select, .test-controls button {
+      background: #1e293b;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      min-height: 32px;
+      cursor: pointer;
+    }
+
+    /* ALERTA DE DESCONEXIÓN */
+    .offline-banner {
+      background: #b91c1c;
+      color: #fff;
+      padding: 8px 16px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .offline-banner.active { display: block; }
+
+    /* LAYOUT PRINCIPAL */
+    .main-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 110px);
+      overflow: hidden;
+    }
+
+    /* MODO DUAL (DESKTOP) VS MODO TABLET VERTICAL */
+    .queue-panel {
+      flex: 0 0 420px;
+      border-right: 1px solid var(--card-border);
+      display: flex;
+      flex-direction: column;
+      background: #0f172a;
+      overflow-y: auto;
+    }
+
+    .detail-panel {
+      flex: 1;
+      background: #131d31;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 24px;
+    }
+
+    /* VISTA VERTICAL PARA TABLET */
+    @media (max-width: 900px) {
+      .main-container {
+        flex-direction: column;
+        height: auto;
+      }
+      .queue-panel {
+        flex: 1;
+        width: 100%;
+        border-right: none;
+      }
+      .detail-panel {
+        flex: 1;
+        width: 100%;
+        min-height: 400px;
+        padding: 16px;
+      }
+      .detail-panel.hidden-on-mobile {
+        display: none;
+      }
+      .queue-panel.hidden-on-mobile {
+        display: none;
+      }
+    }
+
+    /* FILTROS Y CONTADORES */
+    .filter-bar {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      background: #111827;
+    }
+
+    .filter-chip {
+      background: #1f2937;
+      color: #9ca3af;
+      border: 1px solid #374151;
+      border-radius: 20px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 36px;
+    }
+
+    .filter-chip.active {
+      background: var(--primary);
+      color: #111827;
+      border-color: var(--primary);
+    }
+
+    .chip-count {
+      background: rgba(0,0,0,0.25);
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 0.75rem;
+    }
+
+    /* LISTA DE TAREAS (ESTABLE, ERGONÓMICA) */
+    .task-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .task-card {
+      background: var(--card-bg);
+      border: 2px solid var(--card-border);
+      border-radius: 10px;
+      padding: 14px;
+      cursor: pointer;
+      transition: border-color 0.15s ease, transform 0.1s ease;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      user-select: none;
+    }
+
+    .task-card:hover {
+      border-color: #475569;
+    }
+
+    .task-card.selected {
+      border-color: var(--primary);
+      background: #243248;
+    }
+
+    .task-card.claimed {
+      border-left: 6px solid var(--info);
+    }
+
+    .task-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .table-badge {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .table-sector {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: normal;
+    }
+
+    .task-badge-type {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-call { background: #854d0e; color: #fef08a; }
+    .badge-ready { background: #065f46; color: #a7f3d0; }
+    .badge-bill { background: #1e3a8a; color: #bfdbfe; }
+    .badge-clean { background: #374151; color: #e5e7eb; }
+    .badge-review { background: #7c2d12; color: #fed7aa; }
+
+    .task-body {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 0.9rem;
+      color: #cbd5e1;
+    }
+
+    .task-timer {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .task-timer.urgent {
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .task-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    /* BOTONES ACCIONABLES TÁCTILES (>= 48px DE OBJETIVO) */
+    .btn-action {
+      flex: 1;
+      min-height: var(--touch-min);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: filter 0.15s ease, background 0.15s ease;
+    }
+
+    .btn-action:focus {
+      outline: none;
+      box-shadow: var(--focus-ring);
+    }
+
+    .btn-primary { background: var(--primary); color: #111827; }
+    .btn-primary:hover { background: var(--primary-hover); }
+
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { background: var(--success-hover); }
+
+    .btn-info { background: var(--info); color: #fff; }
+    .btn-info:hover { background: var(--info-hover); }
+
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: var(--danger-hover); }
+
+    .btn-secondary { background: #334155; color: #f8fafc; }
+    .btn-secondary:hover { background: #475569; }
+
+    .btn-action:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      filter: grayscale(80%);
+    }
+
+    /* DETALLE DE MESA Y FLUJO */
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 20px;
+    }
+
+    .back-to-queue-btn {
+      display: none;
+      min-height: 44px;
+      padding: 8px 16px;
+      background: #334155;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-bottom: 12px;
+    }
+
+    @media (max-width: 900px) {
+      .back-to-queue-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+    }
+
+    .detail-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .detail-card h3 {
+      font-size: 1.1rem;
+      margin-bottom: 12px;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+
+    .items-table th, .items-table td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid #334155;
+    }
+
+    .items-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+    }
+
+    .price-col {
+      text-align: right !important;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .bill-summary {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 2px dashed #334155;
+    }
+
+    .bill-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 1rem;
+    }
+
+    .bill-row.total {
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: var(--primary);
+    }
+
+    /* MODAL DE TECLADO NUMÉRICO (CAMBIO DE OPERADOR / PIN) */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-box {
+      background: #1e293b;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 380px;
+      padding: 24px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .pin-display {
+      background: #0f172a;
+      border: 2px solid var(--card-border);
+      border-radius: 10px;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      letter-spacing: 12px;
+      color: var(--primary);
+    }
+
+    .numpad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .numpad-btn {
+      min-height: 56px;
+      background: #334155;
+      color: #fff;
+      font-size: 1.5rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.1s ease;
+    }
+
+    .numpad-btn:hover { background: #475569; }
+    .numpad-btn:active { background: #64748b; }
+
+    /* BENCHMARK / MÉTRICAS UX S01-S07 EN VIVO */
+    .metrics-dock {
+      background: #090e17;
+      border-top: 1px solid var(--card-border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+
+    .metric-pill {
+      background: #1e293b;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- AVISO DE DESCONEXIÓN (S11) -->
+  <div id="offlineBanner" class="offline-banner">
+    ⚠️ SIN CONEXIÓN CON EL SERVIDOR — Modo sólo lectura. Las órdenes físicas se registran en papel.
+  </div>
+
+  <!-- BARRA SUPERIOR DE PUESTO -->
+  <header>
+    <div class="brand-section">
+      <div class="brand-title">MesaYA Salón</div>
+      <div class="station-badge">🖥️ Puesto 1 (Terminal Salón)</div>
+    </div>
+
+    <div class="status-section">
+      <div class="connection-status">
+        <span id="connDot" class="dot dot-green"></span>
+        <span id="connText">Conectado (SSE)</span>
+      </div>
+
+      <div class="operator-card">
+        <span>Mozo:</span>
+        <span id="currentOperatorName" class="operator-name">Juan Pérez (Mozo)</span>
+        <button id="btnOpenNumpad" class="btn-switch-op" title="Cambiar mozo en el puesto compartido">
+          🔄 Cambiar
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTROLES DE PRUEBA Y AUDITORÍA DE ESCENARIOS (S01-S12) -->
+  <div class="test-controls">
+    <strong style="color: #f8fafc;">Prueba Temprana (E02):</strong>
+    
+    <label>Carga sintética:
+      <select id="selectLoad">
+        <option value="1">1 Tarea (Baja demanda)</option>
+        <option value="10" selected>10 Tareas (Servicio típico)</option>
+        <option value="30">30 Tareas (Ráfaga pico S03)</option>
+      </select>
+    </label>
+
+    <label>Permiso Cobro Mozo (E01/E12):
+      <select id="selectCashPermission">
+        <option value="false" selected>DESHABILITADO (Estricto Caja/Manager)</option>
+        <option value="true">HABILITADO (Mozo cobra efectivo)</option>
+      </select>
+    </label>
+
+    <button id="btnSimulateNewTask" title="Llega un llamado en tiempo real mientras el mozo apunta">
+      ➕ Simular Nuevo Llamado (S03)
+    </button>
+
+    <button id="btnToggleConnection" title="Simular corte de red SSE">
+      🔌 Alternar Conexión (S11)
+    </button>
+
+    <button id="btnSimulateCollision" title="Simular que otro mozo tomó la tarea simultáneamente (S04)">
+      ⚔️ Simular Concurrencia S04
+    </button>
+  </div>
+
+  <!-- CONTENEDOR PRINCIPAL: COLA + DETALLE -->
+  <main class="main-container">
+
+    <!-- PANEL DE COLA DE ATENCIÓN (IZQUIERDA / PORTADA) -->
+    <section id="queuePanel" class="queue-panel">
+      
+      <!-- BARRA DE FILTROS RÁPIDOS -->
+      <div class="filter-bar">
+        <button class="filter-chip active" data-filter="ALL">
+          Todos <span id="countAll" class="chip-count">10</span>
+        </button>
+        <button class="filter-chip" data-filter="CALL">
+          Llamados <span id="countCalls" class="chip-count">4</span>
+        </button>
+        <button class="filter-chip" data-filter="READY">
+          Cocina Lista <span id="countReady" class="chip-count">3</span>
+        </button>
+        <button class="filter-chip" data-filter="BILL">
+          Cuentas <span id="countBills" class="chip-count">2</span>
+        </button>
+        <button class="filter-chip" data-filter="CLEAN">
+          Limpieza <span id="countClean" class="chip-count">1</span>
+        </button>
+      </div>
+
+      <!-- LISTA DE TAREAS -->
+      <div id="taskList" class="task-list">
+        <!-- Renderizado dinámico -->
+      </div>
+    </section>
+
+    <!-- PANEL DE DETALLE Y ACCIONES DE NEGOCIO (DERECHA O FULL EN VERTICAL) -->
+    <section id="detailPanel" class="detail-panel">
+      <button id="btnBackToQueue" class="back-to-queue-btn">
+        ⬅️ Volver a la Lista de Tareas
+      </button>
+
+      <div id="detailContent">
+        <!-- Renderizado según selección -->
+      </div>
+    </section>
+  </main>
+
+  <!-- DOCK DE MÉTRICAS UX S01-S07 EN VIVO -->
+  <footer class="metrics-dock">
+    <div>
+      <span>Metas UX: </span>
+      <span class="metric-pill">S01 Identificar: <span id="metricS01">< 2s</span></span>
+      <span class="metric-pill">S02 Voy+Atendido: <span id="metricS02">2 clics</span></span>
+      <span class="metric-pill">Touch Target: 48px+</span>
+    </div>
+    <div>
+      <span>Sesión: <strong id="clickCounter">0</strong> clics | Última acción: <strong id="lastActionLabel">Inicio</strong></span>
+    </div>
+  </footer>
+
+  <!-- MODAL DE CAMBIO DE OPERADOR / PIN (S07) -->
+  <div id="pinModal" class="modal-overlay">
+    <div class="modal-box">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="font-size: 1.1rem; color: #fff;">Identificación de Mozo</h3>
+        <button id="btnClosePinModal" style="background: none; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer;">&times;</button>
+      </div>
+      
+      <p style="font-size: 0.85rem; color: #94a3b8;">
+        Ingresá tu PIN de 4 dígitos para atender. El puesto sigue conectado en salón.
+      </p>
+
+      <div id="pinDisplay" class="pin-display">····</div>
+
+      <div class="numpad">
+        <button class="numpad-btn" data-num="1">1</button>
+        <button class="numpad-btn" data-num="2">2</button>
+        <button class="numpad-btn" data-num="3">3</button>
+        <button class="numpad-btn" data-num="4">4</button>
+        <button class="numpad-btn" data-num="5">5</button>
+        <button class="numpad-btn" data-num="6">6</button>
+        <button class="numpad-btn" data-num="7">7</button>
+        <button class="numpad-btn" data-num="8">8</button>
+        <button class="numpad-btn" data-num="9">9</button>
+        <button class="numpad-btn" style="background: #ef4444; font-size: 1.1rem;" data-action="CLEAR">C</button>
+        <button class="numpad-btn" data-num="0">0</button>
+        <button class="numpad-btn" style="background: #10b981; font-size: 1.1rem;" data-action="SUBMIT">OK</button>
+      </div>
+
+      <div style="font-size: 0.75rem; color: #64748b; text-align: center;">
+        PIN Mozo: <code>1234</code> | PIN Encargado: <code>9999</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCRIPT CON LA LÓGICA DE NEGOCIO Y PRUEBA DE ESCENARIOS -->
+  <script>
+    // --- ESTADO GLOBAL DEL PROTOTIPO ---
+    const state = {
+      isConnected: true,
+      allowWaitersToCollectCash: false,
+      currentOperator: {
+        id: 'staff-01',
+        name: 'Juan Pérez',
+        role: 'WAITER'
+      },
+      currentFilter: 'ALL',
+      selectedTaskId: null,
+      tasks: [],
+      clicksCount: 0,
+      pinInput: ''
+    };
+
+    // OPERADORES DE EJEMPLO
+    const STAFF_USERS = {
+      '1234': { id: 'staff-01', name: 'Juan Pérez', role: 'WAITER' },
+      '5678': { id: 'staff-02', name: 'Carla Rossi', role: 'WAITER' },
+      '9999': { id: 'staff-mgr', name: 'Roberto Díaz (Encargado)', role: 'MANAGER' }
+    };
+
+    // GENERADOR DE TAREAS SINTÉTICAS (S01-S07)
+    function generateSyntheticTasks(count) {
+      const templates = [
+        {
+          type: 'CALL',
+          title: 'Llamado de Mozo',
+          sector: 'Salón Principal',
+          waitMinutes: 2,
+          detail: 'Cliente solicita atención en la mesa'
+        },
+        {
+          type: 'READY',
+          title: 'Plato Listo en Cocina',
+          sector: 'Terraza',
+          waitMinutes: 4,
+          detail: '2x Bife de Chorizo a punto, 1x Ensalada Mixta'
+        },
+        {
+          type: 'BILL',
+          title: 'Pedido de Cuenta',
+          sector: 'Salón Principal',
+          waitMinutes: 3,
+          detail: 'Mesa solicita la cuenta (Efectivo / MP)'
+        },
+        {
+          type: 'CLEAN',
+          title: 'Mesa para Limpiar',
+          sector: 'Vereda',
+          waitMinutes: 8,
+          detail: 'Mesa desocupada. Lista para sanitizar y liberar.'
+        },
+        {
+          type: 'REVIEW',
+          title: 'Revisar Comanda Excepcional',
+          sector: 'Planta Alta',
+          waitMinutes: 1,
+          detail: 'Cambio de guarnición especial: Sin sal y sin cebolla'
+        }
+      ];
+
+      const tasks = [];
+      for (let i = 1; i <= count; i++) {
+        const tmpl = templates[(i - 1) % templates.length];
+        const tableNum = (i * 3) % 24 + 1;
+        tasks.push({
+          id: 'task-' + i,
+          type: tmpl.type,
+          tableLabel: 'Mesa ' + tableNum,
+          sector: tmpl.sector,
+          waitMinutes: tmpl.waitMinutes + Math.floor(i / 5),
+          detail: tmpl.detail,
+          status: 'PENDING', // PENDING | CLAIMED | RESOLVED
+          claimedBy: null,
+          items: [
+            { name: 'Ojo de Bife 400g', qty: 2, price: 18500 },
+            { name: 'Papas Fritas Provenzal', qty: 1, price: 7200 },
+            { name: 'Cerveza Patagonia 730cc', qty: 2, price: 6800 }
+          ],
+          tipSuggested: 5780,
+          total: 57800
+        });
+      }
+      return tasks;
+    }
+
+    // INICIALIZACIÓN
+    function init() {
+      state.tasks = generateSyntheticTasks(10);
+      state.selectedTaskId = state.tasks[0].id;
+      bindEvents();
+      render();
+    }
+
+    // REGISTRO DE EVENTOS
+    function bindEvents() {
+      // Contador global de clics para medición UX
+      document.addEventListener('click', (e) => {
+        state.clicksCount++;
+        document.getElementById('clickCounter').innerText = state.clicksCount;
+      });
+
+      // Filtros rápidos
+      document.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          state.currentFilter = chip.dataset.filter;
+          renderTaskList();
+        });
+      });
+
+      // Selector de Carga Sintética (1, 10, 30)
+      document.getElementById('selectLoad').addEventListener('change', (e) => {
+        const count = parseInt(e.target.value, 10);
+        state.tasks = generateSyntheticTasks(count);
+        state.selectedTaskId = state.tasks.length > 0 ? state.tasks[0].id : null;
+        render();
+      });
+
+      // Selector de Permiso de Cobro
+      document.getElementById('selectCashPermission').addEventListener('change', (e) => {
+        state.allowWaitersToCollectCash = (e.target.value === 'true');
+        renderDetail();
+      });
+
+      // Botón Simular Nuevo Llamado (S03)
+      document.getElementById('btnSimulateNewTask').addEventListener('click', () => {
+        const newId = 'task-' + (state.tasks.length + 1);
+        const newTask = {
+          id: newId,
+          type: 'CALL',
+          tableLabel: 'Mesa 18 (¡NUEVO!)',
+          sector: 'Salón Principal',
+          waitMinutes: 0,
+          detail: 'Cliente pulsa llamar mozo justo ahora',
+          status: 'PENDING',
+          claimedBy: null,
+          items: [],
+          total: 0
+        };
+        // Agrega al inicio sin perder selección de la tarea actual
+        state.tasks.unshift(newTask);
+        updateActionLabel('Llegó nuevo llamado (Mesa 18) sin saltar foco');
+        render();
+      });
+
+      // Botón Alternar Conexión (S11)
+      document.getElementById('btnToggleConnection').addEventListener('click', () => {
+        state.isConnected = !state.isConnected;
+        const banner = document.getElementById('offlineBanner');
+        const dot = document.getElementById('connDot');
+        const text = document.getElementById('connText');
+
+        if (state.isConnected) {
+          banner.classList.remove('active');
+          dot.className = 'dot dot-green';
+          text.innerText = 'Conectado (SSE)';
+        } else {
+          banner.classList.add('active');
+          dot.className = 'dot dot-red';
+          text.innerText = 'Desconectado';
+        }
+        renderDetail();
+      });
+
+      // Botón Simular Concurrencia S04
+      document.getElementById('btnSimulateCollision').addEventListener('click', () => {
+        const currentTask = state.tasks.find(t => t.id === state.selectedTaskId);
+        if (currentTask) {
+          currentTask.status = 'CLAIMED';
+          currentTask.claimedBy = 'Carla Rossi';
+          updateActionLabel('S04: Tarea reclamada por Carla hace 2s (Evita doble atención)');
+          render();
+        }
+      });
+
+      // Modal Teclado Numérico (Cambio de Operador S07)
+      document.getElementById('btnOpenNumpad').addEventListener('click', () => {
+        state.pinInput = '';
+        updatePinDisplay();
+        document.getElementById('pinModal').classList.add('active');
+      });
+
+      document.getElementById('btnClosePinModal').addEventListener('click', () => {
+        document.getElementById('pinModal').classList.remove('active');
+      });
+
+      document.querySelectorAll('.numpad-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const num = btn.dataset.num;
+          const action = btn.dataset.action;
+
+          if (num) {
+            if (state.pinInput.length < 4) {
+              state.pinInput += num;
+              updatePinDisplay();
+            }
+          } else if (action === 'CLEAR') {
+            state.pinInput = '';
+            updatePinDisplay();
+          } else if (action === 'SUBMIT') {
+            submitPin();
+          }
+        });
+      });
+
+      // Botón Volver (Tablet Vertical)
+      document.getElementById('btnBackToQueue').addEventListener('click', () => {
+        document.getElementById('detailPanel').classList.add('hidden-on-mobile');
+        document.getElementById('queuePanel').classList.remove('hidden-on-mobile');
+      });
+    }
+
+    function updatePinDisplay() {
+      const masked = '·'.repeat(state.pinInput.length).padEnd(4, '·');
+      document.getElementById('pinDisplay').innerText = masked;
+    }
+
+    function submitPin() {
+      const user = STAFF_USERS[state.pinInput];
+      if (user) {
+        state.currentOperator = user;
+        document.getElementById('currentOperatorName').innerText = `${user.name} (${user.role})`;
+        document.getElementById('pinModal').classList.remove('active');
+        updateActionLabel(`Mozo activo cambiado a: ${user.name}`);
+        renderDetail();
+      } else {
+        alert('PIN Inválido. Intentá con 1234 (Mozo) o 9999 (Encargado)');
+        state.pinInput = '';
+        updatePinDisplay();
+      }
+    }
+
+    function updateActionLabel(text) {
+      document.getElementById('lastActionLabel').innerText = text;
+    }
+
+    // RENDERIZADO GLOBAL
+    function render() {
+      updateFilterCounts();
+      renderTaskList();
+      renderDetail();
+    }
+
+    function updateFilterCounts() {
+      const counts = { ALL: state.tasks.length, CALL: 0, READY: 0, BILL: 0, CLEAN: 0 };
+      state.tasks.forEach(t => {
+        if (counts[t.type] !== undefined) counts[t.type]++;
+      });
+      document.getElementById('countAll').innerText = counts.ALL;
+      document.getElementById('countCalls').innerText = counts.CALL;
+      document.getElementById('countReady').innerText = counts.READY;
+      document.getElementById('countBills').innerText = counts.BILL;
+      document.getElementById('countClean').innerText = counts.CLEAN;
+    }
+
+    function renderTaskList() {
+      const container = document.getElementById('taskList');
+      container.innerHTML = '';
+
+      const filtered = state.tasks.filter(t => {
+        if (state.currentFilter === 'ALL') return true;
+        return t.type === state.currentFilter;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div style="padding: 24px; text-align: center; color: #64748b;">No hay tareas pendientes en este sector.</div>';
+        return;
+      }
+
+      filtered.forEach(t => {
+        const isSelected = (t.id === state.selectedTaskId);
+        const card = document.createElement('div');
+        card.className = `task-card ${isSelected ? 'selected' : ''} ${t.status === 'CLAIMED' ? 'claimed' : ''}`;
+        
+        let typeBadgeClass = 'badge-call';
+        let typeLabel = 'Llamado';
+        if (t.type === 'READY') { typeBadgeClass = 'badge-ready'; typeLabel = 'Cocina Lista'; }
+        if (t.type === 'BILL') { typeBadgeClass = 'badge-bill'; typeLabel = 'Cuenta'; }
+        if (t.type === 'CLEAN') { typeBadgeClass = 'badge-clean'; typeLabel = 'Limpieza'; }
+        if (t.type === 'REVIEW') { typeBadgeClass = 'badge-review'; typeLabel = 'Revisar'; }
+
+        card.innerHTML = `
+          <div class="task-header">
+            <div class="table-badge">
+              ${t.tableLabel}
+              <span class="table-sector">${t.sector}</span>
+            </div>
+            <span class="task-badge-type ${typeBadgeClass}">${typeLabel}</span>
+          </div>
+          <div class="task-body">
+            <span>${t.detail}</span>
+            <span class="task-timer ${t.waitMinutes > 5 ? 'urgent' : ''}">⏱️ ${t.waitMinutes} min</span>
+          </div>
+          ${t.status === 'CLAIMED' ? `<div style="font-size: 0.78rem; color: #38bdf8;">🏃‍♂️ En camino: <strong>${t.claimedBy}</strong></div>` : ''}
+        `;
+
+        card.addEventListener('click', () => {
+          state.selectedTaskId = t.id;
+          // Si estamos en mobile/vertical, mostramos panel de detalle
+          if (window.innerWidth <= 900) {
+            document.getElementById('queuePanel').classList.add('hidden-on-mobile');
+            document.getElementById('detailPanel').classList.remove('hidden-on-mobile');
+          }
+          render();
+        });
+
+        container.appendChild(card);
+      });
+    }
+
+    function renderDetail() {
+      const container = document.getElementById('detailContent');
+      const task = state.tasks.find(t => t.id === state.selectedTaskId);
+
+      if (!task) {
+        container.innerHTML = '<div style="color: #64748b;">Seleccioná una tarea de la lista para ver el detalle y operar.</div>';
+        return;
+      }
+
+      let actionsHtml = '';
+      let bodyHtml = '';
+
+      // COMPORTAMIENTO POR TIPO DE TAREA (S01, S02, S12, S16, S17)
+      if (task.type === 'CALL') {
+        bodyHtml = `
+          <div class="detail-card">
+            <h3>🔔 Llamado de Mozo en ${task.tableLabel}</h3>
+            <p style="color: #cbd5e1; margin-bottom: 12px;">El comensal solicitó asistencia directa en mesa (${task.sector}).</p>
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; font-size: 0.88rem; color: #94a3b8;">
+              Estado: <strong>${task.status === 'CLAIMED' ? 'Atendiendo por ' + task.claimedBy : 'Pendiente de reclamo'}</strong><br/>
+              Tiempo transcurrido: <strong>${task.waitMinutes} minutos</strong>
+            </div>
+          </div>
+        `;
+
+        if (task.status === 'PENDING') {
+          actionsHtml = `
+            <button id="btnActionVoy" class="btn-action btn-primary" ${!state.isConnected ? 'disabled' : ''}>
+              🏃‍♂️ VOY (Reclamar llamado)
+            </button>
+          `;
+        } else if (task.status === 'CLAIMED') {
+          actionsHtml = `
+            <button id="btnActionAtendido" class="btn-action btn-success" ${!state.isConnected ? 'disabled' : ''}>
+              ✅ ATENDIDO (Finalizar y liberar llamado)
+            </button>
+          `;
+        }
+      } else if (task.type === 'READY') {
+        bodyHtml = `
+          <div class="detail-card">
+            <h3>🍽️ Platos Listos para Servir — ${task.tableLabel}</h3>
+            <p style="color: #94a3b8; font-size: 0.88rem; margin-bottom: 12px;">Verificá los platos en la bandeja antes de llevar a la mesa:</p>
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th>Cant</th>
+                  <th>Plato / Bebida</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>2x</td><td>Bife de Chorizo a punto</td><td><span style="color:#34d399;">Listo</span></td></tr>
+                <tr><td>1x</td><td>Ensalada Mixta especial</td><td><span style="color:#34d399;">Listo</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        `;
+
+        actionsHtml = `
+          <button id="btnActionEntregado" class="btn-action btn-success" ${!state.isConnected ? 'disabled' : ''}>
+            🍽️ ENTREGADO EN MESA
+          </button>
+        `;
+      } else if (task.type === 'BILL') {
+        const canWaiterCollect = (state.currentOperator.role === 'MANAGER' || state.allowWaitersToCollectCash);
+
+        bodyHtml = `
+          <div class="detail-card">
+            <h3>💳 Cuenta y Cobro — ${task.tableLabel}</h3>
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th>Cant</th>
+                  <th>Detalle</th>
+                  <th class="price-col">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${task.items.map(item => `
+                  <tr>
+                    <td>${item.qty}x</td>
+                    <td>${item.name}</td>
+                    <td class="price-col">$${(item.price * item.qty).toLocaleString()}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+
+            <div class="bill-summary">
+              <div class="bill-row">
+                <span>Subtotal Consumo:</span>
+                <span class="price-col">$${task.total.toLocaleString()}</span>
+              </div>
+              <div class="bill-row" style="color: #38bdf8;">
+                <span>Propina Sugerida (10%):</span>
+                <span class="price-col">$${task.tipSuggested.toLocaleString()}</span>
+              </div>
+              <div class="bill-row total">
+                <span>Total a Cobrar:</span>
+                <span class="price-col">$${(task.total + task.tipSuggested).toLocaleString()}</span>
+              </div>
+            </div>
+
+            ${!canWaiterCollect ? `
+              <div style="margin-top: 16px; padding: 12px; background: #451a03; border: 1px solid #78350f; border-radius: 8px; color: #fde68a; font-size: 0.85rem;">
+                🔒 <strong>Cobro en Efectivo por Mozo Restringido:</strong><br/>
+                La política del local exige derivar a Caja o pedir PIN de Encargado para cobrar.
+              </div>
+            ` : ''}
+          </div>
+        `;
+
+        actionsHtml = `
+          <div style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
+            <div style="display: flex; gap: 10px;">
+              <button id="btnActionCobrarEfectivo" class="btn-action btn-primary" ${(!canWaiterCollect || !state.isConnected) ? 'disabled' : ''}>
+                💵 Cobrar Efectivo Mozo
+              </button>
+              <button id="btnActionCobrarMP" class="btn-action btn-info" ${!state.isConnected ? 'disabled' : ''}>
+                📱 Cobrado por QR / Posnet
+              </button>
+            </div>
+            ${!canWaiterCollect ? `
+              <button id="btnAuthManagerPin" class="btn-action btn-secondary">
+                🔑 Autorizar Cobro con PIN de Encargado
+              </button>
+            ` : ''}
+          </div>
+        `;
+      } else if (task.type === 'CLEAN') {
+        bodyHtml = `
+          <div class="detail-card">
+            <h3>🧹 Mesa Libre para Sanitizar — ${task.tableLabel}</h3>
+            <p style="color: #cbd5e1;">La cuenta ha sido saldada y los clientes se han retirado. Tras limpiar la mesa, marcala como Disponible para que pueda sentarse otro grupo.</p>
+          </div>
+        `;
+
+        actionsHtml = `
+          <button id="btnActionLimpia" class="btn-action btn-success" ${!state.isConnected ? 'disabled' : ''}>
+            ✨ MARCAR MESA LIMPIA Y DISPONIBLE
+          </button>
+        `;
+      } else if (task.type === 'REVIEW') {
+        bodyHtml = `
+          <div class="detail-card">
+            <h3>⚠️ Revisión de Comanda Excepcional — ${task.tableLabel}</h3>
+            <p style="color: #fed7aa; margin-bottom: 12px;">Comanda enviada por cliente con notas especiales:</p>
+            <div style="background: #2d1609; border: 1px solid #7c2d12; padding: 12px; border-radius: 8px; color: #ffedd5; font-size: 0.95rem;">
+              "1x Bife de Chorizo: <strong>Por favor SIN SAL y cambiar papas por ensalada verde</strong>"
+            </div>
+          </div>
+        `;
+
+        actionsHtml = `
+          <div style="display: flex; gap: 10px; width: 100%;">
+            <button id="btnActionAcceptReview" class="btn-action btn-success" ${!state.isConnected ? 'disabled' : ''}>
+              👍 Aceptar y Enviar a Cocina
+            </button>
+            <button id="btnActionRejectReview" class="btn-action btn-danger" ${!state.isConnected ? 'disabled' : ''}>
+              ❌ Rechazar con Aviso
+            </button>
+          </div>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="detail-header">
+          <div>
+            <h2 style="font-size: 1.4rem; color: #fff;">${task.tableLabel}</h2>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">${task.sector}</span>
+          </div>
+          <div style="font-size: 0.9rem; font-weight: 600; color: #94a3b8;">
+            Atendiendo: <span style="color: var(--primary);">${state.currentOperator.name}</span>
+          </div>
+        </div>
+
+        ${bodyHtml}
+
+        <div style="margin-top: 20px;">
+          ${actionsHtml}
+        </div>
+      `;
+
+      bindDetailActions(task);
+    }
+
+    function bindDetailActions(task) {
+      // Acción VOY
+      const btnVoy = document.getElementById('btnActionVoy');
+      if (btnVoy) {
+        btnVoy.addEventListener('click', () => {
+          task.status = 'CLAIMED';
+          task.claimedBy = state.currentOperator.name;
+          updateActionLabel(`Acción VOY ejecutada en ${task.tableLabel} por ${state.currentOperator.name}`);
+          render();
+        });
+      }
+
+      // Acción ATENDIDO
+      const btnAtendido = document.getElementById('btnActionAtendido');
+      if (btnAtendido) {
+        btnAtendido.addEventListener('click', () => {
+          state.tasks = state.tasks.filter(t => t.id !== task.id);
+          state.selectedTaskId = state.tasks.length > 0 ? state.tasks[0].id : null;
+          updateActionLabel(`Llamado de ${task.tableLabel} completado`);
+          render();
+        });
+      }
+
+      // Acción ENTREGADO
+      const btnEntregado = document.getElementById('btnActionEntregado');
+      if (btnEntregado) {
+        btnEntregado.addEventListener('click', () => {
+          state.tasks = state.tasks.filter(t => t.id !== task.id);
+          state.selectedTaskId = state.tasks.length > 0 ? state.tasks[0].id : null;
+          updateActionLabel(`Platos entregados en ${task.tableLabel}`);
+          render();
+        });
+      }
+
+      // Acción COBRAR EFECTIVO
+      const btnCobrarEfectivo = document.getElementById('btnActionCobrarEfectivo');
+      if (btnCobrarEfectivo) {
+        btnCobrarEfectivo.addEventListener('click', () => {
+          state.tasks = state.tasks.filter(t => t.id !== task.id);
+          state.selectedTaskId = state.tasks.length > 0 ? state.tasks[0].id : null;
+          updateActionLabel(`Cobro efectivo $${task.total + task.tipSuggested} registrado en ${task.tableLabel}`);
+          render();
+        });
+      }
+
+      // Acción COBRAR MP / POSNET
+      const btnCobrarMP = document.getElementById('btnActionCobrarMP');
+      if (btnCobrarMP) {
+        btnCobrarMP.addEventListener('click', () => {
+          state.tasks = state.tasks.filter(t => t.id !== task.id);
+          state.selectedTaskId = state.tasks.length > 0 ? state.tasks[0].id : null;
+          updateActionLabel(`Cobro electrónico validado en ${task.tableLabel}`);
+          render();
+        });
+      }
+
+      // Pedir PIN de Encargado
+      const btnAuthManagerPin = document.getElementById('btnAuthManagerPin');
+      if (btnAuthManagerPin) {
+        btnAuthManagerPin.addEventListener('click', () => {
+          const pin = prompt('Ingrese PIN de Encargado para autorizar cobro:');
+          if (pin === '9999') {
+            state.tasks = state.tasks.filter(t => t.id !== task.id);
+            state.selectedTaskId = state.tasks.length > 0 ? state.tasks[0].id : null;
+            updateActionLabel(`Cobro en ${task.tableLabel} autorizado por Encargado (PIN)`);
+            render();
+          } else {
+            alert('PIN de encargado incorrecto.');
+          }
+        });
+      }
+
+      // Acción LIMPIA
+      const btnLimpia = document.getElementById('btnActionLimpia');
+      if (btnLimpia) {
+        btnLimpia.addEventListener('click', () => {
+          state.tasks = state.tasks.filter(t => t.id !== task.id);
+          state.selectedTaskId = state.tasks.length > 0 ? state.tasks[0].id : null;
+          updateActionLabel(`${task.tableLabel} marcada como LIMPIA y DISPONIBLE`);
+          render();
+        });
+      }
+
+      // Acción Aceptar Comanda Excepcional
+      const btnAcceptReview = document.getElementById('btnActionAcceptReview');
+      if (btnAcceptReview) {
+        btnAcceptReview.addEventListener('click', () => {
+          state.tasks = state.tasks.filter(t => t.id !== task.id);
+          state.selectedTaskId = state.tasks.length > 0 ? state.tasks[0].id : null;
+          updateActionLabel(`Comanda excepcional de ${task.tableLabel} aceptada`);
+          render();
+        });
+      }
+
+      // Acción Rechazar Comanda Excepcional
+      const btnRejectReview = document.getElementById('btnActionRejectReview');
+      if (btnRejectReview) {
+        btnRejectReview.addEventListener('click', () => {
+          const reason = prompt('Motivo del rechazo de comanda (ej: Sin stock de ingrediente):');
+          if (reason) {
+            state.tasks = state.tasks.filter(t => t.id !== task.id);
+            state.selectedTaskId = state.tasks.length > 0 ? state.tasks[0].id : null;
+            updateActionLabel(`Comanda rechazada: "${reason}"`);
+            render();
+          }
+        });
+      }
+    }
+
+    // ARRANQUE
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

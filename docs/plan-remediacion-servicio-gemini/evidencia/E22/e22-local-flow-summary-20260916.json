@@ -1,0 +1,406 @@
+{
+  "root_group": {
+    "name": "",
+    "path": "",
+    "id": "d41d8cd98f00b204e9800998ecf8427e",
+    "groups": {
+      "lectura comensal: menu + sesion QR": {
+        "path": "::lectura comensal: menu + sesion QR",
+        "id": "0ac0616b3bba43d161c98518a81d84af",
+        "groups": {},
+        "checks": {
+          "menu 200 + estructura real": {
+            "fails": 0,
+            "name": "menu 200 + estructura real",
+            "path": "::lectura comensal: menu + sesion QR::menu 200 + estructura real",
+            "id": "a35e25fb4f9acbf9bc1689f0482c73ef",
+            "passes": 96
+          },
+          "qr 200 + valid===true + token": {
+            "path": "::lectura comensal: menu + sesion QR::qr 200 + valid===true + token",
+            "id": "f784094fb1617d8b28d48968081fbdbf",
+            "passes": 96,
+            "fails": 0,
+            "name": "qr 200 + valid===true + token"
+          },
+          "qr nunca 404": {
+            "name": "qr nunca 404",
+            "path": "::lectura comensal: menu + sesion QR::qr nunca 404",
+            "id": "c613d11aabd19643971b8b7d5b7461d2",
+            "passes": 96,
+            "fails": 0
+          },
+          "orden activa: 200 + cuenta/historial coherentes": {
+            "name": "orden activa: 200 + cuenta/historial coherentes",
+            "path": "::lectura comensal: menu + sesion QR::orden activa: 200 + cuenta/historial coherentes",
+            "id": "1c6b27cc30ec411c3ff9d9ff70935b6e",
+            "passes": 96,
+            "fails": 0
+          }
+        },
+        "name": "lectura comensal: menu + sesion QR"
+      },
+      "cocina: kitchen-orders": {
+        "path": "::cocina: kitchen-orders",
+        "id": "a657474c33d36ada5ae80fc07e53aef9",
+        "groups": {},
+        "checks": {
+          "kitchen 200 + orders[] con identidad": {
+            "path": "::cocina: kitchen-orders::kitchen 200 + orders[] con identidad",
+            "id": "3718ffb35d4f595057687aeefa3de9da",
+            "passes": 48,
+            "fails": 0,
+            "name": "kitchen 200 + orders[] con identidad"
+          }
+        },
+        "name": "cocina: kitchen-orders"
+      },
+      "salon: workspace unificado": {
+        "name": "salon: workspace unificado",
+        "path": "::salon: workspace unificado",
+        "id": "db9b661acbfcd9e7fed9bd5e9253a87d",
+        "groups": {},
+        "checks": {
+          "workspace 200 + tasks/accounts + tenant": {
+            "name": "workspace 200 + tasks/accounts + tenant",
+            "path": "::salon: workspace unificado::workspace 200 + tasks/accounts + tenant",
+            "id": "5c63335df63e53208173715c05c65382",
+            "passes": 76,
+            "fails": 0
+          }
+        }
+      },
+      "caja: cash-orders + resumen ventas": {
+        "groups": {},
+        "checks": {
+          "cash 200 + orders[]/accounts[]": {
+            "name": "cash 200 + orders[]/accounts[]",
+            "path": "::caja: cash-orders + resumen ventas::cash 200 + orders[]/accounts[]",
+            "id": "ce44c8c0fcd7f2fbeb00fa1511aed2d7",
+            "passes": 19,
+            "fails": 0
+          },
+          "ventas 200 + resumen ARS_MINOR": {
+            "id": "aa1fe0c05f53cd0c5145d982160f3705",
+            "passes": 19,
+            "fails": 0,
+            "name": "ventas 200 + resumen ARS_MINOR",
+            "path": "::caja: cash-orders + resumen ventas::ventas 200 + resumen ARS_MINOR"
+          }
+        },
+        "name": "caja: cash-orders + resumen ventas",
+        "path": "::caja: cash-orders + resumen ventas",
+        "id": "ec709ef90b5868455ca3534473b99a7d"
+      },
+      "flujo negocio: crear pedido presencial": {
+        "groups": {},
+        "checks": {
+          "pedido 201 + id/sesion/importe/IN_KITCHEN": {
+            "name": "pedido 201 + id/sesion/importe/IN_KITCHEN",
+            "path": "::flujo negocio: crear pedido presencial::pedido 201 + id/sesion/importe/IN_KITCHEN",
+            "id": "7f0093620047b28157cfb50760460c71",
+            "passes": 1,
+            "fails": 0
+          }
+        },
+        "name": "flujo negocio: crear pedido presencial",
+        "path": "::flujo negocio: crear pedido presencial",
+        "id": "a931e222909bd3bb27f72bb408d6c348"
+      },
+      "flujo negocio: preparar + replay idempotente": {
+        "name": "flujo negocio: preparar + replay idempotente",
+        "path": "::flujo negocio: preparar + replay idempotente",
+        "id": "a6a1333ad27b218cc774bcdd333e9ba6",
+        "groups": {},
+        "checks": {
+          "preparacion -> READY_TO_SERVE": {
+            "name": "preparacion -> READY_TO_SERVE",
+            "path": "::flujo negocio: preparar + replay idempotente::preparacion -> READY_TO_SERVE",
+            "id": "7549d2a7b14b47fb7652dee4d56221df",
+            "passes": 1,
+            "fails": 0
+          },
+          "preparacion replay idempotente": {
+            "fails": 0,
+            "name": "preparacion replay idempotente",
+            "path": "::flujo negocio: preparar + replay idempotente::preparacion replay idempotente",
+            "id": "a9f84af4aa3d845d8491354ccbfc9de3",
+            "passes": 1
+          }
+        }
+      },
+      "flujo negocio: entregar + replay idempotente": {
+        "checks": {
+          "entrega -> SERVED": {
+            "id": "b919442cf8891b2618e453e4be136214",
+            "passes": 1,
+            "fails": 0,
+            "name": "entrega -> SERVED",
+            "path": "::flujo negocio: entregar + replay idempotente::entrega -> SERVED"
+          },
+          "entrega replay idempotente": {
+            "name": "entrega replay idempotente",
+            "path": "::flujo negocio: entregar + replay idempotente::entrega replay idempotente",
+            "id": "fc43f4dcbaf6a2b5a259037e81e963d4",
+            "passes": 1,
+            "fails": 0
+          }
+        },
+        "name": "flujo negocio: entregar + replay idempotente",
+        "path": "::flujo negocio: entregar + replay idempotente",
+        "id": "897f2fffa565a771c9cab5ef06e234db",
+        "groups": {}
+      },
+      "flujo negocio: cuenta servida coherente": {
+        "name": "flujo negocio: cuenta servida coherente",
+        "path": "::flujo negocio: cuenta servida coherente",
+        "id": "22ed64713a08ab9b8495caff7e62365f",
+        "groups": {},
+        "checks": {
+          "cuenta servida + version + saldo + coherencia": {
+            "name": "cuenta servida + version + saldo + coherencia",
+            "path": "::flujo negocio: cuenta servida coherente::cuenta servida + version + saldo + coherencia",
+            "id": "36988ea2bd3aad2f6a8bc9caae94b956",
+            "passes": 1,
+            "fails": 0
+          },
+          "caja coincide version/saldo": {
+            "passes": 1,
+            "fails": 0,
+            "name": "caja coincide version/saldo",
+            "path": "::flujo negocio: cuenta servida coherente::caja coincide version/saldo",
+            "id": "2a6d7232aef45a68e5557d1777f875e9"
+          }
+        }
+      },
+      "flujo negocio: settle-and-close + replay": {
+        "groups": {},
+        "checks": {
+          "cierre 201 + saldo 0 + settlement": {
+            "path": "::flujo negocio: settle-and-close + replay::cierre 201 + saldo 0 + settlement",
+            "id": "baaf5b093adbc84333e7722029df0829",
+            "passes": 1,
+            "fails": 0,
+            "name": "cierre 201 + saldo 0 + settlement"
+          },
+          "cierre replay sin duplicar": {
+            "passes": 1,
+            "fails": 0,
+            "name": "cierre replay sin duplicar",
+            "path": "::flujo negocio: settle-and-close + replay::cierre replay sin duplicar",
+            "id": "3ea0ed66b30ee97d3e0918b28db8b817"
+          }
+        },
+        "name": "flujo negocio: settle-and-close + replay",
+        "path": "::flujo negocio: settle-and-close + replay",
+        "id": "6ada376583369e194d8d71d3ea54ae33"
+      },
+      "flujo negocio: limpieza a AVAILABLE": {
+        "groups": {},
+        "checks": {
+          "mesa AVAILABLE tras TO_CLEAN": {
+            "name": "mesa AVAILABLE tras TO_CLEAN",
+            "path": "::flujo negocio: limpieza a AVAILABLE::mesa AVAILABLE tras TO_CLEAN",
+            "id": "ad349deca6155fa5e25164dfe8a9e0af",
+            "passes": 1,
+            "fails": 0
+          }
+        },
+        "name": "flujo negocio: limpieza a AVAILABLE",
+        "path": "::flujo negocio: limpieza a AVAILABLE",
+        "id": "3c853fba83cdffb19ed1379a63ddf87c"
+      },
+      "flujo negocio: conciliacion final": {
+        "name": "flujo negocio: conciliacion final",
+        "path": "::flujo negocio: conciliacion final",
+        "id": "cee383176631b4d913b07221486b918e",
+        "groups": {},
+        "checks": {
+          "conciliacion: sesion fuera de caja/cocina/workspace + mesa libre": {
+            "name": "conciliacion: sesion fuera de caja/cocina/workspace + mesa libre",
+            "path": "::flujo negocio: conciliacion final::conciliacion: sesion fuera de caja/cocina/workspace + mesa libre",
+            "id": "8a7e9395e9fbff25f7c4a3031d665b53",
+            "passes": 1,
+            "fails": 0
+          }
+        }
+      }
+    },
+    "checks": {}
+  },
+  "metrics": {
+    "business_latency_ms": {
+      "avg": 17.18935,
+      "min": 0.9307,
+      "med": 12.20075,
+      "max": 320.3704,
+      "p(90)": 29.094359999999998,
+      "p(95)": 41.100149999999964,
+      "thresholds": {
+        "p(50)<500": false,
+        "p(95)<800": false,
+        "p(99)<1500": false
+      }
+    },
+    "business_reconciliation_ok": {
+      "count": 1,
+      "rate": 0.010250388578905522,
+      "thresholds": {
+        "count>0": false
+      }
+    },
+    "iterations": {
+      "count": 240,
+      "rate": 2.460093258937325
+    },
+    "vus": {
+      "value": 4,
+      "min": 4,
+      "max": 9
+    },
+    "business_check_pass": {
+      "passes": 461,
+      "fails": 0,
+      "thresholds": {
+        "rate>0.99": false
+      },
+      "value": 1
+    },
+    "checks": {
+      "passes": 557,
+      "fails": 0,
+      "thresholds": {
+        "rate>0.99": false
+      },
+      "value": 1
+    },
+    "business_error_rate": {
+      "passes": 0,
+      "fails": 461,
+      "thresholds": {
+        "rate<0.01": false
+      },
+      "value": 0
+    },
+    "http_req_waiting": {
+      "p(90)": 28.913080000000004,
+      "p(95)": 42.86025999999997,
+      "avg": 17.31619748427673,
+      "min": 0.9307,
+      "med": 11.6695,
+      "max": 320.3704
+    },
+    "iteration_duration": {
+      "p(95)": 5029.239925000001,
+      "avg": 3222.214032916666,
+      "min": 817.5592,
+      "med": 2556.21915,
+      "max": 5155.8521,
+      "p(90)": 4099.39103
+    },
+    "http_reqs": {
+      "count": 477,
+      "rate": 4.889435352137934
+    },
+    "vus_max": {
+      "value": 9,
+      "min": 9,
+      "max": 9
+    },
+    "http_req_sending": {
+      "min": 0,
+      "med": 0,
+      "max": 0.8707,
+      "p(90)": 0,
+      "p(95)": 0,
+      "avg": 0.020922012578616353
+    },
+    "http_req_receiving": {
+      "med": 0,
+      "max": 4.7544,
+      "p(90)": 0.99478,
+      "p(95)": 1.0913599999999999,
+      "avg": 0.39879412997903574,
+      "min": 0
+    },
+    "business_flow_completed": {
+      "count": 1,
+      "rate": 0.010250388578905522,
+      "thresholds": {
+        "count>0": false
+      }
+    },
+    "data_sent": {
+      "count": 152095,
+      "rate": 1559.0328509086353
+    },
+    "polling_requests": {
+      "count": 450,
+      "rate": 4.612674860507484
+    },
+    "http_req_failed": {
+      "passes": 0,
+      "fails": 477,
+      "thresholds": {
+        "rate<0.01": false
+      },
+      "value": 0
+    },
+    "http_req_connecting": {
+      "med": 0,
+      "max": 2.2301,
+      "p(90)": 0,
+      "p(95)": 0,
+      "avg": 0.019049895178197065,
+      "min": 0
+    },
+    "http_req_blocked": {
+      "avg": 0.028855136268343812,
+      "min": 0,
+      "med": 0,
+      "max": 2.2301,
+      "p(90)": 0,
+      "p(95)": 0
+    },
+    "group_duration": {
+      "max": 322.3925,
+      "p(90)": 47.1018,
+      "p(95)": 91.967325,
+      "avg": 33.17767520325202,
+      "min": 4.8945,
+      "med": 26.65495
+    },
+    "http_req_duration": {
+      "max": 320.3704,
+      "p(90)": 29.17058,
+      "p(95)": 43.32573999999997,
+      "avg": 17.73591362683438,
+      "min": 0.9307,
+      "med": 12.2468
+    },
+    "http_req_duration{expected_response:true}": {
+      "med": 12.2468,
+      "max": 320.3704,
+      "p(90)": 29.17058,
+      "p(95)": 43.32573999999997,
+      "avg": 17.73591362683438,
+      "min": 0.9307
+    },
+    "http_req_tls_handshaking": {
+      "avg": 0,
+      "min": 0,
+      "med": 0,
+      "max": 0,
+      "p(90)": 0,
+      "p(95)": 0
+    },
+    "data_received": {
+      "count": 2058470,
+      "rate": 21100.117378019648
+    }
+  },
+  "setup_data": {
+    "redacted": true,
+    "reason": "setup tokens removed from evidence"
+  }
+}

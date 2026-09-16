@@ -81,7 +81,8 @@ export async function tableStateRoutes(fastify: FastifyInstance) {
 
       if (err.code === 'STATE_CONFLICT' || err.statusCode === 409) {
         return reply.status(409).send({
-          error: 'STATE_CONFLICT',
+          error: err.code || 'STATE_CONFLICT',
+          code: err.code || 'STATE_CONFLICT',
           message: err.message,
           details: err.details
         });

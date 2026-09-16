@@ -10,10 +10,22 @@ export interface TerminalContext {
 
 export interface StaffOperatorContext {
   staffUserId: string;
-  role: 'ADMIN' | 'MANAGER' | 'WAITER' | 'KITCHEN' | 'CASHIER' | string;
+  role: 'ADMIN' | 'MANAGER' | 'WAITER' | 'KITCHEN' | 'CASHIER' | 'TERMINAL' | string;
   name: string;
   restaurantId: string;
   terminalId?: string;
+  temp?: boolean;
+  purpose?: string;
+  tableId?: string;
+  sessionId?: string;
+  isTerminalOnly?: boolean;
+}
+
+export interface TemporaryAuthorizationDTO {
+  purpose: 'CASH_COLLECT' | 'MANAGER_OVERRIDE' | string;
+  tableId?: string;
+  sessionId?: string;
+  expiresInSeconds: number;
 }
 
 /**

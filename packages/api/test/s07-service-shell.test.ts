@@ -7,14 +7,29 @@ const appSrc = readFileSync(join(ROOT, 'apps/staff-panel/src/App.tsx'), 'utf8');
 const wsSrc = readFileSync(join(ROOT, 'apps/staff-panel/src/components/ServiceWorkspace.tsx'), 'utf8');
 
 describe('E07 service shell (static contract)', () => {
-  it('Servicio es la vista inicial y no hay botones primarios Cocina/Caja', () => {
-    expect(appSrc).toMatch(/useState<ActiveTab>\('service'\)/);
-    // No primary nav buttons with text Cocina o Caja
-    expect(appSrc).not.toMatch(/<span>Cocina<\/span>/);
-    expect(appSrc).not.toMatch(/<span>Caja<\/span>/);
-    expect(appSrc).not.toMatch(/selectTab\('kitchen'\)/);
-    expect(appSrc).not.toMatch(/selectTab\('cash'\)/);
+  it('Servicio es la vista inicial; la navegación primaria es Servicio + Más y Cocina queda como acceso secundario/directo', () => {
+    // E14 usa un inicializador lazy para soportar /kitchen y query params;
+    // el fallback efectivo sigue siendo Servicio.
+    expect(appSrc).toMatch(/useState<ActiveTab>\(\(\) =>/);
+    expect(appSrc).toContain("return 'service';");
+    // La navegación primaria sólo expone Servicio y Más (contrato 02: Cocina es
+    // acceso configurable dentro de Más, no otra fila permanente).
+    const navStart = appSrc.indexOf('<nav');
+    const navEnd = appSrc.indexOf('</nav>');
+    expect(navStart).toBeGreaterThanOrEqual(0);
+    expect(navEnd).toBeGreaterThan(navStart);
+    const navBlock = appSrc.slice(navStart, navEnd);
+    // Quitar el dropdown de Más (menuitems secundarios) antes de comprobar la primaria.
+    const primaryOnly = navBlock.replace(/role="menuitem"[\s\S]*?<\/button>/g, '');
+    expect(primaryOnly).not.toMatch(/<span>Cocina<\/span>/);
+    expect(primaryOnly).not.toMatch(/<span>Caja<\/span>/);
+    expect(primaryOnly).not.toMatch(/selectTab\('cash'\)/);
     expect(appSrc).toContain('Servicio');
+    expect(appSrc).toContain('Más');
+    // Acceso secundario/directo a Cocina explícitamente permitido: Más + /kitchen o query param.
+    expect(appSrc).toContain("selectTab('kitchen')");
+    expect(appSrc).toContain('/kitchen');
+    expect(appSrc).toContain('KitchenOrdersManager');
   });
 
   it('ServiceWorkspace conserva snapshot y secciones mapa/cola/cuenta', () => {

@@ -61,7 +61,8 @@ export const ALLOWED_ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus
   [OrderStatus.READY_TO_SERVE]: Object.freeze([
     OrderStatus.SERVED,
     OrderStatus.CANCELLED,
-    OrderStatus.PAID
+    OrderStatus.PAID,
+    OrderStatus.IN_KITCHEN
   ]),
   [OrderStatus.SERVED]: Object.freeze([
     OrderStatus.PAID,
@@ -921,7 +922,12 @@ export class OrderService {
     idempotentReplay: boolean;
   }> {
     if (!input || typeof input !== 'object') return this.settleError(400, 'INVALID_SETTLE_REQUEST', 'Datos de liquidación requeridos');
-    if (input.staffRole !== 'MANAGER') return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar requiere rol MANAGER.');
+    if (input.staffRole !== 'MANAGER' && input.staffRole !== 'WAITER') {
+      return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar requiere rol MANAGER o WAITER.');
+    }
+    if (input.staffRole === 'WAITER' && input.method !== 'WAITER_CASH') {
+      return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar con medios no-efectivo requiere rol MANAGER.');
+    }
     if (typeof input.tableSessionId !== 'string' || !input.tableSessionId) {
       return this.settleError(400, 'INVALID_SETTLE_REQUEST', 'tableSessionId requerido');
     }
@@ -978,6 +984,15 @@ export class OrderService {
         const { session, orders, settlements } = await this.loadAccountData(tx, input.tableSessionId);
         if (session.table.restaurantId !== input.staffRestaurantId) {
           return this.settleError(403, 'STAFF_TENANT_MISMATCH', 'No autorizado para cobrar otra cuenta/restaurante');
+        }
+        if (input.staffRole === 'WAITER') {
+          const moduleConfig = await tx.restaurantModuleConfig.findUnique({
+            where: { restaurantId: session.table.restaurantId },
+            select: { allowWaitersToCollectCash: true }
+          });
+          if (!moduleConfig?.allowWaitersToCollectCash) {
+            return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'El cobro en efectivo por mozos no está habilitado para este local.');
+          }
         }
         const fresh = this.buildSessionAccount(session.id, session.tableId, orders, settlements);
 
@@ -1192,7 +1207,12 @@ export class OrderService {
     tableId: string;
   }> {
     if (!input || typeof input !== 'object') return this.settleError(400, 'INVALID_SETTLE_REQUEST', 'Datos de liquidación requeridos');
-    if (input.staffRole !== 'MANAGER') return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar requiere rol MANAGER.');
+    if (input.staffRole !== 'MANAGER' && input.staffRole !== 'WAITER') {
+      return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar requiere rol MANAGER o WAITER.');
+    }
+    if (input.staffRole === 'WAITER' && input.method !== 'WAITER_CASH') {
+      return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar con medios no-efectivo requiere rol MANAGER.');
+    }
     if (typeof input.tableSessionId !== 'string' || !input.tableSessionId) {
       return this.settleError(400, 'INVALID_SETTLE_REQUEST', 'tableSessionId requerido');
     }
@@ -1241,6 +1261,15 @@ export class OrderService {
         const { session, orders, settlements } = await this.loadAccountData(tx, input.tableSessionId);
         if (session.table.restaurantId !== input.staffRestaurantId) {
           return this.settleError(403, 'STAFF_TENANT_MISMATCH', 'No autorizado para cobrar otra cuenta/restaurante');
+        }
+        if (input.staffRole === 'WAITER') {
+          const moduleConfig = await tx.restaurantModuleConfig.findUnique({
+            where: { restaurantId: session.table.restaurantId },
+            select: { allowWaitersToCollectCash: true }
+          });
+          if (!moduleConfig?.allowWaitersToCollectCash) {
+            return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'El cobro en efectivo por mozos no está habilitado para este local.');
+          }
         }
         const fresh = this.buildSessionAccount(session.id, session.tableId, orders, settlements);
 
@@ -2512,7 +2541,12 @@ export class OrderService {
       error.code = 'STAFF_ACTOR_REQUIRED';
       throw error;
     }
-    if (order.status !== OrderStatus.PENDING_VALIDATION) {
+    // E14: la cancelación segura con motivo auditado también cubre tandas en
+    // cocina (IN_KITCHEN) o listas para servir (READY_TO_SERVE). Coherente con
+    // ALLOWED_ORDER_TRANSITIONS; los estados finales siguen inmutables y las
+    // tandas ya servidas/cobradas no se cancelan por este camino.
+    const cancellableFrom = [OrderStatus.PENDING_VALIDATION, OrderStatus.IN_KITCHEN, OrderStatus.READY_TO_SERVE];
+    if (!cancellableFrom.includes(order.status as OrderStatus)) {
       const error: any = new Error('La comanda ya no está pendiente de revisión');
       error.statusCode = 422;
       error.code = 'ORDER_NOT_REVIEWABLE';
@@ -2521,7 +2555,7 @@ export class OrderService {
 
     const cancelledAt = new Date();
     const changed = await prisma.order.updateMany({
-      where: { id: order.id, status: OrderStatus.PENDING_VALIDATION },
+      where: { id: order.id, status: { in: cancellableFrom } },
       data: {
         status: OrderStatus.CANCELLED,
         draftKey: null,
@@ -3413,7 +3447,7 @@ export class OrderService {
         },
         items: {
           include: {
-            menuItem: { select: { name: true } }
+            menuItem: { select: { name: true, tags: true } }
           },
           orderBy: { createdAt: 'asc' }
         }
@@ -3439,15 +3473,26 @@ export class OrderService {
         createdAt: o.createdAt.toISOString(),
         elapsedMinutes,
         urgency: elapsedMinutes >= 25 ? 'CRITICAL' : elapsedMinutes >= 15 ? 'WARNING' : 'NORMAL',
-        items: o.items.map((it) => ({
-          id: it.id,
-          name: it.menuItem.name,
-          quantity: it.quantity,
-          notes: it.notes,
-          guestName: it.guestName ?? null,
-          unitPrice: it.unitPrice,
-          unitPriceMinor: it.unitPriceMinor ?? null
-        }))
+        items: o.items.map((it) => {
+          let tags: string[] = [];
+          if ((it.menuItem as any)?.tags) {
+            try {
+              tags = JSON.parse((it.menuItem as any).tags);
+            } catch {
+              tags = [];
+            }
+          }
+          return {
+            id: it.id,
+            name: it.menuItem.name,
+            quantity: it.quantity,
+            notes: it.notes,
+            tags,
+            guestName: it.guestName ?? null,
+            unitPrice: it.unitPrice,
+            unitPriceMinor: it.unitPriceMinor ?? null
+          };
+        })
       };
     });
   }
