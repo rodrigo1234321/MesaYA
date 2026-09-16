@@ -262,11 +262,14 @@
   preflight remoto de sólo lectura `35160057353` también pasó. Se
   confirmó la existencia de cuatro proyectos (`api`,
   `client-web`, `staff-panel`, `admin-dashboard`) y se documentaron sus roots,
-  Node 22, región y deployments visibles. Se enumeraron nombres de variables
-  sin guardar valores completos. El smoke HTTP de baseline confirmó health y SPAs 200 y
-  CORS 204 para las tres origins válidas, con 404 para una origin no autorizada.
-  Se detectaron y dejaron explícitas discrepancias históricas de nombres de
-  proyecto y conteo de migraciones; el smoke no prueba el SHA local.
+  Node 22, región, aliases y deployments visibles. La lectura actual también
+  vinculó los deployments productivos con SHAs anteriores al candidato:
+  `api` → `04633508...`, `client-web`/`staff-panel` → `16a180d4...` y
+  `admin-dashboard` → `d57d47be...`. Se enumeraron nombres de variables sin
+  guardar valores completos. El smoke HTTP de baseline confirmó health y SPAs
+  200 y CORS 204 para las tres origins válidas, con 404 para una origin no
+  autorizada. Se detectaron y dejaron explícitas discrepancias históricas de
+  nombres de proyecto y conteo de migraciones; el smoke no prueba el SHA local.
 - **Verificación:** manifiesto de instancia en modo producción exit 0; plan de
   provisioning `PLAN_ONLY` exit 0; tests de manifiesto exit 0; checker E22 exit
   0; consultas Vercel de lectura exit 0. Supabase CLI y `psql/pg_dump/pg_restore`
@@ -281,7 +284,9 @@
   fueron leídos. `Production` continúa sin reglas de protección observadas.
   `release-migrate` sólo se ejecutó en modo `preflight`; el modo manual
   `backup-drill` quedó preparado pero no ejecutado, y `migrate` sigue sin
-  ejecutarse. Los deployments Ready anteriores no exponen `gitCommitSha`.
+  ejecutarse. Los deployments Ready actuales exponen SHAs anteriores, no el
+  candidato `9e4a4a0`; la publicación del candidato en los cuatro proyectos
+  sigue pendiente.
 - **Gate:** `VERIFIED_LOCAL` documental + CI del candidato y preflight cloud de
   sólo lectura; `PENDING_CLOUD` para PostgreSQL completo, hardening,
   backup/restore, mapping SHA/deploy, HTTPS/CORS/QR,

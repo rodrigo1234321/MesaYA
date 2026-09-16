@@ -34,11 +34,12 @@ migración ni deploy.
    en GitHub y borraría el dump al terminar, pero sigue sin ejecutarse y no
    produce retención durable; el documento existente continúa siendo
    procedimiento/documentación, no evidencia suficiente del gate cloud actual.
-3. El commit candidato está limpio y publicado, pero los deployment IDs visibles
-   están registrados sin mapping probado
-   entre ellos, su SHA fuente y este candidato. El smoke baseline no sustituye
-   la verificación del candidato ni permite afirmar que los valores efectivos de
-   variables sean correctos; no se descargaron valores completos.
+3. El commit candidato está limpio y publicado. La lectura actual vinculó los
+   deployment IDs productivos con sus SHAs fuente, pero todos son anteriores al
+   candidato `9e4a4a0`; todavía falta publicar y verificar el candidato en los
+   cuatro proyectos. El smoke baseline no sustituye esa verificación ni permite
+   afirmar que los valores efectivos de variables sean correctos; no se
+   descargaron valores completos.
 4. La prueba k6 local de E22 usa SQLite aislada; no demuestra capacidad de
    producción, número de mesas, comportamiento del pooler ni límites reales.
 5. E23 requiere observación presencial y sigue sin iniciar.
@@ -48,8 +49,9 @@ migración ni deploy.
 7. El canal remoto de migración ya tiene los dos secretos explícitos y el
    preflight de sólo lectura pasó; el Environment `Production` no mostró reglas
    de protección. Vercel sí tiene secretos ocultos, pero no permite descargarlos.
-   El workflow ahora incluye un drill aislado preparado, pero no se ejecutó el
-   drill, no se migró ni se modificó la base.
+   La lectura sí vinculó los cuatro deployments productivos actuales con SHAs
+   anteriores al candidato. El workflow incluye un drill aislado preparado,
+   pero no se ejecutó el drill, no se migró ni se modificó la base.
 
 ## Decisión
 

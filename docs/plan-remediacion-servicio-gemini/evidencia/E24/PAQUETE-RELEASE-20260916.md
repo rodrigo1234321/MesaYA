@@ -48,17 +48,18 @@ La cuenta mostró el namespace `mesa-ya` y estos cuatro proyectos. Los nombres
 históricos `mesaya-*` o `mesa-ya-*` de otros documentos no se usan como fuente
 de verdad para una nueva publicación.
 
-| Proyecto | Root Directory | Node | Región | Deployment ID visible | URL productiva visible | Estado observado |
-|---|---|---:|---|---|---|---|
-| `api` | `.` | 22.x | `iad1` | `dpl_FsQYC1R8H31BnpebWCgCPoSQvir5` | `https://api-q9qjax2zv-mesa-ya.vercel.app` | Ready, antigüedad aproximada 5 días |
-| `client-web` | `apps/client-web` | 22.x | `iad1` | `dpl_GzeaWDnXTYcBcjBRQ9SSnRiSjrDW` | `https://client-2phxcs38g-mesa-ya.vercel.app` | Ready, antigüedad aproximada 6 días |
-| `staff-panel` | `apps/staff-panel` | 22.x | `iad1` | `dpl_BChQURuHagbjyk8SAGybbJNYbUzV` | `https://staff-panel-iy3jipvh7-mesa-ya.vercel.app` | Ready, antigüedad aproximada 6 días |
-| `admin-dashboard` | `apps/admin-dashboard` | 22.x | `iad1` | `dpl_8heyeWXXaXyda2FQm734FoRikpsb` | `https://admin-dashboard-ms7i3excn-mesa-ya.vercel.app` | Ready, antigüedad aproximada 5 días |
+| Proyecto | Root Directory | Node | Región | Deployment ID visible | SHA fuente observado | Alias productivo canónico | Estado observado |
+|---|---|---:|---|---|---|---|---|
+| `api` | `.` | 22.x | `iad1` | `dpl_FsQYC1R8H31BnpebWCgCPoSQvir5` | `04633508b1033e6c6e7e1e671af32ffdfb45d4b0` | `https://api-mesa-ya.vercel.app` | Ready, antigüedad aproximada 5 días |
+| `client-web` | `apps/client-web` | 22.x | `iad1` | `dpl_GzeaWDnXTYcBcjBRQ9SSnRiSjrDW` | `16a180d4fddc94dc246a1cce65a7d55358bc5f49` | `https://client-web-mesa-ya.vercel.app` | Ready, antigüedad aproximada 6 días |
+| `staff-panel` | `apps/staff-panel` | 22.x | `iad1` | `dpl_BChQURuHagbjyk8SAGybbJNYbUzV` | `16a180d4fddc94dc246a1cce65a7d55358bc5f49` | `https://staff-panel-mesa-ya.vercel.app` | Ready, antigüedad aproximada 6 días |
+| `admin-dashboard` | `apps/admin-dashboard` | 22.x | `iad1` | `dpl_8heyeWXXaXyda2FQm734FoRikpsb` | `d57d47be34f27b630cd3d83bdccdfe94517b7ab6` | `https://admin-dashboard-mesa-ya.vercel.app` | Ready, antigüedad aproximada 5 días |
 
 También aparecen deployments históricos `Error` en las listas de Staff y Admin.
-La consulta no estableció el commit/SHA fuente de cada deployment ni demostró
-que alguno contenga E00–E22; por eso se registran como infraestructura existente,
-no como evidencia del candidato.
+La consulta estableció el commit/SHA fuente de los deployments productivos
+actuales y demostró que ninguno contiene el candidato `9e4a4a0`; por eso se
+registran como infraestructura existente/baseline, no como evidencia del
+candidato.
 
 ## Variables remotas observadas sin leer valores
 
@@ -172,7 +173,8 @@ Un rollback Vercel sólo cambia código; no revierte SQL ni recupera datos.
 
 ### PENDING_CLOUD
 
-- Mapping SHA → cuatro deployments.
+- Publicación del candidato `9e4a4a0` y mapping SHA → cuatro deployments; el
+  mapping actualmente observado corresponde a SHAs anteriores.
 - Proyecto PostgreSQL staging aislado, migraciones, hardening y smoke real.
 - Backup con checksum, restore en base separada, conciliación y RPO/RTO medidos.
 - El `backup-drill` del workflow está preparado pero no ejecutado; sólo cubre

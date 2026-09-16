@@ -23,14 +23,14 @@ HEAD observado: `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`
 | `vercel whoami` | 0 | Identidad Vercel disponible; consulta de lectura únicamente |
 | `vercel project ls` | 0 | Cuatro proyectos visibles bajo `mesa-ya` |
 | `vercel project inspect api/client-web/staff-panel/admin-dashboard` | 0 | Roots, framework, Node 22 y región registrados sin mutación |
-| `vercel ls api/client-web/staff-panel/admin-dashboard --limit 3` | 0 | URLs/estados de deployments visibles; no se afirmó mapping SHA |
+| `vercel ls api/client-web/staff-panel/admin-dashboard --limit 5 --json` | 0 | URLs/estados y SHA fuente de los deployments productivos actuales; todos son anteriores al candidato |
 | `vercel env ls --project ...` | 0 | Nombres/tipo/ambiente; sólo representación truncada, sin valores completos guardados |
 | `gh workflow list --repo rodrigo1234321/MesaYA` | 0 | `ci` y `release-migrate` activos; el release es `workflow_dispatch` |
 | `gh api .../environments/Production` | 0 | Environment existente; sin reglas de protección observadas |
 | `gh secret list` repo + `--env Production` | 0 | Environment con `MESAYA_PG_DATABASE_URL` y `MESAYA_PG_DIRECT_URL`; no se solicitaron valores |
 | `gh api .../environments/Production/secrets` | 0 | `total_count=2`; sólo se verificaron nombres, nunca valores |
 | `gh run list --workflow release-migrate.yml --limit 5` | 0 | Hay dos ejecuciones `preflight` (una corregida y una exitosa); no hay ejecución `migrate` |
-| `vercel inspect <alias> --json` (API + 3 SPAs) | 0 | Deployments Ready confirmados; metadatos públicos sin `gitCommitSha` |
+| `vercel inspect <alias> --json` (API + 3 SPAs) | 0 | Aliases canónicos resuelven a deployments Ready; IDs y URLs de despliegue registrados |
 | `vercel env ls --project api production` | 0 | Cuatro variables `Secret` ocultas en producción; sus valores no son exportables |
 | `vercel env run -e production --project api ...` | — | Vercel informó que un valor sensible no podía descargarse; no hubo consulta ni mutación PostgreSQL |
 | smoke HTTP repetido `health`, SPAs y preflight CORS | 0 | Baseline remoto confirmado: health/SPAs 200, origin válida 204 con CORS/credenciales, origin no autorizada 404 sin CORS |
