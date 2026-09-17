@@ -12,7 +12,9 @@
   `PENDING_CLOUD` y la observación con mozos/equipos queda `PENDING_HUMAN`;
   no equivale a GO de producción ni a una capacidad de mesas certificada.
 - E23 sigue `NOT_STARTED`/`PENDING_HUMAN` porque requiere personas, dispositivos
-  y observación presencial. E24 quedó finalizada en su alcance: paquete,
+  y observación presencial. La guía quedó preparada en
+  `evidencia/E23/GUIA-EJECUCION-PENDIENTE-20260916.md`, pero no contiene
+  resultados inventados. E24 quedó finalizada en su alcance: paquete,
   backup/restore temporal, migración auditada, mapping SHA→Vercel y smoke
   HTTPS/CORS/QR. No cierra los gates humanos ni la carga E22 sobre PostgreSQL.
 - Ningún estado local o efímero equivale todavía a GO de producción: permanecen
@@ -283,6 +285,6 @@
 
 E24 ya no tiene una acción cloud pendiente dentro de su alcance inmediato. La
 continuidad segura es repetir E22 contra staging/proveedor real aislado con
-datos de prueba, definir retención/RPO/RTO/costos/observabilidad y habilitar E23
-con personas/equipos. No ejecutar la carga mutante contra producción ni pegar
-secretos en el chat.
+datos de prueba, definir retención/RPO/RTO/costos/observabilidad y ejecutar la
+guía E23 con personas/equipos. No ejecutar la carga mutante contra producción
+ni pegar secretos en el chat.
