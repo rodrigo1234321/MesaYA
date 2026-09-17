@@ -4,6 +4,18 @@ name: e22-postgres-load
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - codex/servicio-remediacion
+    paths:
+      - '.github/workflows/e22-postgres-load.yml'
+      - 'packages/api/prisma/seed.ts'
+      - 'scripts/sanitize-k6-summary.mjs'
+      - 'scripts/seed-postgres-e22.ts'
+      - 'tests/load/**'
+
+permissions:
+  contents: read
 
 jobs:
   load:

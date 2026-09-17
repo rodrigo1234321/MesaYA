@@ -9,11 +9,14 @@ Nada de este perfil certifica capacidad de producción ni cantidad de mesas.
 
 El workflow manual `.github/workflows/e22-postgres-load.yml` repite el perfil en
 dos jobs sobre PostgreSQL 17 efímero de GitHub: uno de lectura/polling y otro con
-`business_flow=true`. La fixture se crea sólo con `E22_PG_EPHEMERAL=true` y
-rechaza hosts remotos; los summaries se sanitizan antes de subirlos como
-artefactos temporales. Esto verifica la semántica PostgreSQL reproducible, pero
-no sustituye una corrida contra un proveedor/staging aislado real ni permite
-inferir costos o mesas soportadas en producción.
+`business_flow=true`. Mientras esta remediación vive en su rama, también queda
+disparado sólo por cambios relevantes de `codex/servicio-remediacion`; no usa
+secretos, Supabase ni Vercel. La fixture se crea sólo con
+`E22_PG_EPHEMERAL=true` y rechaza hosts remotos; los summaries se sanitizan
+antes de subirlos como artefactos temporales. Esto verifica la semántica
+PostgreSQL reproducible, pero no sustituye una corrida contra un
+proveedor/staging aislado real ni permite inferir costos o mesas soportadas en
+producción.
 
 ## Variables obligatorias (sin defaults)
 
