@@ -16,14 +16,17 @@ const summary = JSON.parse(fs.readFileSync(absolute, 'utf8'));
 summary.setup_data = { redacted: true };
 fs.writeFileSync(absolute, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
 
-const values = (name) => summary.metrics?.[name]?.values || {};
+// k6 summary-export stores the aggregate fields directly under each metric
+// (not under a nested `values` object). Keep the selector allowlisted so the
+// log exposes only aggregate measurements, never tags, setup data, or bodies.
+const values = (name) => summary.metrics?.[name] || {};
 const safe = (name, key) => values(name)[key] ?? 'NA';
 const label = path.basename(absolute);
 console.log(`K6_SUMMARY_SANITIZED=${label}`);
 console.log(`K6_HTTP_REQS=${safe('http_reqs', 'count')}`);
 console.log(`K6_POLLING_REQUESTS=${safe('polling_requests', 'count')}`);
-console.log(`K6_BUSINESS_CHECK_PASS_RATE=${safe('business_check_pass', 'rate')}`);
-console.log(`K6_BUSINESS_ERROR_RATE=${safe('business_error_rate', 'rate')}`);
+console.log(`K6_BUSINESS_CHECK_PASS_RATE=${safe('business_check_pass', 'value')}`);
+console.log(`K6_BUSINESS_ERROR_RATE=${safe('business_error_rate', 'value')}`);
 console.log(`K6_BUSINESS_P95_MS=${safe('business_latency_ms', 'p(95)')}`);
 console.log(`K6_FLOW_COMPLETED=${safe('business_flow_completed', 'count')}`);
 console.log(`K6_RECONCILIATION_OK=${safe('business_reconciliation_ok', 'count')}`);
