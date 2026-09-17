@@ -147,6 +147,12 @@ Los summaries fueron sanitizados antes de conservarse: `setup_data` quedó con
 métricas y checks no fueron alterados.
 
 Esto permite marcar E22 `VERIFIED_LOCAL` para el alcance local reproducible.
-La repetición contra staging/cloud aislado y la observación con personas y
-equipos siguen siendo gates `PENDING_CLOUD` y `PENDING_HUMAN`, y no se infiere
-capacidad de producción ni cantidad de mesas soportadas.
+La repetición PostgreSQL 17 efímera en GitHub Actions quedó además como
+`PASS_CLOUD_EPHEMERAL` en el run `35171261968`: lectura `463/450` requests/polls,
+checks `546/546`, p95 `27.513324 ms`; flujo `477/450`, checks `557/557`, p95
+`24.301224 ms`, `business_flow_completed=1` y
+`business_reconciliation_ok=1`. El workflow usa una fixture nueva por job,
+guardia de URLs loopback y summary sanitizado; no apunta a Supabase ni Vercel.
+Staging/proveedor real, costos, observabilidad y backup durable siguen siendo
+`PENDING_CLOUD`; la observación con personas y equipos sigue `PENDING_HUMAN`.
+No se infiere capacidad de producción ni cantidad de mesas soportadas.

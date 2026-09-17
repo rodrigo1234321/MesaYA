@@ -37,19 +37,22 @@ humanos/cloud quedan pendientes cuando faltan medios.
 
 `VERIFIED_LOCAL` en E22 cubre el perfil fail-closed, sus verificaciones de
 código y dos corridas k6 contra una SQLite local nueva y aislada, incluida una
-corrida con flujo mutante y conciliación. No equivale a certificar capacidad de
-producción: la repetición en staging/cloud aislado queda `PENDING_CLOUD` y la
-observación con mozos/equipos queda `PENDING_HUMAN`. E23 sigue sin habilitarse
-sin personas/equipos; E24 se habilitó sólo en su modalidad permitida de
-preparación documental y mantiene esos gates separados.
+corrida con flujo mutante y conciliación. Además, el subgate
+`PASS_CLOUD_EPHEMERAL` quedó demostrado en el run `35171261968` con dos jobs
+PostgreSQL 17 efímeros, lectura/polling y flujo mutante/conciliación. Esto no
+equivale a certificar capacidad de producción: staging/proveedor real, costos,
+observabilidad y backup durable quedan `PENDING_CLOUD`; la observación con
+mozos/equipos queda `PENDING_HUMAN`. E23 sigue sin habilitarse sin
+personas/equipos; E24 mantiene esos gates separados.
 
 `VERIFIED_LOCAL` en E24 cubre el paquete revisable, el inventario local, CI y
 los controles de release. En la ejecución autorizada del 2026-09-16 también
 pasaron subgates cloud concretos: backup/restore temporal, migración auditada,
 mapping SHA→deployment de los cuatro proyectos Vercel y smoke HTTPS/health/
 CORS/QR de sólo lectura. E24 queda finalizada en su alcance, pero no equivale a
-GO global: E22 PostgreSQL/costos/backup durable permanece `PENDING_CLOUD` y E23
-permanece `PENDING_HUMAN`.
+GO global: E22 staging/proveedor real, costos/observabilidad/backup durable
+permanece `PENDING_CLOUD` y E23 permanece `PENDING_HUMAN`; el subgate PostgreSQL
+efímero ya está en `PASS_CLOUD_EPHEMERAL`.
 
 ## Plantilla de reporte
 

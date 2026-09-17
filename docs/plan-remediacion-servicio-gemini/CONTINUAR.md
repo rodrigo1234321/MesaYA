@@ -6,15 +6,17 @@
   validación local.
 - E22 está `VERIFIED_LOCAL` para el perfil fail-closed, checker, focal,
   regresión y dos corridas k6 contra una SQLite nueva y aislada, incluida una
-  con flujo mutante y conciliación. La repetición contra staging/cloud queda
+  con flujo mutante y conciliación. Además, el subgate
+  `PASS_CLOUD_EPHEMERAL` pasó en PostgreSQL 17 efímero con dos jobs CI
+  independientes (run `35171261968`). Staging/proveedor real queda
   `PENDING_CLOUD` y la observación con mozos/equipos queda `PENDING_HUMAN`;
   no equivale a GO de producción ni a una capacidad de mesas certificada.
 - E23 sigue `NOT_STARTED`/`PENDING_HUMAN` porque requiere personas, dispositivos
   y observación presencial. E24 quedó finalizada en su alcance: paquete,
   backup/restore temporal, migración auditada, mapping SHA→Vercel y smoke
   HTTPS/CORS/QR. No cierra los gates humanos ni la carga E22 sobre PostgreSQL.
-- Ningún estado local equivale todavía a GO de producción: permanecen gates
-  `PENDING_CLOUD` y `PENDING_HUMAN`.
+- Ningún estado local o efímero equivale todavía a GO de producción: permanecen
+  gates `PENDING_CLOUD` y `PENDING_HUMAN`.
 
 ## Última corrida: E16 (2026-09-15)
 
@@ -241,8 +243,9 @@
 - Los dos summaries conservaron métricas/checks y se sanitizaron antes de
   quedar como evidencia: `setup_data` quedó marcado `redacted` para no guardar
   tokens de sesión.
-- **Gate:** `VERIFIED_LOCAL` para este alcance reproducible. La repetición con
-  proveedor PostgreSQL/staging/cloud aislado queda `PENDING_CLOUD`; la
+- **Gate:** `VERIFIED_LOCAL` para este alcance reproducible, con subgate
+  `PASS_CLOUD_EPHEMERAL` ya verificado en PostgreSQL 17 efímero. La repetición
+  con proveedor PostgreSQL/staging real queda `PENDING_CLOUD`; la
   observación/ensayo con mozos y equipos queda `PENDING_HUMAN`.
   `PENDING_HUMAN`/`PENDING_CLOUD` de E15–E21 se conservan; E23 no queda
   habilitada.
@@ -250,7 +253,7 @@
   `evidencia/E22/VERIFICACION-CODEX-20260916.md`,
   `evidencia/E22/e22-local-read-summary-20260916-v2.json`,
   `evidencia/E22/e22-local-flow-summary-20260916-v2.json`; reporte
-  `reportes/E22.md`.
+  `reportes/E22.md`; [run CI PostgreSQL efímero 35171261968](https://github.com/rodrigo1234321/MesaYA/actions/runs/35171261968).
 
 ## Última corrida: E24 (2026-09-16, cierre de alcance)
 
@@ -269,9 +272,9 @@
   URL y el resolver QR de `mesaya-piloto`/`Mesa 1` respondieron 200 sin token por
   ausencia correcta de sesión activa.
 - **Gate:** `PASS_LOCAL` para implementación/CI/paquete y `PASS_CLOUD` para
-  drill, migración, deployments y smoke. Continúan `PENDING_CLOUD` la carga
-  E22 sobre PostgreSQL aislado, costos/observabilidad y backup durable; y
-  `PENDING_HUMAN` E23.
+  drill, migración, deployments y smoke. E22 PostgreSQL efímero queda como
+  `PASS_CLOUD_EPHEMERAL`; continúan `PENDING_CLOUD` staging/proveedor real,
+  costos/observabilidad y backup durable; y `PENDING_HUMAN` E23.
 - **Evidencia:** `evidencia/E24/PAQUETE-RELEASE-20260916.md`,
   `evidencia/E24/DIAGNOSTICO.md`, `evidencia/E24/VERIFICACION-CODEX-20260916.md`,
   `evidencia/E24/DESBLOQUEO-CLOUD.md` y `reportes/E24.md`.
@@ -279,7 +282,7 @@
 ## Próxima acción exacta
 
 E24 ya no tiene una acción cloud pendiente dentro de su alcance inmediato. La
-continuidad segura es repetir E22 contra PostgreSQL/staging aislado con datos de
-prueba, definir retención/RPO/RTO/costos/observabilidad y habilitar E23 con
-personas/equipos. No ejecutar la carga mutante contra producción ni pegar
+continuidad segura es repetir E22 contra staging/proveedor real aislado con
+datos de prueba, definir retención/RPO/RTO/costos/observabilidad y habilitar E23
+con personas/equipos. No ejecutar la carga mutante contra producción ni pegar
 secretos en el chat.

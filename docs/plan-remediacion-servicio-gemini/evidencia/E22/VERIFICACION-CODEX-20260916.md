@@ -47,14 +47,34 @@ checks `546/546` y `http_req_failed=0/463`; p50/p95/p99 de negocio:
 `12.301/37.804555/124.608851 ms`; `business_flow_completed=1` y
 `business_reconciliation_ok=1`.
 
+## Repetición PostgreSQL efímera en GitHub Actions
+
+El workflow `.github/workflows/e22-postgres-load.yml` se verificó en el
+[run 35171261968](https://github.com/rodrigo1234321/MesaYA/actions/runs/35171261968),
+commit `b5beba87b3de703bf0bd57159d4964928f2841f7`. No usó Supabase, Vercel ni
+secretos: cada job creó su PostgreSQL 17 efímero, aplicó las migraciones,
+compiló el cliente PG y ejecutó el seed sólo con `E22_PG_EPHEMERAL=true` y
+URLs loopback. La guardia rechaza cualquier destino remoto.
+
+| Job | Evidencia sanitizada |
+|---|---|
+| `k6-read` | PASS; seed PASS; `463` requests, `450` polls, `546/546` checks, p95 `27.513324 ms`, pass `1`, error `0`, `http_req_failed=0/463` |
+| `k6-flow` | PASS; seed PASS; `477` requests, `450` polls, `557/557` checks, p95 `24.301224 ms`, pass `1`, error `0`, flujo `1`, conciliación `1`, `http_req_failed=0/477` |
+
+Los summaries subidos por los jobs conservan sólo agregados y tienen
+`setup_data={redacted:true}`. Esto permite clasificar el subgate como
+`PASS_CLOUD_EPHEMERAL`; no reemplaza staging/proveedor real, costos,
+observabilidad, backup durable ni el ensayo humano E23.
+
 ## Límites del gate
 
-La verificación local cubre el perfil, sus contratos estáticos, la regresión
-del repositorio y dos corridas k6 reproducibles contra una SQLite nueva y
-aislada. Por eso E22 queda `VERIFIED_LOCAL` para este alcance. No certifica
-capacidad de producción: la repetición contra staging/cloud queda
+La verificación cubre el perfil, sus contratos estáticos, la regresión del
+repositorio, dos corridas k6 reproducibles contra SQLite aislada y dos jobs
+equivalentes sobre PostgreSQL 17 efímero. Por eso E22 queda
+`VERIFIED_LOCAL` con subgate `PASS_CLOUD_EPHEMERAL` para este alcance. No
+certifica capacidad de producción: staging/proveedor real queda
 `PENDING_CLOUD` y la observación con mozos/equipos queda `PENDING_HUMAN`.
-E23 y E24 no se habilitan sólo por esta evidencia.
+E23 no se habilita sólo por esta evidencia.
 
 Summaries: `C:/Users/rodri/Desktop/AI/Projects/mdpmesasvivas-servicio-remediacion/docs/plan-remediacion-servicio-gemini/evidencia/E22/e22-local-read-summary-20260916-v2.json` y
 `C:/Users/rodri/Desktop/AI/Projects/mdpmesasvivas-servicio-remediacion/docs/plan-remediacion-servicio-gemini/evidencia/E22/e22-local-flow-summary-20260916-v2.json`.

@@ -2,9 +2,10 @@
 
 Plan preparado para Antigravity con Gemini 3.8 Flash. Fecha: 2026-09-14.
 Estado coordinado al 2026-09-16: E00–E22 tienen implementación y evidencia
-local documentada; E24 quedó finalizada en su alcance con backup/restore
-temporal, migración auditada, cuatro deployments Vercel trazables y smoke
-HTTPS/CORS/QR. E23 y los gates cloud restantes (E22 PostgreSQL aislado, costos,
+local documentada; E22 además tiene `PASS_CLOUD_EPHEMERAL` sobre PostgreSQL 17
+efímero en CI. E24 quedó finalizada en su alcance con backup/restore temporal,
+migración auditada, cuatro deployments Vercel trazables y smoke HTTPS/CORS/QR.
+E23 y los gates cloud restantes (staging/proveedor real, costos,
 observabilidad y backup durable) siguen pendientes. Este README describe el
 plan; no constituye por sí solo un GO operativo.
 
