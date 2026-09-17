@@ -33,7 +33,7 @@ jobs:
     environment: production
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_PASSWORD: backup-drill
           POSTGRES_DB: mesaya_restore_drill
@@ -55,10 +55,23 @@ jobs:
           umask 077
 
           test -n "${MESAYA_PG_DIRECT_URL}" || { echo "Falta MESAYA_PG_DIRECT_URL"; exit 2; }
-          if ! command -v pg_dump >/dev/null || ! command -v pg_restore >/dev/null || ! command -v psql >/dev/null; then
+          pg_dump_version="$(pg_dump --version 2>/dev/null || true)"
+          if [[ "${pg_dump_version}" != *" 17."* ]]; then
             sudo apt-get update
-            sudo apt-get install -y postgresql-client
+            sudo apt-get install -y ca-certificates curl gnupg
+            sudo install -d -m 0755 /etc/apt/keyrings
+            curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+              | sudo gpg --dearmor --yes -o /etc/apt/keyrings/postgresql.gpg
+            . /etc/os-release
+            echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+              | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client-17
           fi
+          export PATH="/usr/lib/postgresql/17/bin:${PATH}"
+          pg_dump --version
+          pg_restore --version
+          psql --version
 
           strip_prisma_options() {
             INPUT_URL="$1" node --input-type=module -e '
