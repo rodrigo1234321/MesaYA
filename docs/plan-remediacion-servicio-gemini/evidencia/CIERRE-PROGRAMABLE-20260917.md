@@ -1,7 +1,7 @@
 # Cierre del alcance programable — MesaYA
 
 Fecha: 2026-09-17  
-Rama: `codex/servicio-remediacion`  
+Rama: `codex/servicio-remediacion`
 Árbol de código verificado antes del cierre documental: `41c628e975f567612743bfda550b4499272445f8`
   
 El certificado fue incorporado en el commit `c3357ade6e294dd48714dd0add996457c73a6da4`,
