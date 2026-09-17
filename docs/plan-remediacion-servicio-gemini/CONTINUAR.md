@@ -19,6 +19,12 @@
   HTTPS/CORS/QR. No cierra los gates humanos ni la carga E22 sobre PostgreSQL.
 - Ningún estado local o efímero equivale todavía a GO de producción: permanecen
   gates `PENDING_CLOUD` y `PENDING_HUMAN`.
+- **Cierre programable acordado (2026-09-17):** el alcance de código, builds,
+  pruebas automatizadas, workflows y documentación quedó `PROGRAMMABLE_READY`.
+  La evidencia consolidada está en
+  `evidencia/CIERRE-PROGRAMABLE-20260917.md`. E23 y los gates cloud quedan
+  deliberadamente para una ejecución posterior del usuario; no son una deuda
+  de implementación de código de esta sesión.
 
 ## Última corrida: E16 (2026-09-15)
 

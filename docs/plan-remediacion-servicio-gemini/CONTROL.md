@@ -54,6 +54,15 @@ GO global: E22 staging/proveedor real, costos/observabilidad/backup durable
 permanece `PENDING_CLOUD` y E23 permanece `PENDING_HUMAN`; el subgate PostgreSQL
 efímero ya está en `PASS_CLOUD_EPHEMERAL`.
 
+## Alcance programable cerrado (2026-09-17)
+
+Por decisión del usuario, el cierre de esta sesión es `PROGRAMMABLE_READY`:
+código, contratos, pruebas automatizadas, builds, workflows y documentación
+quedan preparados para uso posterior. La evidencia consolidada está en
+`evidencia/CIERRE-PROGRAMABLE-20260917.md`. Esto no cambia E23 a `PASS` ni
+convierte los gates cloud en `GO`; esas validaciones operativas quedan para una
+ejecución posterior del usuario.
+
 ## Plantilla de reporte
 
 - Ficha y alcance autorizado.
