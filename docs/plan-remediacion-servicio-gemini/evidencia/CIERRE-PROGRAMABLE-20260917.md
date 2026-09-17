@@ -2,7 +2,12 @@
 
 Fecha: 2026-09-17  
 Rama: `codex/servicio-remediacion`  
-HEAD: `41c628e975f567612743bfda550b4499272445f8`
+Árbol de código verificado antes del cierre documental: `41c628e975f567612743bfda550b4499272445f8`
+  
+El certificado fue incorporado en el commit `c3357ade6e294dd48714dd0add996457c73a6da4`,
+que sólo actualiza documentación de alcance y evidencia; las verificaciones de
+código se ejecutaron sobre el mismo árbol de producto y el commit de cierre pasó
+el CI completo.
 
 ## Decisión de alcance
 
@@ -23,7 +28,7 @@ inventan ni se convierten en PASS aquí.
 | `npm run check:supabase-schema` | exit `0`; schema Supabase sincronizado |
 | `npm run test:isolated` bajo supervisor Windows Job Object | exit `0`; 30/30 suites, 0 fallas, 0 datos demo modificados |
 | Job Object | `verified_empty`; `ActiveProcesses=0` |
-| CI `35173262946` | `success`; build SQLite/paridad/rutas/suite aislada y PostgreSQL efímero |
+| CI `35177170715` | `success`; build SQLite/paridad/rutas/suite aislada y PostgreSQL efímero |
 
 El primer intento directo de `npm run test:isolated` fue rechazado por la
 guarda correcta del runner (`MESAYA_BOUNDED_JOB` sin supervisor). La ejecución
