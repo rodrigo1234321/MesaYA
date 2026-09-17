@@ -1,63 +1,59 @@
-# E24 — Diagnóstico de preparación de release
+# E24 — Diagnóstico de release
 
 Fecha: 2026-09-16
-Entrada: `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`
-Alcance: lectura local, lectura remota Vercel, preflight PostgreSQL remoto y
-preparación de un workflow de backup/restore; sin transferencia de datos,
-migración ni deploy.
+Release: `163c1cc4be43afcb2f5402ac4eaaaa6698dde95a6`
 
-## Lo que está bien
+## Confirmado como correcto
 
-- Hay una separación explícita entre build productivo PostgreSQL, migración
-  manual y CI. El workflow CI no ejecuta seed ni bases reales.
-- El script de migración exige dos URLs PostgreSQL explícitas y rechaza usar
-  las variables de runtime como fallback.
-- Existe manifiesto de instancia sin secretos, validador de HTTPS en modo
-  producción y plan de provisioning marcado `PLAN_ONLY`.
-- Existe hardening SQL de Supabase, runbook de piloto, fallback en papel y una
-  matriz de rollback que separa código, variables, dominio, schema y datos.
-- El perfil E22 tiene límites y preflight fail-closed, y sus summaries locales
-  conservan métricas sin tokens después de la sanitización documentada.
-- La lectura Vercel confirmó cuatro proyectos reales, sus roots, Node 22 y
-  deployments Ready visibles, sin que se modificara la cuenta.
-- El smoke HTTP remoto de baseline confirmó health y las tres SPAs en 200 y
-  CORS explícito para las tres origins; una origin no autorizada fue rechazada.
+1. La CI del release pasó el build general, el build PostgreSQL, la suite
+   SQLite/PostgreSQL, la matriz de rutas y los checks de seguridad existentes.
+2. El primer backup drill falló de forma segura por una incompatibilidad de
+   cliente (`pg_dump 16.15`) frente al servidor PostgreSQL 17.6. Se corrigió el
+   workflow para usar cliente 17; el segundo drill pasó schema, digest de filas,
+   relaciones y restore.
+3. La migración cloud pasó por `migrate deploy` en el workflow manual, sin seed
+   ni `db push`, sobre el mismo SHA que se publicó.
+4. Los cuatro proyectos Vercel están `READY` y su metadata confirma el mismo
+   SHA de release: API, cliente, Staff y Admin.
+5. El smoke HTTPS posterior al deploy confirma health 200, las tres SPAs 200,
+   CORS explícito sólo para origins permitidas y rechazo de origin inválida.
+6. La resolución QR canónica real del cloud (`mesaya-piloto` / `Mesa 1`) devuelve
+   200 con mesa existente, pero sin sesión activa ni token; ese estado es válido
+   y no se alteró la base.
+7. No se expusieron secretos, connection strings, PINs ni tokens. El dump
+   temporal se eliminó al finalizar el drill.
 
-## Falencias/bloqueos reales
+## Hallazgos corregidos durante E24
 
-1. El preflight remoto confirmó conectividad, coincidencia de destino entre las
-   dos URLs y presencia del historial Prisma/esquema núcleo, pero no reemplaza
-   una migración ni el backup/restore.
-2. No hay prueba S30 completa ejecutada en PostgreSQL: faltan herramientas
-   locales y evidencia de backup/restauración aislada. Se preparó un
-   `backup-drill` manual de alcance `public` que usaría un PostgreSQL efímero
-   en GitHub y borraría el dump al terminar, pero sigue sin ejecutarse y no
-   produce retención durable; el documento existente continúa siendo
-   procedimiento/documentación, no evidencia suficiente del gate cloud actual.
-3. El commit candidato está limpio y publicado. La lectura actual vinculó los
-   deployment IDs productivos con sus SHAs fuente, pero todos son anteriores al
-   candidato `9e4a4a0`; todavía falta publicar y verificar el candidato en los
-   cuatro proyectos. El smoke baseline no sustituye esa verificación ni permite
-   afirmar que los valores efectivos de variables sean correctos; no se
-   descargaron valores completos.
-4. La prueba k6 local de E22 usa SQLite aislada; no demuestra capacidad de
-   producción, número de mesas, comportamiento del pooler ni límites reales.
-5. E23 requiere observación presencial y sigue sin iniciar.
-6. Documentos históricos discrepan en nombres de proyectos y en el conteo de
-   migraciones; deben reconciliarse en el release candidate/staging, no por
-   suposición.
-7. El canal remoto de migración ya tiene los dos secretos explícitos y el
-   preflight de sólo lectura pasó; el Environment `Production` no mostró reglas
-   de protección. Vercel sí tiene secretos ocultos, pero no permite descargarlos.
-   La lectura sí vinculó los cuatro deployments productivos actuales con SHAs
-   anteriores al candidato. El workflow incluye un drill aislado preparado,
-   pero no se ejecutó el drill, no se migró ni se modificó la base.
+- **Cliente PostgreSQL desalineado:** el run `35168441849` detectó que el
+  servidor era 17.6 y el cliente Ubuntu era 16.15. Se ajustó la imagen auxiliar
+  a PostgreSQL 17 y se agregó instalación/verificación PGDG 17. El run
+  `35168679754` terminó con `BACKUP_RESTORE_DRILL=PASS`.
+- **Fixture QR histórica incorrecta para cloud:**
+  `trattoria-del-puerto` no existe en la instancia productiva actual. El smoke
+  se repitió con el slug observado `mesaya-piloto` y la mesa `Mesa 1`; no se
+  cambió el código ni se creó un tenant artificial.
+- **Raíz Vercel duplicada en el primer intento de SPA:** invocar el CLI desde
+  `apps/client-web` duplicaba la Root Directory. Ese intento no produjo
+  deployment; la publicación correcta se ejecutó desde el monorepo con el
+  proyecto explícito.
+
+## Riesgos todavía abiertos
+
+1. El backup drill es temporal: demuestra recuperación, pero no retención
+   durable, RPO/RTO ni política de restauración histórica.
+2. E22 tiene carga semántica local contra SQLite aislada; falta repetirla sobre
+   PostgreSQL/staging aislado con variables, mesas y tarifa reales. No se debe
+   ejecutar el perfil mutante contra producción.
+3. No se certifica que costos, observabilidad y valores efectivos de variables
+   cumplan el GO operativo; se preservan como gate de infraestructura sin leer
+   secretos.
+4. E23 sigue `PENDING_HUMAN`: ningún smoke técnico sustituye la prueba con
+   operadores, equipos, papel, red caída, QR/NFC y caja.
 
 ## Decisión
 
-E24 queda preparada y verificada en alcance local/documental más preflight cloud
-de sólo lectura. Aunque el usuario autorizó avanzar hacia producción, el estado
-global de MesaYA sigue siendo `NO-GO` para producción, con `PENDING_CLOUD` y
-`PENDING_HUMAN`, porque faltan backup/restore (el drill preparado aún no fue
-autorizado ni ejecutado), migración, deployment trazable y E23. Ningún documento
-de preparación ni preflight reemplaza S30 ni E23.
+E24 se marca **FINALIZADA EN SU ALCANCE** con `PASS_LOCAL` y los subgates cloud
+ejecutados en `PASS_CLOUD`. El estado global del plan sigue condicionado por
+`PENDING_CLOUD` (E22 real/costos/backup durable) y `PENDING_HUMAN` (E23). No se
+declara un GO operativo total ni se borra ningún pendiente.

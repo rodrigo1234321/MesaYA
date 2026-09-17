@@ -1,58 +1,47 @@
 # E24 — Desbloqueo cloud sin Docker
 
 Fecha: 2026-09-16
-Alcance: instrucciones operativas; este archivo no ejecuta migraciones, backup ni
-deploy y no contiene secretos.
+Alcance: guía y registro de la ejecución autorizada; no contiene secretos.
 
-## Lo que debe quedar configurado
+## Configuración requerida
 
-En GitHub, repositorio `rodrigo1234321/MesaYA`, abrir `Settings → Environments →
-Production → Environment secrets` y crear exactamente:
+En GitHub, repositorio `rodrigo1234321/MesaYA`, Environment `Production`, se
+mantienen exactamente estas referencias:
 
 - `MESAYA_PG_DATABASE_URL`
 - `MESAYA_PG_DIRECT_URL`
 
-Los valores deben corresponder al mismo proyecto Supabase que se quiere migrar.
-No deben pegarse en issues, commits, logs ni en este chat. Si es posible, agregar
-un reviewer requerido al Environment `Production`.
+Los valores no se leyeron, imprimieron ni guardaron. Deben corresponder al mismo
+proyecto PostgreSQL que se quiere migrar. No usar `db push`, reset ni seed como
+sustituto de backup o rollback.
 
-## Evidencia de backup/restore
+## Ejecución realizada
 
-Antes de ejecutar `release-migrate` hace falta una copia del destino real o del
-staging autorizado, conservada en almacenamiento seguro fuera del repositorio.
-La evidencia mínima es:
+Con autorización explícita del usuario:
 
-1. identificación del proyecto/base y hora de corte, sin incluir credenciales;
-2. artefacto de backup y checksum calculado en el entorno remoto;
-3. restauración en otra base aislada, no sobre el origen;
-4. verificación de schema, relaciones, cuentas, cobros, recibos, sesiones y
-   mesas, más RPO/RTO medidos;
-5. responsable y criterio de abortar/restaurar.
+1. El primer `backup-drill` (`35168441849`) detectó servidor PostgreSQL 17.6
+   frente a cliente `pg_dump` 16.15 y terminó sin mutación.
+2. Se corrigió el workflow para usar imagen/cliente PostgreSQL 17.
+3. El drill corregido (`35168679754`) copió temporalmente sólo `public` al
+   runner, restauró a PostgreSQL efímero, comparó schema/filas/relaciones y
+   borró el dump. Resultado `BACKUP_RESTORE_DRILL=PASS`.
+4. La migración (`35168778385`) ejecutó sólo `migrate deploy` sobre el mismo
+   release, sin seed ni `db push`, y terminó `success`.
+5. Se publicaron los cuatro proyectos Vercel con SHA
+   `163c1cc4be43afcb2f5402ac4eaaaa6698dde95a6` y se hizo smoke HTTPS/CORS/QR.
 
-Puede hacerse desde Supabase o desde un runner remoto con `pg_dump`/`pg_restore`;
-no requiere Docker ni guardar el dump en esta PC. No usar `db push`, reset ni
-seed como sustituto del backup o rollback.
+El checksum del dump temporal fue
+`ddf1c69658df325fb400c451281fff025bf90f42cac040d17ba5dd74b60fbc2b`; el
+artefacto no se conserva. Esto demuestra el procedimiento de restore, pero no
+una retención durable ni RPO/RTO.
 
-## Qué se hará después
+## Evidencia restante
 
-Con los secretos configurados y el backup verificable, se fijará un SHA limpio,
-se ejecutará el workflow manual auditado `release-migrate`, se comprobará su
-resultado, se desplegará ese mismo SHA en `api`, `client-web`, `staff-panel` y
-`admin-dashboard`, y se probará el flujo con datos sintéticos. Luego se repetirá
-E22 sobre PostgreSQL y se mantendrá E23 pendiente hasta contar con operadores y
-equipos reales.
+El siguiente trabajo no bloquea el cierre de E24, pero sí el GO operativo total:
 
-## Estado observado en la actualización de esta guía
+- repetir el perfil E22 en PostgreSQL/staging aislado con credenciales y mesas
+  de prueba, nunca contra producción;
+- fijar backup durable, RPO/RTO, costos y observabilidad;
+- completar E23 con personas, dispositivos, papel, QR/NFC y caja.
 
-La consulta autorizada de GitHub devolvió `total_count=2` para secrets de
-`Production`, con los nombres requeridos configurados. La rama
-`codex/servicio-remediacion` contiene el commit candidato
-`9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`; la CI `35160962710` terminó en
-éxito y el preflight remoto de sólo lectura `35162520660` volvió a confirmar el
-mismo destino y el esquema núcleo sobre la rama actual. El primer éxito fue
-`35160057353` sobre el SHA anterior compatible. No se realizó
-migración/deploy ni backup/restore real, y Vercel muestra secretos ocultos que
-no permite exportar. El workflow manual ofrece `preflight` por defecto,
-`backup-drill` opcional de esquema `public` en runner efímero y `migrate` sólo
-como operación explícita. El drill no se ejecutará sin autorización expresa
-para esa transferencia temporal o sin evidencia externa equivalente.
+No pegar secretos en el chat ni usar datos reales para la carga mutante.

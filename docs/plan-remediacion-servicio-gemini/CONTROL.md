@@ -43,10 +43,13 @@ observación con mozos/equipos queda `PENDING_HUMAN`. E23 sigue sin habilitarse
 sin personas/equipos; E24 se habilitó sólo en su modalidad permitida de
 preparación documental y mantiene esos gates separados.
 
-`VERIFIED_LOCAL` en E24 cubre el paquete revisable, el inventario local y la
-consulta Vercel de sólo lectura. No certifica el SHA desplegado, el backup/
-restore, la base PostgreSQL, el dominio, los valores de configuración ni el
-GO operativo; esos puntos permanecen `PENDING_CLOUD` o `PENDING_HUMAN`.
+`VERIFIED_LOCAL` en E24 cubre el paquete revisable, el inventario local, CI y
+los controles de release. En la ejecución autorizada del 2026-09-16 también
+pasaron subgates cloud concretos: backup/restore temporal, migración auditada,
+mapping SHA→deployment de los cuatro proyectos Vercel y smoke HTTPS/health/
+CORS/QR de sólo lectura. E24 queda finalizada en su alcance, pero no equivale a
+GO global: E22 PostgreSQL/costos/backup durable permanece `PENDING_CLOUD` y E23
+permanece `PENDING_HUMAN`.
 
 ## Plantilla de reporte
 

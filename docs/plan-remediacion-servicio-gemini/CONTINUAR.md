@@ -10,9 +10,9 @@
   `PENDING_CLOUD` y la observación con mozos/equipos queda `PENDING_HUMAN`;
   no equivale a GO de producción ni a una capacidad de mesas certificada.
 - E23 sigue `NOT_STARTED`/`PENDING_HUMAN` porque requiere personas, dispositivos
-  y observación presencial. E24 está `VERIFIED_LOCAL` sólo para el paquete
-  documental, inventario de lectura y procedimiento condicionado; no cierra
-  los gates cloud ni humanos.
+  y observación presencial. E24 quedó finalizada en su alcance: paquete,
+  backup/restore temporal, migración auditada, mapping SHA→Vercel y smoke
+  HTTPS/CORS/QR. No cierra los gates humanos ni la carga E22 sobre PostgreSQL.
 - Ningún estado local equivale todavía a GO de producción: permanecen gates
   `PENDING_CLOUD` y `PENDING_HUMAN`.
 
@@ -252,61 +252,34 @@
   `evidencia/E22/e22-local-flow-summary-20260916-v2.json`; reporte
   `reportes/E22.md`.
 
-## Última corrida: E24 (2026-09-16, actualización posterior)
+## Última corrida: E24 (2026-09-16, cierre de alcance)
 
-- **Alcance:** preparación del paquete de release, rollback, backup/restore,
-  QR, observabilidad y soporte; publicación controlada del candidato y CI.
-- **Resultado:** el commit candidato actual es
-  `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`; se publicó la rama
-  `codex/servicio-remediacion`, CI `35160962710` pasó completamente y el
-  preflight remoto de sólo lectura `35162520660` volvió a pasar. El primer
-  éxito fue `35160057353`. Se
-  confirmó la existencia de cuatro proyectos (`api`,
-  `client-web`, `staff-panel`, `admin-dashboard`) y se documentaron sus roots,
-  Node 22, región, aliases y deployments visibles. La lectura actual también
-  vinculó los deployments productivos con SHAs anteriores al candidato:
-  `api` → `04633508...`, `client-web`/`staff-panel` → `16a180d4...` y
-  `admin-dashboard` → `d57d47be...`. Se enumeraron nombres de variables sin
-  guardar valores completos. El smoke HTTP de baseline confirmó health y SPAs
-  200 y CORS 204 para las tres origins válidas, con 404 para una origin no
-  autorizada. Se detectaron y dejaron explícitas discrepancias históricas de
-  nombres de proyecto y conteo de migraciones; el smoke no prueba el SHA local.
-- **Verificación:** manifiesto de instancia en modo producción exit 0; plan de
-  provisioning `PLAN_ONLY` exit 0; tests de manifiesto exit 0; checker E22 exit
-  0; consultas Vercel de lectura exit 0. Supabase CLI y `psql/pg_dump/pg_restore`
-  no están disponibles, por lo que S30 completo sigue pendiente; el preflight
-  remoto de sólo lectura pasó. GitHub tiene activo el workflow manual
-  `release-migrate`; no se observaron reglas de protección en `Production`, y
-  sus dos nombres de secretos requeridos están configurados.
-  Vercel no pudo descargar un valor sensible en `env run`. Una corrida fresca de `npm run test:local` pasó
-  796 tests (3 omitidos) en 88 archivos (1 omitido) y limpió su sandbox.
-  La API de secrets de GitHub ahora devuelve `total_count=2` y confirma sólo
-  los nombres `MESAYA_PG_DATABASE_URL` y `MESAYA_PG_DIRECT_URL`; los valores no
-  fueron leídos. `Production` continúa sin reglas de protección observadas.
-  `release-migrate` sólo se ejecutó en modo `preflight` (último run
-  `35162520660`); el modo manual
-  `backup-drill` quedó preparado pero no ejecutado, y `migrate` sigue sin
-  ejecutarse. Los deployments Ready actuales exponen SHAs anteriores, no el
-  candidato `9e4a4a0`; la publicación del candidato en los cuatro proyectos
-  sigue pendiente.
-- **Gate:** `VERIFIED_LOCAL` documental + CI del candidato y preflight cloud de
-  sólo lectura; `PENDING_CLOUD` para PostgreSQL completo, hardening,
-  backup/restore, mapping SHA/deploy, HTTPS/CORS/QR,
-  carga y costos;
-  `PENDING_HUMAN` para E23 y aprobación operativa. Dictamen actual: `NO-GO`.
+- **Resultado:** E24 quedó finalizada en su alcance autorizado. El candidato de
+  producto `9e4a4a0…` se publicó como release `163c1cc4…`, que agrega sólo la
+  corrección del cliente PostgreSQL 17 para el workflow. CI `35168551177` pasó.
+- **Cloud:** el backup drill `35168679754` pasó schema, digest de filas,
+  relaciones y restore temporal; la migración `35168778385` pasó con `migrate
+  deploy`, sin seed ni `db push`. El primer drill `35168441849` detectó y
+  documentó el mismatch 17.6/16.15 antes de la corrección.
+- **Vercel:** `api`, `client-web`, `staff-panel` y `admin-dashboard` quedaron
+  `READY` con el mismo SHA `163c1cc4…`. Los deployment IDs y aliases están en
+  `evidencia/E24/PAQUETE-RELEASE-20260916.md`.
+- **Smoke:** health y las tres SPAs respondieron 200; CORS válido respondió 204
+  con origin explícita/credenciales; origin inválida respondió 404 sin CORS; la
+  URL y el resolver QR de `mesaya-piloto`/`Mesa 1` respondieron 200 sin token por
+  ausencia correcta de sesión activa.
+- **Gate:** `PASS_LOCAL` para implementación/CI/paquete y `PASS_CLOUD` para
+  drill, migración, deployments y smoke. Continúan `PENDING_CLOUD` la carga
+  E22 sobre PostgreSQL aislado, costos/observabilidad y backup durable; y
+  `PENDING_HUMAN` E23.
 - **Evidencia:** `evidencia/E24/PAQUETE-RELEASE-20260916.md`,
   `evidencia/E24/DIAGNOSTICO.md`, `evidencia/E24/VERIFICACION-CODEX-20260916.md`,
   `evidencia/E24/DESBLOQUEO-CLOUD.md` y `reportes/E24.md`.
 
 ## Próxima acción exacta
 
-La autorización de producción ya fue dada por el usuario. Los secretos de
-migración están configurados, el SHA limpio pasó CI y el preflight remoto
-confirmó el destino; el canal permanece bloqueado hasta demostrar
-backup/restore del destino y fijar su alcance. El `backup-drill` preparado
-requiere autorización explícita para copiar temporalmente el esquema `public`
-al runner de GitHub, o una evidencia externa equivalente. Luego: ejecutar el
-workflow manual auditado en modo `migrate`, desplegar ese mismo SHA en
-los cuatro proyectos Vercel y probar health/CORS/QR/login y el flujo con datos
-de prueba. Repetir E22 sobre PostgreSQL y después habilitar E23 con personas y
-equipos. No pegar secretos en el chat.
+E24 ya no tiene una acción cloud pendiente dentro de su alcance inmediato. La
+continuidad segura es repetir E22 contra PostgreSQL/staging aislado con datos de
+prueba, definir retención/RPO/RTO/costos/observabilidad y habilitar E23 con
+personas/equipos. No ejecutar la carga mutante contra producción ni pegar
+secretos en el chat.

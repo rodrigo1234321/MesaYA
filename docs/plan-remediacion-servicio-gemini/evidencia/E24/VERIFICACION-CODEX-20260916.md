@@ -1,80 +1,110 @@
 # Verificación Codex — E24
 
-Fecha: 2026-09-16
+Fecha de corte local: 2026-09-16
 Worktree: `C:/Users/rodri/Desktop/AI/Projects/mdpmesasvivas-servicio-remediacion`
-HEAD observado: `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4`
+Rama: `codex/servicio-remediacion`
+Release verificado: `163c1cc4be43afcb2f5402ac4eaaaa6698dde95a6`
 
 ## Comandos y resultados
 
-| Comando/consulta | Exit | Resultado |
+| Comando/consulta | Exit/estado | Resultado |
 |---|---:|---|
-| `node scripts/validate-instance-manifest.mjs --production` | 0 | Manifiesto de ejemplo válido; HTTPS y secretos ausentes en el manifiesto |
-| `node scripts/provision-instance-plan.mjs` | 0 | Plan `PLAN_ONLY` generado; acciones externas declaradas y `remoteMutationPerformed=false` |
-| `node --test scripts/instance-manifest.test.mjs` | 0 | Validaciones de manifiesto y rechazo de secretos/HTTP/local override inválido |
-| `node scripts/check-load-profile.mjs` | 0 | Perfil E22 fail-closed verificado |
-| `node scripts/build.mjs` | 0 | Seis de seis workspaces compilados; warnings no bloqueantes de Rollup/Zod |
-| `node scripts/build-pg.mjs` bajo Job Object | 0 | Build productivo PG completado; no conecta a una base |
-| `node scripts/prisma-generate.mjs sqlite` | 0 | Cliente local restaurado después de la comprobación PG |
-| `npm run test:local` | 0 | Corrida fresca: 88 archivos pasaron, 1 omitido; 796 tests pasaron, 3 omitidos; SQLite efímera y sandbox limpio |
-| `npm run check:routes` | 0 | 107 rutas clasificadas, sin novedades ni deriva |
-| `npm run instance:test` | 0 | 5/5 invariantes del manifiesto pasaron |
-| `node scripts/check-load-profile.mjs` | 0 | Perfil E22 fail-closed y sus invariantes presentes |
-| `npm audit --omit=dev --audit-level=high` | 0 | 0 vulnerabilidades reportadas en dependencias de producción |
-| `vercel whoami` | 0 | Identidad Vercel disponible; consulta de lectura únicamente |
-| `vercel project ls` | 0 | Cuatro proyectos visibles bajo `mesa-ya` |
-| `vercel project inspect api/client-web/staff-panel/admin-dashboard` | 0 | Roots, framework, Node 22 y región registrados sin mutación |
-| `vercel ls api/client-web/staff-panel/admin-dashboard --limit 5 --json` | 0 | URLs/estados y SHA fuente de los deployments productivos actuales; todos son anteriores al candidato |
-| `vercel env ls --project ...` | 0 | Nombres/tipo/ambiente; sólo representación truncada, sin valores completos guardados |
-| `gh workflow list --repo rodrigo1234321/MesaYA` | 0 | `ci` y `release-migrate` activos; el release es `workflow_dispatch` |
-| `gh api .../environments/Production` | 0 | Environment existente; sin reglas de protección observadas |
-| `gh secret list` repo + `--env Production` | 0 | Environment con `MESAYA_PG_DATABASE_URL` y `MESAYA_PG_DIRECT_URL`; no se solicitaron valores |
-| `gh api .../environments/Production/secrets` | 0 | `total_count=2`; sólo se verificaron nombres, nunca valores |
-| `gh run list --workflow release-migrate.yml --limit 5` | 0 | Hay dos ejecuciones `preflight` (una corregida y una exitosa); no hay ejecución `migrate` |
-| `vercel inspect <alias> --json` (API + 3 SPAs) | 0 | Aliases canónicos resuelven a deployments Ready; IDs y URLs de despliegue registrados |
-| `vercel env ls --project api production` | 0 | Cuatro variables `Secret` ocultas en producción; sus valores no son exportables |
-| `vercel env run -e production --project api ...` | — | Vercel informó que un valor sensible no podía descargarse; no hubo consulta ni mutación PostgreSQL |
-| smoke HTTP repetido `health`, SPAs y preflight CORS | 0 | Baseline remoto confirmado: health/SPAs 200, origin válida 204 con CORS/credenciales, origin no autorizada 404 sin CORS |
-| comprobación de herramientas `supabase/psql/pg_dump/pg_restore` | — | No disponibles en este host; S30 queda pendiente |
-| CI `35159908559` sobre `c321b4076784757623f8a7d0e95089964a921d15` | 0 | Jobs `postgres` y `build-and-test` verdes: build/smoke PG, suite PG, paridad, rutas y SQLite |
-| preflight remoto `35160057353` sobre `c321b4076784757623f8a7d0e95089964a921d15` | 0 | `CLOUD_PREFLIGHT=PASS`, mismo destino en ambas conexiones, `_prisma_migrations` presente y esquema núcleo completo |
-| CI `35160962710` sobre `9e4a4a06152cc3c068c4b6ee07ba717fae649fe4` | 0 | Jobs `postgres` y `build-and-test` verdes después de agregar el modo manual `backup-drill` |
-| `gh workflow view release-migrate.yml --ref codex/servicio-remediacion --yaml` | 0 | Workflow válido; `preflight`, `backup-drill` y `migrate` están separados y la operación por defecto sigue siendo de sólo lectura |
-| preflight remoto `35162520660` sobre `50f7c82d65564d7d0f361c9959762b4aea98b69d` | 0 | `CLOUD_PREFLIGHT=PASS`; mismo destino, `_prisma_migrations` presente y esquema núcleo completo; `backup_drill` y `migrate` omitidos |
-| preflight remoto `35163274570` sobre `78cef6fc754e46fe47a60a1447426f7c447d760b` | 0 | `CLOUD_PREFLIGHT=PASS`; mismo destino, `_prisma_migrations` presente y esquema núcleo completo; `backup_drill` y `migrate` omitidos |
-| smoke HTTP directo repetido sobre aliases productivos | 0 | `/health` y `/v1/health` 200; las tres SPAs 200/HTML; CORS permitido 204 con origin explícita y credenciales; origin inválida 404 sin CORS |
+| `node scripts/validate-instance-manifest.mjs --production` | 0 | Manifiesto válido; HTTPS y secretos ausentes |
+| `node scripts/provision-instance-plan.mjs` | 0 | `PLAN_ONLY`; no mutación remota |
+| `node --test scripts/instance-manifest.test.mjs` | 0 | Invariantes de manifiesto y rechazo de secretos/HTTP |
+| `node scripts/check-load-profile.mjs` | 0 | Perfil E22 fail-closed |
+| `node scripts/build.mjs` | 0 | Seis workspaces compilados; sólo warnings Rollup/Zod no bloqueantes |
+| `node scripts/build-pg.mjs` bajo Job Object | 0 | Build productivo PG completado sin conexión a una base |
+| `npm run test:local` | 0 | 88 archivos, 796 tests; 1 archivo/3 tests omitidos; SQLite efímera limpia |
+| `npm run check:routes` | 0 | 107 rutas clasificadas |
+| `npm run instance:test` | 0 | 5/5 invariantes |
+| `npm audit --omit=dev --audit-level=high` | 0 | 0 vulnerabilidades de producción reportadas |
+| CI `35168551177` | success | `build-and-test` y `postgres` verdes sobre `163c1cc4…` |
+| backup drill `35168441849` | failure controlado | Detectó servidor 17.6 vs cliente `pg_dump` 16.15; no alteró la base |
+| backup drill `35168679754` | success | `BACKUP_RESTORE_DRILL`, schema, digest de filas y relaciones en `PASS` |
+| migrate `35168778385` | success | `migrate deploy` exitoso; sin seed ni `db push` |
+| `vercel ls ... --json` | 0 | Cuatro deployments `READY`, todos con SHA `163c1cc4…` |
+| smoke HTTP post-deploy | 0 | Health/SPAs 200; CORS válido 204; origin inválida 404 |
+| QR canónica cloud read-only | 0 | `/v1/sessions/mesaya-piloto/Mesa 1` 200, mesa existente sin sesión activa, sin token |
 
-Las consultas Vercel y GitHub fueron de lectura salvo la publicación autorizada
-de la rama/commit candidato y la ejecución del workflow `release-migrate` en
-modo `preflight`. No se ejecutaron `vercel deploy`,
-`vercel env add/rm`, `vercel link`, `supabase`, `migrate deploy`, `db push`,
-`seed`, `gh workflow run ... operation=migrate` ni `gh workflow run ...
-operation=backup-drill`; tampoco se ejecutaron comandos de backup contra un
-destino remoto. El
-intento de `vercel env run` no se considera acceso a la base: al no poder
-descargar un valor sensible, el proceso que continuó usó el entorno local y no
-se lanzó ninguna query de producción.
+## Evidencia cloud detallada
 
-La primera invocación supervisada del generador SQLite terminó con código del
-supervisor `125` por `unexpected_descendants`, aunque el proceso raíz informó
-`0` y generó el cliente. Se repitió únicamente la invocación corta del generador
-fuera de esa envoltura, que terminó `0`; no se dejó un proceso de API, k6 u
-OpenCode corriendo.
+### Backup/restore
+
+Run `35168679754`:
+
+- cliente `pg_dump`, `pg_restore` y `psql`: 17.11;
+- alcance: `public`;
+- `PUBLIC_SCHEMA_MATCH=PASS`;
+- `CORE_ROW_DIGEST_MATCH=PASS`;
+- `CORE_RELATIONS=PASS`;
+- `BACKUP_RESTORE_DRILL=PASS`;
+- 128697 bytes, restore en 2 s;
+- SHA-256 temporal: `ddf1c69658df325fb400c451281fff025bf90f42cac040d17ba5dd74b60fbc2b`.
+
+El dump no se retuvo. La prueba certifica la ruta de restauración aislada, no
+retención durable, RPO/RTO ni una copia histórica independiente.
+
+### Migración
+
+Run `35168778385`, job `migrate`:
+
+- checkout del release `163c1cc4…`;
+- instalación limpia reproducible;
+- `npm --workspace=@mesaya/api run prisma:postgres:migrate`;
+- resultado `success`;
+- jobs `preflight` y `backup_drill` omitidos porque la operación seleccionada
+  fue exclusivamente `migrate`.
+
+### Vercel
+
+| Proyecto | Deployment ID | Estado | SHA fuente |
+|---|---|---|---|
+| `api` | `dpl_6isNXrvZaReuFKQaKPGaPA1sCXMd` | READY | `163c1cc4…` |
+| `client-web` | `dpl_FzQeDWCkVWmN7dteFPo6VgWGczyH` | READY | `163c1cc4…` |
+| `staff-panel` | `dpl_2hPtaXsncU6yPjU6MrHfr7kMTUkA` | READY | `163c1cc4…` |
+| `admin-dashboard` | `dpl_5ve1SD9E9t7ohzMY3553xAr7ZW6k` | READY | `163c1cc4…` |
+
+Aliases estables verificados: `api-mesa-ya.vercel.app`,
+`client-web-mesa-ya.vercel.app`, `staff-panel-mesa-ya.vercel.app` y
+`admin-dashboard-mesa-ya.vercel.app`. Vercel reportó Node 22.x y los Root
+Directory configurados por proyecto.
+
+### Smoke HTTP
+
+- API `/health`: 200 JSON.
+- API `/v1/health`: 200 JSON.
+- Las tres SPAs: 200 HTML.
+- Preflight CORS desde las tres origins estables: 204, origin explícita,
+  `Access-Control-Allow-Credentials: true` y métodos GET/POST/PATCH/PUT/DELETE/OPTIONS.
+- Preflight desde `https://example.invalid`: 404 sin origin permitida.
+- Frontend `/r/mesaya-piloto/mesa/Mesa%201`: 200 HTML.
+- API `/v1/sessions/mesaya-piloto/Mesa%201`: 200, `valid=false`,
+  `isActive=false`, sin token. La ausencia de turno/sesión activa es el estado
+  esperado y no implica error.
+
+No se ejecutaron POST/PATCH/PUT/DELETE ni autenticaciones contra producción.
 
 ## Revisión de seguridad de evidencia
 
-- No se incluyeron valores de variables remotas, connection strings, JWT, PIN,
+- No se incluyeron valores de variables remotas, connection strings, JWT, PINs,
   tokens ni claves.
-- El paquete documenta sólo nombres y estados observados.
-- Los artefactos JSON de E22 quedan referenciados por su sanitización previa;
-  E24 no los vuelve a exportar ni duplica sus datos sensibles.
-- `evidencia/E24/DESBLOQUEO-CLOUD.md` fue agregado como guía de desbloqueo sin
-  Docker; el workflow `backup-drill` quedó preparado, pero es documentación de
-  ejecución condicionada, no una ejecución de migración o backup.
+- El workflow recibió sólo referencias de secretos ya configuradas.
+- El dump temporal se eliminó en el `finally` del job.
+- La carga E22 no se ejecutó contra producción: exige PostgreSQL aislado,
+  credenciales de prueba y mesas dedicadas.
+- La fixture `trattoria-del-puerto` pertenece a la evidencia local/histórica y no
+  existe en la instancia cloud actual; el smoke cloud usó el slug observado
+  `mesaya-piloto`.
 
-## Dictamen
+## Dictamen de gates
 
-`PASS_LOCAL` para preparación documental y CI del candidato; el preflight remoto
-de sólo lectura pasó. `PENDING_CLOUD` para S23/S30 completo, backup/restore
-(drill preparado pero no ejecutado), deployment, dominio, variables efectivas,
-hardening, carga PostgreSQL y costos.
-`PENDING_HUMAN` para E23 y aprobación operativa. Dictamen actual: **NO-GO**.
+- `PASS_LOCAL`: preparación, código ya verificado, CI y controles de release.
+- `PASS_CLOUD`: drill temporal, migración, deployments trazables y smoke
+  HTTPS/health/CORS/QR read-only.
+- `PENDING_CLOUD`: carga E22 en destino PostgreSQL aislado, costos/observabilidad
+  y backup durable/RPO/RTO.
+- `PENDING_HUMAN`: E23 presencial con operadores/equipos y aprobación operativa.
+
+E24 queda **finalizada en su alcance**; el GO global sigue condicionado a E22
+cloud y E23. No se presenta un PASS total donde el plan exige evidencia humana.
