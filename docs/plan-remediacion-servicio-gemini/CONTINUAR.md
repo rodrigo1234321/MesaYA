@@ -279,7 +279,8 @@
   costos/observabilidad y backup durable; y `PENDING_HUMAN` E23.
 - **Evidencia:** `evidencia/E24/PAQUETE-RELEASE-20260916.md`,
   `evidencia/E24/DIAGNOSTICO.md`, `evidencia/E24/VERIFICACION-CODEX-20260916.md`,
-  `evidencia/E24/DESBLOQUEO-CLOUD.md` y `reportes/E24.md`.
+  `evidencia/E24/DESBLOQUEO-CLOUD.md`,
+  `evidencia/E24/VERIFICACION-CLOUD-READONLY-20260916.md` y `reportes/E24.md`.
 
 ## Próxima acción exacta
 
