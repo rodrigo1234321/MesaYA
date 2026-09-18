@@ -23,35 +23,74 @@
     "productionRelease": {
       "sha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a",
       "branchAtRelease": "codex/servicio-remediacion",
-      "status": "documented_in_repository_evidence_pending_live_reverification"
+      "status": "live_verified_in_vercel_read_only"
     }
   },
   "cloud": {
     "apiProductionUrl": "https://api-mesa-ya.vercel.app",
+    "vercelLiveVerification": {
+      "verifiedAt": "2026-09-18",
+      "scope": "read_only_cli_inspection",
+      "account": "MesaYA",
+      "productionDeploymentBranch": "codex/servicio-remediacion",
+      "productionDeploymentSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a"
+    },
     "vercelProjects": [
       {
         "name": "api",
+        "projectId": "prj_nVkzgzJM8lrpchmqaahnhV8ld8PP",
         "deploymentId": "dpl_6isNXrvZaReuFKQaKPGaPA1sCXMd",
         "alias": "https://api-mesa-ya.vercel.app",
-        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a"
+        "aliases": [
+          "https://api-iota-lake-pe7fryjc6g.vercel.app",
+          "https://api-mesa-ya.vercel.app"
+        ],
+        "latestProductionDeploymentUrl": "https://api-2ozppy1jv-mesa-ya.vercel.app",
+        "rootDirectory": ".",
+        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a",
+        "productionStatus": "READY_PROMOTED"
       },
       {
         "name": "client-web",
+        "projectId": "prj_LyPH2aVPDaLRJzzxFDSYJRNW84MF",
         "deploymentId": "dpl_FzQeDWCkVWmN7dteFPo6VgWGczyH",
         "alias": "https://client-web-mesa-ya.vercel.app",
-        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a"
+        "aliases": [
+          "https://client-web-ebon.vercel.app",
+          "https://client-web-mesa-ya.vercel.app"
+        ],
+        "latestProductionDeploymentUrl": "https://client-m1jvzj1uu-mesa-ya.vercel.app",
+        "rootDirectory": "apps/client-web",
+        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a",
+        "productionStatus": "READY_PROMOTED"
       },
       {
         "name": "staff-panel",
+        "projectId": "prj_vGS7soLNNLjkkfPeHvpmxN1zxibR",
         "deploymentId": "dpl_2hPtaXsncU6yPjU6MrHfr7kMTUkA",
         "alias": "https://staff-panel-mesa-ya.vercel.app",
-        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a"
+        "aliases": [
+          "https://staff-panel-seven.vercel.app",
+          "https://staff-panel-mesa-ya.vercel.app"
+        ],
+        "latestProductionDeploymentUrl": "https://staff-panel-84aqjjf3w-mesa-ya.vercel.app",
+        "rootDirectory": "apps/staff-panel",
+        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a",
+        "productionStatus": "READY_PROMOTED"
       },
       {
         "name": "admin-dashboard",
+        "projectId": "prj_VmjItJarXPtfoIS3CXAYfd8Cq3c4",
         "deploymentId": "dpl_5ve1SD9E9t7ohzMY3553xAr7ZW6k",
         "alias": "https://admin-dashboard-mesa-ya.vercel.app",
-        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a"
+        "aliases": [
+          "https://admin-dashboard-red-two-44.vercel.app",
+          "https://admin-dashboard-mesa-ya.vercel.app"
+        ],
+        "latestProductionDeploymentUrl": "https://admin-dashboard-ct27yre20-mesa-ya.vercel.app",
+        "rootDirectory": "apps/admin-dashboard",
+        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a",
+        "productionStatus": "READY_PROMOTED"
       }
     ],
     "runtime": {
@@ -62,7 +101,9 @@
       "logicalInstance": "mesaya-piloto",
       "projectRef": null,
       "projectRefStatus": "PENDING_EXACT_REF_VERIFICATION",
-      "projectRefSource": "Supabase dashboard or Vercel environment metadata; never infer or commit secrets"
+      "projectRefSource": "Supabase dashboard or Vercel environment metadata; never infer or commit secrets",
+      "liveRefRead": false,
+      "liveRefReadReason": "Vercel metadata was inspected without reading environment-variable values"
     }
   },
   "workflows": {
@@ -220,7 +261,8 @@
       "docs/produccion and older implementation reports contain historical branch names; they are not release instructions",
       "this manifest supersedes stale branch labels in historical topology documents"
     ],
-    "vercelBranchSettings": "PENDING_LIVE_VERIFICATION",
+    "vercelProductionDeployments": "VERIFIED_LIVE_READ_ONLY; all four point to codex/servicio-remediacion at 163c1cc4",
+    "vercelPreviewBranchTriggers": "PENDING_LIVE_INVENTORY",
     "supabaseEnvironmentDependencies": "PENDING_EXACT_PROJECT_REF_AND_VARIABLE_INVENTORY",
     "remoteBranchDeletion": "NOT_PERFORMED",
     "localHistoricalDeletion": "NOT_PERFORMED"
