@@ -2,7 +2,10 @@
 
 Fecha: 2026-09-13
 Versión: 2.0.0
-Rama canónica: `release/pilot-1day-v1.0.0`
+
+> **HISTÓRICO:** este documento describe un snapshot anterior y conserva su rama original como evidencia. La fuente actual es [`deploy/mesaya-canonical-manifest.json`](../../deploy/mesaya-canonical-manifest.json), que fija `codex/servicio-remediacion` para MesaYA completo y `codex/solo-mozos` para el workflow reducido.
+
+Rama canónica de este snapshot: `release/pilot-1day-v1.0.0`
 
 ## 1. Inventario Exacto de los 4 Proyectos Canónicos
 

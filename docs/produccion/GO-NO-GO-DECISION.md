@@ -2,7 +2,10 @@
 
 Fecha: 2026-09-14  
 Versión: 2.1.0  
-Rama auditada: `release/pilot-1day-v1.0.0`  
+
+> **HISTÓRICO:** este dictamen corresponde al snapshot auditado en su fecha. La fuente actual de ramas y despliegues es [`deploy/mesaya-canonical-manifest.json`](../../deploy/mesaya-canonical-manifest.json).
+
+Rama auditada de este snapshot: `release/pilot-1day-v1.0.0`
 Entorno: Producción acotada (Trattoria del Puerto - Mesas 1 a 4)
 
 ---

@@ -2,7 +2,10 @@
 
 Fecha: 2026-09-14  
 Versión: 2.1.0  
-Rama activa: `release/pilot-1day-v1.0.0`  
+
+> **HISTÓRICO:** este tablero conserva el estado de su cierre anterior. Para la rama, los cuatro proyectos Vercel y los dos workflows actuales consultar [`deploy/mesaya-canonical-manifest.json`](../../deploy/mesaya-canonical-manifest.json).
+
+Rama activa de este snapshot: `release/pilot-1day-v1.0.0`
 Plan rector: `docs/produccion/PLAN-MAESTRO-CIERRE-Y-PILOTO-1-DIA-2026-09-13.md`  
 **Dictamen Formal Consolidado**: `PASS_LOCAL técnico — NO-GO para piloto real hasta validación remota en Supabase Cloud, Vercel Cloud y simulacro en vivo de backup/restore`.
 
