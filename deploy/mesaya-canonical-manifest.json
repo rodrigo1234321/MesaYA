@@ -153,6 +153,78 @@
     "Verify cloud health, CORS, QR/NFC traversal, waiter calls, accounts, kitchen, tickets, settlement, and module flags.",
     "Update this manifest only after the release evidence is available."
   ],
+  "historicalArtifacts": [
+    {
+      "kind": "branch_and_checkout",
+      "name": "main",
+      "checkout": "mdpmesasvivas",
+      "status": "historical; preserve current dirty user changes; do not deploy"
+    },
+    {
+      "kind": "branch_and_checkout",
+      "name": "codex/mesaya-cocina-cuentas-20260905",
+      "checkout": "mdpmesasvivas-cocina-cuentas",
+      "status": "historical variant; kitchen/accounts/payment experiments retained"
+    },
+    {
+      "kind": "branch_and_checkout",
+      "name": "codex/mesaya-cocina-cuentas-integrated-review-fixes",
+      "checkout": "mdpmesasvivas-cocina-cuentas-integrated-review-fixes",
+      "status": "historical review worktree"
+    },
+    {
+      "kind": "branch_and_checkout",
+      "name": "codex/fix-stages-04-06-review",
+      "checkout": "mdpmesasvivas-cocina-cuentas-review-fixes",
+      "status": "historical review worktree"
+    },
+    {
+      "kind": "branch_and_checkout",
+      "name": "codex/config-capabilities-baseline",
+      "checkout": "mdpmesasvivas-opencode-stage00",
+      "status": "historical capability baseline"
+    },
+    {
+      "kind": "branch_and_checkout",
+      "name": "antigravity/admin-ux-baseline",
+      "checkout": "mdpmesasvivas-admin-ux",
+      "status": "historical UX baseline; no merge implied"
+    },
+    {
+      "kind": "branch",
+      "name": "antigravity/core-capabilities-stage00",
+      "status": "historical branch"
+    },
+    {
+      "kind": "branch_and_checkout",
+      "name": "release/pilot-1day-v1.0.0",
+      "checkout": "mdpmesasvivas-audit-7bcddf6",
+      "status": "historical release/audit snapshot; not the current production line"
+    },
+    {
+      "kind": "detached_checkout",
+      "checkout": "mdpmesasvivas-productivo-163c1cc",
+      "status": "read-only exact-production comparison snapshot"
+    },
+    {
+      "kind": "directory",
+      "checkout": "Mesaya solo mozos",
+      "status": "legacy non-git source snapshot; superseded by codex/solo-mozos"
+    }
+  ],
+  "dependencyInventory": {
+    "activeRepositoryAutomation": [
+      ".github/workflows/e22-postgres-load.yml filters codex/servicio-remediacion"
+    ],
+    "historicalDocumentReferences": [
+      "docs/produccion and older implementation reports contain historical branch names; they are not release instructions",
+      "this manifest supersedes stale branch labels in historical topology documents"
+    ],
+    "vercelBranchSettings": "PENDING_LIVE_VERIFICATION",
+    "supabaseEnvironmentDependencies": "PENDING_EXACT_PROJECT_REF_AND_VARIABLE_INVENTORY",
+    "remoteBranchDeletion": "NOT_PERFORMED",
+    "localHistoricalDeletion": "NOT_PERFORMED"
+  },
   "cleanupPolicy": {
     "canonicalBranchCount": 2,
     "canonicalBranches": ["codex/solo-mozos", "codex/servicio-remediacion"],
