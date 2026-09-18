@@ -282,8 +282,8 @@
     "vercelPreviewBranchTriggers": "PENDING_LIVE_INVENTORY",
     "vercelProductionEnvironmentKeys": "INVENTORIED_BY_NAME_ONLY; no branch-specific keys found",
     "supabaseEnvironmentDependencies": "PENDING_EXACT_PROJECT_REF_AND_VARIABLE_INVENTORY",
-    "remoteBranchDeletion": "NOT_PERFORMED",
-    "localHistoricalDeletion": "NOT_PERFORMED"
+    "remoteBranchDeletion": "NOT_PERFORMED; no remote push or destructive ref deletion executed",
+    "localHistoricalDeletion": "NOT_PERFORMED; dirty historical worktrees retained to preserve user changes"
   },
   "cleanupPolicy": {
     "canonicalBranchCount": 2,
