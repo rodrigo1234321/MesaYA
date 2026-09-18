@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-09-18",
+  "sourceOfTruth": "deploy/mesaya-canonical-manifest.json",
+  "repository": {
+    "remote": "https://github.com/rodrigo1234321/MesaYA.git",
+    "canonicalBranches": {
+      "full": {
+        "branch": "codex/servicio-remediacion",
+        "role": "MesaYA completo; linea conectada a la topologia productiva",
+        "localCheckout": "mdpmesasvivas-servicio-remediacion",
+        "tipAtManifestGeneration": "2cf19d31ed8ed81107cf2e85cea177c5e63f0ee7"
+      },
+      "soloMozos": {
+        "branch": "codex/solo-mozos",
+        "role": "MesaYA reducido para llamar al mozo y pedir la cuenta",
+        "localCheckout": "mdpmesasvivas-solo-mozos",
+        "currentLocalTip": "ca8e4710f6920dbd15594072e23b395106d121f2",
+        "historicalSource": "Mesaya solo mozos",
+        "historicalSourceBaseline": "d932969cc85cdc96d9a037abd333a9af140a151e"
+      }
+    },
+    "productionRelease": {
+      "sha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a",
+      "branchAtRelease": "codex/servicio-remediacion",
+      "status": "documented_in_repository_evidence_pending_live_reverification"
+    }
+  },
+  "cloud": {
+    "apiProductionUrl": "https://api-mesa-ya.vercel.app",
+    "vercelProjects": [
+      {
+        "name": "api",
+        "deploymentId": "dpl_6isNXrvZaReuFKQaKPGaPA1sCXMd",
+        "alias": "https://api-mesa-ya.vercel.app",
+        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a"
+      },
+      {
+        "name": "client-web",
+        "deploymentId": "dpl_FzQeDWCkVWmN7dteFPo6VgWGczyH",
+        "alias": "https://client-web-mesa-ya.vercel.app",
+        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a"
+      },
+      {
+        "name": "staff-panel",
+        "deploymentId": "dpl_2hPtaXsncU6yPjU6MrHfr7kMTUkA",
+        "alias": "https://staff-panel-mesa-ya.vercel.app",
+        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a"
+      },
+      {
+        "name": "admin-dashboard",
+        "deploymentId": "dpl_5ve1SD9E9t7ohzMY3553xAr7ZW6k",
+        "alias": "https://admin-dashboard-mesa-ya.vercel.app",
+        "productionSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a"
+      }
+    ],
+    "runtime": {
+      "vercelNode": "22.x",
+      "deploymentMutationPerformedInThisRun": false
+    },
+    "supabase": {
+      "logicalInstance": "mesaya-piloto",
+      "projectRef": null,
+      "projectRefStatus": "PENDING_EXACT_REF_VERIFICATION",
+      "projectRefSource": "Supabase dashboard or Vercel environment metadata; never infer or commit secrets"
+    }
+  },
+  "workflows": {
+    "soloMozos": {
+      "branch": "codex/solo-mozos",
+      "head": "ca8e4710f6920dbd15594072e23b395106d121f2",
+      "allowedCapabilities": [
+        "table_activation",
+        "qr_nfc_entry",
+        "waiter_call",
+        "bill_request",
+        "waiter_terminal",
+        "operational_metrics"
+      ],
+      "explicitlyDisabledCapabilities": [
+        "table_ordering",
+        "collaborative_cart",
+        "split_bill",
+        "kitchen_workflow",
+        "cash_register",
+        "digital_payments",
+        "waitlist",
+        "rewards",
+        "upsell",
+        "ai_features",
+        "floorplan"
+      ],
+      "callTypes": ["WAITER", "BILL"],
+      "routeContract": "docs/MATRIZ-RUTAS.md",
+      "verificationCommands": [
+        "npm ci --ignore-scripts",
+        "npm run setup",
+        "npm run test",
+        "npm run check:routes",
+        "npm run check:scope",
+        "npm run typecheck",
+        "npm run build",
+        "npm run build:postgres",
+        "npm audit --omit=dev --audit-level=high",
+        "npm run dev"
+      ]
+    },
+    "full": {
+      "branch": "codex/servicio-remediacion",
+      "productionReleaseSha": "163c1cc4be43afcb2f5402ac4eaaaa6698dde95a",
+      "tipAtManifestGeneration": "2cf19d31ed8ed81107cf2e85cea177c5e63f0ee7",
+      "allowedCapabilities": [
+        "configurable_table_ordering",
+        "configurable_collaborative_cart",
+        "session_accounts",
+        "bill_and_settlement_workflow",
+        "tickets_and_receipts",
+        "kitchen_workflow",
+        "waiter_terminal",
+        "cash_and_payment_modes",
+        "sales_and_reports",
+        "waitlist",
+        "rewards_and_upsell",
+        "admin_configuration",
+        "qr_nfc_entry"
+      ],
+      "moduleSwitchSource": [
+        "packages/api/src/services/config.service.ts",
+        "packages/api/prisma/schema.prisma",
+        "packages/api/prisma/schema.supabase.prisma"
+      ],
+      "verificationCommands": [
+        "npm ci",
+        "npm run setup:local",
+        "npm run check:routes",
+        "npm run check:supabase-schema",
+        "npm run test:local",
+        "npm run build",
+        "npm run build:pg",
+        "npm run smoke:serverless",
+        "npm run dev"
+      ]
+    }
+  },
+  "releaseProcedure": [
+    "Checkout exactly one canonical branch and record git rev-parse HEAD.",
+    "Confirm a clean worktree and compare the candidate SHA with this manifest.",
+    "Run the workflow-specific local gates and the LAN smoke test from that same checkout.",
+    "Perform independent review of the diff, route contract, security boundaries, and migrations.",
+    "Commit the approved change on the canonical branch; do not deploy from main or a historical worktree.",
+    "Deploy all four Vercel projects from the same approved SHA and record their deployment IDs.",
+    "Apply the Supabase migration/backup procedure for the same release and record the exact project ref outside source code.",
+    "Verify cloud health, CORS, QR/NFC traversal, waiter calls, accounts, kitchen, tickets, settlement, and module flags.",
+    "Update this manifest only after the release evidence is available."
+  ],
+  "cleanupPolicy": {
+    "canonicalBranchCount": 2,
+    "canonicalBranches": ["codex/solo-mozos", "codex/servicio-remediacion"],
+    "historicalBranchesAndCheckouts": "retain_until_dependency_inventory_is_complete",
+    "deletionRequires": [
+      "verify no Vercel project is connected to the target branch",
+      "verify no deployment or environment documentation depends on the target checkout",
+      "preserve any uncommitted user changes in a recoverable archive",
+      "record exact deleted refs and paths in the cleanup report"
+    ],
+    "remoteDeletionPerformedInThisRun": false
+  }
+}
