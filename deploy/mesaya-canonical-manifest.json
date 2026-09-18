@@ -97,6 +97,22 @@
       "vercelNode": "22.x",
       "deploymentMutationPerformedInThisRun": false
     },
+    "productionEnvironmentVariableNames": {
+      "api": [
+        "DATABASE_URL",
+        "DIRECT_URL",
+        "JWT_SECRET",
+        "ENCRYPTION_SECRET_KEY",
+        "CORS_ORIGIN",
+        "MESAYA_INSTANCE_MODE",
+        "PUBLIC_ONBOARDING_ENABLED",
+        "NODE_ENV"
+      ],
+      "client-web": ["VITE_API_URL"],
+      "staff-panel": ["VITE_API_URL", "VITE_CLIENT_URL"],
+      "admin-dashboard": ["VITE_API_URL", "VITE_CLIENT_URL", "VITE_CLIENT_WEB_URL"]
+    },
+    "productionEnvironmentVariableValues": "not_recorded_or_used",
     "supabase": {
       "logicalInstance": "mesaya-piloto",
       "projectRef": null,
@@ -262,7 +278,9 @@
       "this manifest supersedes stale branch labels in historical topology documents"
     ],
     "vercelProductionDeployments": "VERIFIED_LIVE_READ_ONLY; all four point to codex/servicio-remediacion at 163c1cc4",
+    "vercelHistoricalRefDeploymentSearch": "0 deployments returned for all listed historical refs and codex/solo-mozos",
     "vercelPreviewBranchTriggers": "PENDING_LIVE_INVENTORY",
+    "vercelProductionEnvironmentKeys": "INVENTORIED_BY_NAME_ONLY; no branch-specific keys found",
     "supabaseEnvironmentDependencies": "PENDING_EXACT_PROJECT_REF_AND_VARIABLE_INVENTORY",
     "remoteBranchDeletion": "NOT_PERFORMED",
     "localHistoricalDeletion": "NOT_PERFORMED"
