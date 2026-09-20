@@ -1521,19 +1521,33 @@ function setGuestName(name) {
 }
 let lastMenuScrollTop = 0;
 let lastMenuCategoryId = null;
+function getMenuScrollContainer() {
+  return document.getElementById('menuScrollContent')
+    || document.getElementById('dynamicMenuCategoriesContainer');
+}
 function saveMenuContext(categoryId) {
-  const sc = document.getElementById('dynamicMenuCategoriesContainer');
+  const sc = getMenuScrollContainer();
   if (sc) lastMenuScrollTop = sc.scrollTop;
   if (categoryId) lastMenuCategoryId = categoryId;
 }
 function restoreMenuContext() {
-  const sc = document.getElementById('dynamicMenuCategoriesContainer');
+  const sc = getMenuScrollContainer();
   if (!sc) return;
   requestAnimationFrame(() => {
     sc.scrollTop = lastMenuScrollTop;
-    if (lastMenuCategoryId) {
-      const target = document.getElementById(lastMenuCategoryId);
-      if (target) target.scrollIntoView({ block: 'nearest' });
+    if (!lastMenuCategoryId) return;
+    const target = document.getElementById(lastMenuCategoryId);
+    if (!target) return;
+
+    // Only repair the anchor when rerendering changed the saved category's
+    // visibility; otherwise keep the exact scroll position the guest left.
+    const scrollRect = sc.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const stickyInset = 72;
+    const outsideViewport = targetRect.top < scrollRect.top + stickyInset
+      || targetRect.bottom > scrollRect.bottom;
+    if (outsideViewport) {
+      target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
   });
 }

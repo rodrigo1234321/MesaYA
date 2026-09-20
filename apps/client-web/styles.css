@@ -455,13 +455,27 @@ body {
    Sin min-height:0 el hijo flex-1 nunca cede altura y overflow-y-auto no se activa.
    overscroll-behavior evita que el gesto se fugue al body (bloqueado por modal-open). */
 .bottom-sheet-content .overflow-y-auto,
-#dynamicMenuCategoriesContainer,
+#menuScrollContent,
 #sommelierChatMessages {
   min-height: 0;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   scrollbar-width: thin;
+}
+
+/* Carta pública: un único scroll para encabezado, filtros, categorías y platos.
+   El footer queda fuera y las pastillas permanecen visibles al navegar. */
+#menuScrollContent {
+  scroll-padding-top: 72px;
+}
+
+#menuScrollContent section[id^="dynamic-cat-"] {
+  scroll-margin-top: 72px;
+}
+
+#modalMenuCategoryPillsContainer {
+  background-color: rgba(255, 255, 255, 0.96);
 }
 
 .bottom-sheet-backdrop.active .bottom-sheet-content {

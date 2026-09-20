@@ -143,6 +143,33 @@ describe('E19 — filtros de carta e información alimentaria fiable', () => {
     });
   });
 
+  describe('scroll único de carta y restauración de contexto', () => {
+    it('mantiene un solo dueño del scroll y el footer fuera del área desplazable', () => {
+      expect(html).toContain('id="menuScrollContent" class="flex-1 min-h-0 overflow-y-auto');
+      const pillsStart = html.indexOf('id="modalMenuCategoryPillsContainer"');
+      expect(pillsStart).toBeGreaterThanOrEqual(0);
+      expect(html.slice(pillsStart, pillsStart + 260)).toContain('sticky top-0');
+
+      const categoriesStart = html.indexOf('id="dynamicMenuCategoriesContainer"');
+      expect(categoriesStart).toBeGreaterThanOrEqual(0);
+      const categoriesTag = html.slice(categoriesStart, categoriesStart + 180);
+      expect(categoriesTag).not.toContain('overflow-y-auto');
+      expect(categoriesTag).not.toContain('flex-1');
+
+      const footerStart = html.indexOf('id="btnOpenSommelierModal"');
+      expect(footerStart).toBeGreaterThan(categoriesStart);
+      expect(html.slice(footerStart - 180, footerStart)).toContain('pb-[env(safe-area-inset-bottom)]');
+    });
+
+    it('guarda y restaura la posición desde el contenedor único', () => {
+      expect(appJs).toContain('function getMenuScrollContainer()');
+      expect(appJs).toContain("document.getElementById('menuScrollContent')");
+      expect(appJs).toContain('const sc = getMenuScrollContainer();');
+      expect(appJs).toContain('const outsideViewport = targetRect.top');
+      expect(appJs).toContain("inline: 'nearest'");
+    });
+  });
+
   describe('detalle, precio, disponibilidad y teclado preservados', () => {
     it('el detalle conserva precio, disponibilidad y apertura por click/Enter/Espacio', () => {
       const detailBody = fnBody(appJs, 'function openDishDetailSheet(');
