@@ -3,6 +3,7 @@
 Fecha: 2026-09-20
 Rama candidata: `codex/cierre-integracion-20260920`
 Commit candidato: `64d807a0661b86ac85079d4b452b559629e5b3de`
+Merge local: `a1a7b08b14caa4992d0732bb3e3aaa3ee135dc26`
 Base: `codex/servicio-remediacion@97d67a598e15da47feb29f69a8085d9da0899901`
 
 ## Alcance
@@ -60,6 +61,17 @@ posible fondo blanco de las pastillas se descartó tras revisar el CSS C03
 vigente: `#modalMenu` ya fuerza fondo blanco y las pastillas tienen contraste
 intencional. Sí se incorporó la mejora válida de restauración condicional y la
 paridad táctil del nuevo scroller.
+
+Después del merge, una segunda revisión solo-lectura sobre `HEAD^1..HEAD`
+terminó `APPROVED`. Confirmó árbol limpio, ancestría y árbol idéntico al
+candidato, y no encontró bloqueadores programables. Dejó como mejoras no
+bloqueantes un `.gitattributes` para LF de Prisma, un test táctil E2E y el
+archivado opcional de logs temporales.
+
+El gate JEV final (`jev-1.13.0`) evaluó la misma decisión estrecha con
+`noul=0.96`: cierre programable local completo, excluyendo explícitamente los
+gates cloud y físicos. Una evaluación preliminar incierta (`noul=0.60`) no se
+usó como aprobación; se repitió después de la revisión final.
 
 ## Pendientes explícitos para producción
 
