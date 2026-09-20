@@ -527,6 +527,7 @@ export class AdminApi {
       period?: 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM';
       dateFrom?: string;
       dateTo?: string;
+      shiftId?: string;
       paymentMethod?: string;
       responsibleStaffUserId?: string;
       hasFiscalDocument?: boolean;
@@ -536,6 +537,7 @@ export class AdminApi {
     if (options.period) params.append('period', options.period);
     if (options.dateFrom) params.append('dateFrom', options.dateFrom);
     if (options.dateTo) params.append('dateTo', options.dateTo);
+    if (options.shiftId) params.append('shiftId', options.shiftId);
     if (options.paymentMethod) params.append('paymentMethod', options.paymentMethod);
     if (options.responsibleStaffUserId) params.append('responsibleStaffUserId', options.responsibleStaffUserId);
     if (options.hasFiscalDocument !== undefined) params.append('hasFiscalDocument', String(options.hasFiscalDocument));
@@ -553,6 +555,7 @@ export class AdminApi {
       period?: 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM';
       dateFrom?: string;
       dateTo?: string;
+      shiftId?: string;
       paymentMethod?: string;
       responsibleStaffUserId?: string;
       hasFiscalDocument?: boolean;
@@ -562,6 +565,7 @@ export class AdminApi {
     if (options.period) params.append('period', options.period);
     if (options.dateFrom) params.append('dateFrom', options.dateFrom);
     if (options.dateTo) params.append('dateTo', options.dateTo);
+    if (options.shiftId) params.append('shiftId', options.shiftId);
     if (options.paymentMethod) params.append('paymentMethod', options.paymentMethod);
     if (options.responsibleStaffUserId) params.append('responsibleStaffUserId', options.responsibleStaffUserId);
     if (options.hasFiscalDocument !== undefined) params.append('hasFiscalDocument', String(options.hasFiscalDocument));
@@ -579,6 +583,7 @@ export class AdminApi {
       period?: string;
       dateFrom?: string;
       dateTo?: string;
+      shiftId?: string;
       paymentMethod?: string;
       responsibleStaffUserId?: string;
       hasFiscalDocument?: boolean;
@@ -588,6 +593,7 @@ export class AdminApi {
     if (options.period) params.append('period', options.period);
     if (options.dateFrom) params.append('dateFrom', options.dateFrom);
     if (options.dateTo) params.append('dateTo', options.dateTo);
+    if (options.shiftId) params.append('shiftId', options.shiftId);
     if (options.paymentMethod) params.append('paymentMethod', options.paymentMethod);
     if (options.responsibleStaffUserId) params.append('responsibleStaffUserId', options.responsibleStaffUserId);
     if (options.hasFiscalDocument !== undefined) params.append('hasFiscalDocument', String(options.hasFiscalDocument));
@@ -601,14 +607,16 @@ export class AdminApi {
 
   static async downloadSalesSummaryPdf(
     restaurantId: string,
-    options: { period?: string; dateFrom?: string; dateTo?: string; paymentMethod?: string; responsibleStaffUserId?: string } = {}
+    options: { period?: string; dateFrom?: string; dateTo?: string; shiftId?: string; paymentMethod?: string; responsibleStaffUserId?: string; hasFiscalDocument?: boolean } = {}
   ): Promise<Blob> {
     const params = new URLSearchParams();
     if (options.period) params.append('period', options.period);
     if (options.dateFrom) params.append('dateFrom', options.dateFrom);
     if (options.dateTo) params.append('dateTo', options.dateTo);
+    if (options.shiftId) params.append('shiftId', options.shiftId);
     if (options.paymentMethod) params.append('paymentMethod', options.paymentMethod);
     if (options.responsibleStaffUserId) params.append('responsibleStaffUserId', options.responsibleStaffUserId);
+    if (options.hasFiscalDocument !== undefined) params.append('hasFiscalDocument', String(options.hasFiscalDocument));
 
     const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/sales/summary/pdf?${params.toString()}`, {
       headers: this.getAuthHeaders({ isJson: false })

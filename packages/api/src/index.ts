@@ -46,7 +46,11 @@ export async function buildApp() {
   // Deliberadamente antes de construir o escuchar: producción falla cerrada.
   const environment = getEnvironmentConfig();
   const app = Fastify({
-    logger: process.env.NODE_ENV === 'test' ? false : true
+    logger: process.env.NODE_ENV === 'test' ? false : {
+      level: process.env.LOG_LEVEL || 'info',
+      redact: ['req.headers.authorization', 'req.headers["x-session-token"]', 'body.pin', 'body.token', 'body.password', 'pin', 'token', 'password']
+    },
+    trustProxy: process.env.NODE_ENV === 'production' ? true : false
   });
 
   await app.register(cors, {
@@ -61,6 +65,14 @@ export async function buildApp() {
 
   await app.register(jwt, {
     secret: environment.jwtSecret
+  });
+
+  // Inject correlationId and track request start
+  app.addHook('onRequest', async (request, reply) => {
+    const correlationId = (request.headers['x-correlation-id'] as string) || request.id;
+    reply.header('x-request-id', request.id);
+    reply.header('x-correlation-id', correlationId);
+    (request as any).correlationId = correlationId;
   });
 
   // Headers mínimos de defensa para API y respuestas de error. El cliente web
@@ -114,28 +126,63 @@ export async function buildApp() {
     }
   });
 
-  // Global Error Handler for standardized JSON responses
-  app.setErrorHandler((error, request, reply) => {
-    const statusCode = (error as any).statusCode || (error as any).status || 500;
+  // Global Error Handler for standardized JSON responses (P0-05)
+  app.setErrorHandler((error: any, request, reply) => {
+    const statusCode = Number(error?.statusCode || error?.status) || 500;
     const isClientError = statusCode >= 400 && statusCode < 500;
+    const requestId = String(request.id || error?.requestId || '');
 
+    // Registrar error completo de servidor en logs estructurados con requestId, correlationId, staffUserId, restaurantId
     if (!isClientError) {
-      request.log.error(error);
+      const staffUser = (request as any).staffUser;
+      const correlationId = (request as any).correlationId || String(request.id || '');
+      request.log.error({
+        err: error,
+        requestId,
+        correlationId,
+        url: request.url,
+        method: request.method,
+        restaurantId: staffUser?.restaurantId,
+        staffUserId: staffUser?.sub,
+        terminalId: staffUser?.terminalId
+      }, 'Unhandled server exception');
     }
 
-    const isProd = process.env.NODE_ENV === 'production';
-    const errorMessage = isClientError || !isProd
-      ? (error.message || 'Error en la solicitud')
-      : 'Error interno del servidor';
+    // Respuesta pública hacia el cliente: 5xx SIEMPRE es opaco
+    if (!isClientError) {
+      return reply.status(500).send({
+        code: 'INTERNAL_SERVER_ERROR',
+        error: 'Ocurrió un error inesperado al procesar la solicitud',
+        message: 'Ocurrió un error inesperado al procesar la solicitud',
+        statusCode: 500,
+        requestId
+      });
+    }
 
-    const response = {
-      error: errorMessage,
-      code: (error as any).code || (statusCode === 404 ? 'NOT_FOUND' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR'),
+    // Errores 4xx de cliente
+    const publicCode = error?.code || (statusCode === 404 ? 'NOT_FOUND' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : 'BAD_REQUEST');
+    const publicMessage = error?.message || 'Error en la solicitud';
+
+    return reply.status(statusCode).send({
+      code: publicCode,
+      error: publicMessage,
+      message: publicMessage,
       statusCode,
-      ...(process.env.NODE_ENV === 'development' ? { details: (error as any).details } : {})
-    };
+      requestId,
+      ...(error?.details ? { details: error.details } : {})
+    });
+  });
 
-    reply.status(statusCode).send(response);
+  // Standardized 404 handler (P0-05)
+  app.setNotFoundHandler((request, reply) => {
+    const requestId = String(request.id || '');
+    return reply.status(404).send({
+      code: 'NOT_FOUND',
+      error: `Ruta no encontrada: ${request.method} ${request.url}`,
+      message: `Ruta no encontrada: ${request.method} ${request.url}`,
+      statusCode: 404,
+      requestId
+    });
   });
 
   // Health & Readiness checks with database probe

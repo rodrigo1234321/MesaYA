@@ -456,14 +456,24 @@ describe('Etapa 18 — Reconexión y avisos consistentes (Polling autoritativo d
   // BLOQUE 5: Inspección estática - Erradicación de EventSource
   // ══════════════════════════════════════════════════════════════════════
   describe('Bloque 5: Verificación de código fuente - Ausencia de EventSource en clientes', () => {
-    it('useSSE.ts en staff-panel no contiene new EventSource y delega en PollingCoordinator', () => {
+    it('useSSE.ts en staff-panel es un adaptador sin EventSource que delega en useServiceSync', () => {
       const staffHook = fs.readFileSync(
         path.resolve(__dirname, '../../../apps/staff-panel/src/hooks/useSSE.ts'),
         'utf8'
       );
       expect(staffHook).not.toContain('new EventSource');
-      expect(staffHook).toContain('PollingCoordinator');
-      expect(staffHook).toContain('coordinator.start(');
+      // E08: useSSE es un adaptador del dueño real useServiceSync, sin scheduling propio.
+      expect(staffHook).toContain('useServiceSync');
+      expect(staffHook).not.toContain('scheduleNextPoll');
+      expect(staffHook).not.toContain('requestSeqRef');
+
+      const syncSrc = fs.readFileSync(
+        path.resolve(__dirname, '../../../apps/staff-panel/src/hooks/useServiceSync.ts'),
+        'utf8'
+      );
+      // El dueño real importa/instancia PollingCoordinator y lo opera.
+      expect(syncSrc).toContain('PollingCoordinator');
+      expect(syncSrc).toContain('coordinator.start(');
     });
 
     it('useFloorPlanSSE.ts en admin-dashboard no contiene new EventSource y delega en PollingCoordinator', () => {
@@ -731,12 +741,21 @@ describe('Etapa 18 — Reconexión y avisos consistentes (Polling autoritativo d
       coordinator.destroy();
     });
 
-    it('Inspección estática: useSSE y useFloorPlanSSE delegan en PollingCoordinator de @mesaya/shared', () => {
-      const staffHook = fs.readFileSync(
+    it('Inspección estática: useSSE adapta useServiceSync y useServiceSync/useFloorPlanSSE operan PollingCoordinator de @mesaya/shared', () => {
+      const staffAdapter = fs.readFileSync(
         path.resolve(__dirname, '../../../apps/staff-panel/src/hooks/useSSE.ts'),
         'utf8'
       );
-      // El hook debe importar PollingCoordinator y no contener scheduling propio
+      // El adaptador delega en el dueño real y no reimplementa scheduling.
+      expect(staffAdapter).toContain('useServiceSync');
+      expect(staffAdapter).not.toContain('scheduleNextPoll');
+      expect(staffAdapter).not.toContain('requestSeqRef');
+
+      const staffHook = fs.readFileSync(
+        path.resolve(__dirname, '../../../apps/staff-panel/src/hooks/useServiceSync.ts'),
+        'utf8'
+      );
+      // El dueño real importa PollingCoordinator y lo opera (start/stop/triggerNow).
       expect(staffHook).toContain('PollingCoordinator');
       expect(staffHook).toContain("from '@mesaya/shared'");
       expect(staffHook).toContain('coordinator.start(');

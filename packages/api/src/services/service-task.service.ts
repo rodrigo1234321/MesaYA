@@ -118,6 +118,14 @@ export class ServiceTaskService {
             status: 'ACTIVE'
           }
         });
+
+        if (taskType === 'CALL') {
+          await tx.callRequest.updateMany({
+            where: { id: cleanTargetId, status: CallStatus.PENDING },
+            data: { status: CallStatus.IN_PROGRESS, acknowledgedAt: new Date() }
+          });
+        }
+
         return this.formatClaim(created);
       });
     } catch (err: any) {
@@ -131,7 +139,7 @@ export class ServiceTaskService {
         throw taskError(
           409,
           'TASK_ALREADY_CLAIMED',
-          'Otro operador tomó esta tarea durante el intento; actualizá Servicio.'
+          'Otro operador ya se ocupó de esta tarea; la tarjeta conservará su responsable.'
         );
       }
       throw err;
@@ -152,6 +160,12 @@ export class ServiceTaskService {
       where: { id: current.id, activeKey: taskKey, status: 'ACTIVE' },
       data: { activeKey: null, status: 'RELEASED', releasedAt: new Date() }
     });
+    if (taskType === 'CALL' && released.count > 0) {
+      await prisma.callRequest.updateMany({
+        where: { id: targetId.trim(), status: CallStatus.IN_PROGRESS },
+        data: { status: CallStatus.PENDING, acknowledgedAt: null }
+      });
+    }
     return { success: true, status: released.count === 1 ? 'RELEASED' : 'ALREADY_RELEASED', taskKey };
   }
 

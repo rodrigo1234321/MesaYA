@@ -1,0 +1,136 @@
+# E22 — carga funcional sobre PostgreSQL efímero, separada de producción.
+# Este workflow es manual y no usa secretos, Supabase ni Vercel.
+name: e22-postgres-load
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/servicio-remediacion
+    paths:
+      - '.github/workflows/e22-postgres-load.yml'
+      - 'packages/api/prisma/seed.ts'
+      - 'scripts/sanitize-k6-summary.mjs'
+      - 'scripts/seed-postgres-e22.ts'
+      - 'tests/load/**'
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    name: k6-${{ matrix.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: read
+            business_flow: 'false'
+          - profile: flow
+            business_flow: 'true'
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: e22-ephemeral
+          POSTGRES_DB: mesaya_e22
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mesaya_e22"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MESAYA_PG_DATABASE_URL: postgresql://postgres:e22-ephemeral@127.0.0.1:5432/mesaya_e22
+      MESAYA_PG_DIRECT_URL: postgresql://postgres:e22-ephemeral@127.0.0.1:5432/mesaya_e22
+      DATABASE_URL: postgresql://postgres:e22-ephemeral@127.0.0.1:5432/mesaya_e22
+      DIRECT_URL: postgresql://postgres:e22-ephemeral@127.0.0.1:5432/mesaya_e22
+      NODE_ENV: test
+      E22_PG_EPHEMERAL: 'true'
+      PORT: '3000'
+      HOST: 127.0.0.1
+      JWT_SECRET: e22-ci-only-jwt-secret
+      ENCRYPTION_SECRET_KEY: e22-ci-only-encryption-secret
+      CORS_ORIGIN: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalación limpia reproducible
+        run: npm ci
+      - name: Instalar k6 sin tocar el host del proyecto
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl gnupg
+          sudo install -d -m 0755 /usr/share/keyrings
+          curl -fsSL https://dl.k6.io/key.gpg \
+            | sudo gpg --dearmor --yes -o /usr/share/keyrings/k6-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y k6
+          k6 version
+      - name: Migrar y generar cliente PostgreSQL efímero
+        run: |
+          node scripts/postgres-migrate.mjs deploy
+          node scripts/prisma-generate.mjs postgres
+          npm run build:pg
+      - name: Crear fixture E22 con guardia de destino local
+        run: node scripts/run-tsx.mjs scripts/seed-postgres-e22.ts
+      - name: Ejecutar perfil k6 E22 y sanitizar evidencia
+        shell: bash
+        run: |
+          set -euo pipefail
+          summary="${RUNNER_TEMP}/e22-${{ matrix.profile }}-summary.json"
+          api_log="${RUNNER_TEMP}/e22-api-${{ matrix.profile }}.log"
+          node packages/api/dist/index.js >"${api_log}" 2>&1 &
+          api_pid=$!
+          cleanup() {
+            kill "${api_pid}" >/dev/null 2>&1 || true
+            wait "${api_pid}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/v1/health >/dev/null; then
+              break
+            fi
+            test "${attempt}" -lt 30 || { echo "API E22 no inició"; cat "${api_log}"; exit 1; }
+            sleep 1
+          done
+
+          k6_status=0
+          K6_BUSINESS_FLOW='${{ matrix.business_flow }}' \
+          API_URL='http://127.0.0.1:3000' \
+          RESTAURANT_SLUG='trattoria-del-puerto' \
+          WAITER_PIN='1234' \
+          MANAGER_PIN='9999' \
+          K6_GUEST_TABLE_LABELS='Mesa 1,Mesa 2,Mesa 3,Mesa 4' \
+          K6_FLOW_TABLE_LABELS='Mesa 10' \
+          K6_DURATION_S='95' \
+          k6 run \
+            --summary-trend-stats='avg,min,med,max,p(50),p(90),p(95),p(99)' \
+            --summary-export="${summary}" \
+            tests/load/pilot-profile.js || k6_status=$?
+
+          if test -f "${summary}"; then
+            node scripts/sanitize-k6-summary.mjs "${summary}"
+          else
+            echo "K6_SUMMARY_SANITIZE=SKIPPED_NO_SUMMARY"
+          fi
+          exit "${k6_status}"
+      - name: Publicar summary E22 sanitizado
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e22-postgres-${{ matrix.profile }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/e22-${{ matrix.profile }}-summary.json
+          if-no-files-found: warn
+          retention-days: 7

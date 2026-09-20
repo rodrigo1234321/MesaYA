@@ -34,6 +34,10 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
   const [methodFilter, setMethodFilter] = useState('');
   const [responsibleFilter, setResponsibleFilter] = useState('');
   const [fiscalFilter, setFiscalFilter] = useState('');
+  // E16: turno explícito. Vacío = día calendario según período; con valor, la
+  // ventana del turno prevalece (incluye turnos que cruzan medianoche).
+  const [shiftFilter, setShiftFilter] = useState('');
+  const [currentShift, setCurrentShift] = useState<{ id: string; openedAt: string } | null>(null);
 
   const [summary, setSummary] = useState<SalesSummaryDTO | null>(null);
   const [operations, setOperations] = useState<SalesOperationDTO[]>([]);
@@ -83,24 +87,33 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
       if (methodFilter) qOptions.paymentMethod = methodFilter;
       if (responsibleFilter) qOptions.responsibleStaffUserId = responsibleFilter;
       if (fiscalFilter) qOptions.hasFiscalDocument = fiscalFilter === 'true';
+      if (shiftFilter) qOptions.shiftId = shiftFilter;
 
-      const [summaryRes, opsRes, docsRes, staffRes] = await Promise.all([
+      const [summaryRes, opsRes, docsRes, staffRes, shiftRes] = await Promise.all([
         AdminApi.getSalesSummary(restaurantId, qOptions),
         AdminApi.getSalesOperations(restaurantId, qOptions),
         AdminApi.getFiscalDocuments(restaurantId),
-        AdminApi.getStaff(restaurantId)
+        AdminApi.getStaff(restaurantId),
+        AdminApi.getCurrentShift(restaurantId).catch(() => null)
       ]);
 
       setSummary(summaryRes);
       setOperations(opsRes.operations);
       setFiscalDocs(docsRes.documents);
       setStaff(Array.isArray(staffRes) ? staffRes : []);
+      if (shiftRes && (shiftRes as any).id) {
+        setCurrentShift({ id: (shiftRes as any).id, openedAt: (shiftRes as any).openedAt });
+      } else {
+        setCurrentShift(null);
+      }
     } catch (err: any) {
+      // E16: ante un error no se muestran ceros: se conserva el último dato
+      // válido (o nada) y se expone el error con reintento.
       setError(err?.message || 'Error al cargar ventas y cobros');
     } finally {
       setLoading(false);
     }
-  }, [restaurantId, period, dateFrom, dateTo, methodFilter, responsibleFilter, fiscalFilter]);
+  }, [restaurantId, period, dateFrom, dateTo, methodFilter, responsibleFilter, fiscalFilter, shiftFilter]);
 
   useEffect(() => {
     loadData();
@@ -112,6 +125,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
         period,
         dateFrom,
         dateTo,
+        shiftId: shiftFilter || undefined,
         paymentMethod: methodFilter || undefined,
         responsibleStaffUserId: responsibleFilter || undefined,
         hasFiscalDocument: fiscalFilter ? fiscalFilter === 'true' : undefined
@@ -134,8 +148,10 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
         period,
         dateFrom,
         dateTo,
+        shiftId: shiftFilter || undefined,
         paymentMethod: methodFilter || undefined,
-        responsibleStaffUserId: responsibleFilter || undefined
+        responsibleStaffUserId: responsibleFilter || undefined,
+        hasFiscalDocument: fiscalFilter ? fiscalFilter === 'true' : undefined
       });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -199,6 +215,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
     try {
       const rcpt = await AdminApi.getReceipt(restaurantId, receiptId);
       setSelectedReceipt(rcpt);
+      setSubTab('tickets');
     } catch (err: any) {
       alert(err?.message || 'Error al cargar ticket');
     }
@@ -272,6 +289,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
             onClick={handleDownloadSummaryPdf}
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-indigo-950/60 border border-indigo-500/30 hover:border-indigo-400 text-indigo-200 hover:text-white text-xs font-bold transition-all"
           >
@@ -279,6 +297,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
             <span>Resumen PDF (A4)</span>
           </button>
           <button
+            type="button"
             onClick={handleExportCsv}
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all"
           >
@@ -286,6 +305,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
             <span>Exportar CSV</span>
           </button>
           <button
+            type="button"
             onClick={loadData}
             disabled={loading}
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all disabled:opacity-50"
@@ -300,8 +320,11 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
       <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Sub-tabs */}
-          <div className="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <div role="tablist" aria-label="Vistas de ventas y cobros" className="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
             <button
+              type="button"
+              role="tab"
+              aria-selected={subTab === 'summary'}
               onClick={() => setSubTab('summary')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                 subTab === 'summary' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
@@ -310,6 +333,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
               Resumen
             </button>
             <button
+              type="button"
+              role="tab"
+              aria-selected={subTab === 'operations'}
               onClick={() => setSubTab('operations')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                 subTab === 'operations' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
@@ -318,6 +344,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
               Operaciones ({operations.length})
             </button>
             <button
+              type="button"
+              role="tab"
+              aria-selected={subTab === 'tickets'}
               onClick={() => setSubTab('tickets')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                 subTab === 'tickets' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
@@ -326,6 +355,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
               Tickets
             </button>
             <button
+              type="button"
+              role="tab"
+              aria-selected={subTab === 'fiscal'}
               onClick={() => setSubTab('fiscal')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                 subTab === 'fiscal' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
@@ -337,8 +369,10 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
 
           {/* Period selector */}
           <div className="flex items-center space-x-2">
-            <Calendar className="w-4 h-4 text-indigo-400" />
+            <Calendar className="w-4 h-4 text-indigo-400" aria-hidden="true" />
+            <label htmlFor="sales-period" className="sr-only">Período</label>
             <select
+              id="sales-period"
               value={period}
               onChange={(e) => setPeriod(e.target.value as any)}
               className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
@@ -352,9 +386,26 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/60">
+        <div role="group" aria-label="Filtros de ventas" className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/60">
           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Filtrar:</span>
+          <label htmlFor="sales-shift-filter" className="sr-only">Filtrar por turno</label>
           <select
+            id="sales-shift-filter"
+            aria-label="Filtrar por turno"
+            value={shiftFilter}
+            onChange={(e) => setShiftFilter(e.target.value)}
+            className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+          >
+            <option value="">Día calendario (período)</option>
+            {currentShift && (
+              <option value={currentShift.id}>
+                Turno actual (desde {new Date(currentShift.openedAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})
+              </option>
+            )}
+          </select>
+          <label htmlFor="sales-method-filter" className="sr-only">Filtrar por medio de pago</label>
+          <select
+            id="sales-method-filter"
             aria-label="Filtrar por medio de pago"
             value={methodFilter}
             onChange={(e) => setMethodFilter(e.target.value)}
@@ -368,7 +419,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
             <option value="WAITER_TRANSFER">Transferencia</option>
             <option value="WAITER_CARD">Tarjeta histórica sin subtipo</option>
           </select>
+          <label htmlFor="sales-responsible-filter" className="sr-only">Filtrar por responsable</label>
           <select
+            id="sales-responsible-filter"
             aria-label="Filtrar por responsable"
             value={responsibleFilter}
             onChange={(e) => setResponsibleFilter(e.target.value)}
@@ -379,7 +432,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
               <option key={user.id} value={user.id}>{user.name}</option>
             ))}
           </select>
+          <label htmlFor="sales-fiscal-filter" className="sr-only">Filtrar por comprobante asociado</label>
           <select
+            id="sales-fiscal-filter"
             aria-label="Filtrar por comprobante asociado"
             value={fiscalFilter}
             onChange={(e) => setFiscalFilter(e.target.value)}
@@ -416,15 +471,36 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
       </div>
 
       {error && (
-        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-200 text-xs flex items-center space-x-2">
+        <div role="alert" className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-200 text-xs flex items-center space-x-2">
           <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {/* SUB-TAB: RESUMEN */}
+      {subTab === 'summary' && !summary && (
+        <div role="status" className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-8 text-center text-slate-500 text-xs">
+          {loading
+            ? 'Cargando resumen de ventas y cobros…'
+            : error
+              ? `No se pudo cargar el resumen: ${error}`
+              : 'Sin datos para el período seleccionado.'}
+        </div>
+      )}
       {subTab === 'summary' && summary && (
         <div className="space-y-6">
+          {/* E16: turno y criterio de conciliación con etiquetas canónicas */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-2xl px-4 py-3 text-xs text-slate-300 space-y-1">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span><strong className="text-white">Turno:</strong> {summary.shiftLabel || 'Día calendario (período seleccionado)'}</span>
+              <span><strong className="text-rose-300">Devolución del período:</strong> <span className="font-mono">{formatPesos(summary.devolucionesMinor || 0)}</span></span>
+              <span className="text-slate-500">Rango [desde,hasta): {new Date(summary.dateFrom).toLocaleString('es-AR')} → {new Date(summary.dateTo).toLocaleString('es-AR')} ({summary.timezone})</span>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Consumo por fecha original de la tanda (nunca se mueve al día de pago) · Cobrado neto y propina por fecha de pago menos devoluciones ·
+              Cada devolución computa en su propia fecha: una devolución posterior no reescribe este resumen · Saldo = cuenta completa pendiente.
+            </p>
+          </div>
           {/* Tarjetas de cabecera */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
@@ -449,6 +525,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
               <span className="text-[11px] font-bold text-emerald-200 uppercase tracking-wider">Total recibido</span>
               <div className="text-2xl font-black text-emerald-300 mt-1">{formatPesos(summary.totalRecibidoMinor)}</div>
               <span className="text-[10px] text-emerald-400/70 mt-0.5 block">{summary.paymentsCount} pagos ({summary.uniqueSessionsCount} cuentas)</span>
+              {(summary.devolucionesMinor || 0) > 0 && (
+                <span className="text-[10px] text-rose-300/90 mt-0.5 block">Devolución del período: −{formatPesos(summary.devolucionesMinor || 0)} (neto ya descontado)</span>
+              )}
             </div>
 
             <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
@@ -471,12 +550,12 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-950/60 text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-slate-800">
                   <tr>
-                    <th className="py-3 px-4">Medio de pago</th>
-                    <th className="py-3 px-4 text-right">Cant. Pagos</th>
-                    <th className="py-3 px-4 text-right">Consumo</th>
-                    <th className="py-3 px-4 text-right">Propina</th>
-                    <th className="py-3 px-4 text-right">Devoluciones</th>
-                    <th className="py-3 px-4 text-right">Total Recibido</th>
+                    <th scope="col" className="py-3 px-4">Medio de pago</th>
+                    <th scope="col" className="py-3 px-4 text-right">Cant. Pagos</th>
+                    <th scope="col" className="py-3 px-4 text-right">Consumo</th>
+                    <th scope="col" className="py-3 px-4 text-right">Propina</th>
+                    <th scope="col" className="py-3 px-4 text-right">Devoluciones</th>
+                    <th scope="col" className="py-3 px-4 text-right">Total Recibido</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -511,7 +590,11 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
             </div>
             {operations.length === 0 ? (
               <div className="p-8 text-center text-slate-500 text-xs">
-                No hay operaciones registradas en el período seleccionado.
+                {loading
+                  ? 'Cargando operaciones del período…'
+                  : error
+                    ? `No se pudieron cargar las operaciones: ${error}`
+                    : 'No hay operaciones registradas en el período seleccionado.'}
               </div>
             ) : (
               <div className="divide-y divide-slate-800/60">
@@ -533,9 +616,12 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
                       </div>
                       <div className="flex items-center space-x-4 text-xs">
                         <span className="text-slate-400">Consumo: <strong className="text-white">{formatPesos(op.consumoTotalMinor)}</strong></span>
-                        <span className="text-slate-400">Cobrado: <strong className="text-emerald-400">{formatPesos(op.cobradoTotalMinor)}</strong></span>
+                        <span className="text-slate-400">Cobrado neto: <strong className="text-emerald-400">{formatPesos(op.cobradoTotalMinor)}</strong></span>
                         {op.propinaTotalMinor > 0 && (
                           <span className="text-slate-400">Propina: <strong className="text-amber-400">{formatPesos(op.propinaTotalMinor)}</strong></span>
+                        )}
+                        {op.devolucionTotalMinor > 0 && (
+                          <span className="text-slate-400">Devolución: <strong className="text-rose-300">−{formatPesos(op.devolucionTotalMinor)}</strong></span>
                         )}
                         {op.saldoMinor > 0 && (
                           <span className="text-slate-400">Saldo: <strong className="text-rose-400">{formatPesos(op.saldoMinor)}</strong></span>
@@ -580,6 +666,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
                         {op.receipts.map((r) => (
                           <button
                             key={r.receiptId}
+                            type="button"
                             onClick={() => handleViewReceipt(r.receiptId)}
                             className="inline-flex items-center space-x-1 text-indigo-400 hover:text-indigo-300 bg-indigo-950/40 px-2 py-0.5 rounded border border-indigo-800/40"
                           >
@@ -669,6 +756,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
               </p>
             </div>
             <button
+              type="button"
               onClick={() => setShowFiscalModal(true)}
               className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md shadow-indigo-600/20"
             >
@@ -686,11 +774,11 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-950/60 text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-slate-800">
                   <tr>
-                    <th className="py-3 px-4">Tipo & Número</th>
-                    <th className="py-3 px-4">Fecha</th>
-                    <th className="py-3 px-4">Emisor</th>
-                    <th className="py-3 px-4 text-right">Total</th>
-                    <th className="py-3 px-4 text-right">Cuentas cubiertas</th>
+                    <th scope="col" className="py-3 px-4">Tipo & Número</th>
+                    <th scope="col" className="py-3 px-4">Fecha</th>
+                    <th scope="col" className="py-3 px-4">Emisor</th>
+                    <th scope="col" className="py-3 px-4 text-right">Total</th>
+                    <th scope="col" className="py-3 px-4 text-right">Cuentas cubiertas</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -714,7 +802,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
 
       {/* Modal Carga Comprobante Fiscal */}
       {showFiscalModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-label="Asociar comprobante fiscal externo" className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleCreateFiscalDoc} className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
             <h3 className="text-base font-bold text-white">Asociar comprobante fiscal externo</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -828,7 +916,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
 
       {/* Modal Devolución / Ajuste de Cobro */}
       {showAdjustmentModal && selectedSettlementForAdjustment && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-label="Devolución o ajuste de cobro" className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <form
             onSubmit={handleCreateAdjustment}
             className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full space-y-4"
@@ -843,6 +931,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
               <button
                 type="button"
                 onClick={() => setShowAdjustmentModal(false)}
+                aria-label="Cerrar diálogo de devolución"
                 className="text-slate-400 hover:text-white text-xs"
               >
                 ✕

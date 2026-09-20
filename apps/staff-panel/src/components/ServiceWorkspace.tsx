@@ -23,12 +23,14 @@ import {
   Clock3,
   Coffee,
   ExternalLink,
+  Filter,
   LayoutDashboard,
   LockKeyhole,
   MapPinned,
   Plus,
   RefreshCw,
   RotateCcw,
+  Search,
   Send,
   UserRound,
   Users,
@@ -40,6 +42,12 @@ interface ServiceWorkspaceProps {
   restaurantId: string;
   currentUser: StaffUserDTO;
   onOpenKitchen?: () => void;
+  onRequireOperatorPin?: (action?: { label: string; action?: () => void }) => void;
+  syncSnapshot?: ServiceWorkspaceDTO | null;
+  syncLoading?: boolean;
+  syncError?: string | null;
+  syncLastSuccessTimestamp?: number | null;
+  onRefresh?: () => Promise<boolean | void>;
 }
 
 type TaskFilter = 'ALL' | 'CALL' | 'ORDER' | 'ACCOUNT' | 'CLEAN';
@@ -168,17 +176,45 @@ function accountRoundStatusLabel(status: string) {
   return status;
 }
 
-export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId, currentUser, onOpenKitchen }) => {  const [snapshot, setSnapshot] = useState<ServiceWorkspaceDTO | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
+  restaurantId,
+  currentUser,
+  onOpenKitchen,
+  onRequireOperatorPin,
+  syncSnapshot,
+  syncLoading,
+  syncError,
+  syncLastSuccessTimestamp,
+  onRefresh
+}) => {
+  const [snapshot, setSnapshot] = useState<ServiceWorkspaceDTO | null>(syncSnapshot ?? null);
+  const [loading, setLoading] = useState(syncSnapshot !== undefined ? (syncLoading ?? false) : true);
+  const [error, setError] = useState<string | null>(syncError ?? null);
+
+  useEffect(() => {
+    if (syncSnapshot !== undefined) {
+      setSnapshot(syncSnapshot);
+      setLoading(syncLoading ?? false);
+      if (syncError !== undefined) setError(syncError);
+    }
+  }, [syncSnapshot, syncLoading, syncError]);
   const [filter, setFilter] = useState<TaskFilter>('ALL');
   const [selectedSector, setSelectedSector] = useState<string>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+  const frozenTasksRef = useRef<ServiceTaskDTO[]>([]);
+  const previousTaskIdsRef = useRef<Set<string>>(new Set());
+  const [newlyArrivedTaskIds, setNewlyArrivedTaskIds] = useState<Set<string>>(new Set());
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const [manualMenu, setManualMenu] = useState<any | null>(null);
   const [manualItems, setManualItems] = useState<Array<{ menuItemId: string; name: string; price: number; quantity: number }>>([]);
+  const [manualDraftsByTableId, setManualDraftsByTableId] = useState<Record<string, Array<{ menuItemId: string; name: string; price: number; quantity: number }>>>({});
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [paymentMethodBySession, setPaymentMethodBySession] = useState<Record<string, PaymentMethod | ''>>({});
   const [tipBySession, setTipBySession] = useState<Record<string, string>>({});
@@ -194,11 +230,75 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
   const queueRef = useRef<HTMLElement | null>(null);
   const tableContextRef = useRef<HTMLDivElement | null>(null);
   const pendingTableFocusRef = useRef<string | null>(null);
+  const filterButtonRef = useRef<HTMLButtonElement | null>(null);
+  const lastSelectedTableTriggerRef = useRef<HTMLElement | null>(null);
 
-  const requestTableContext = (tableId: string) => {
+  const requestTableContext = (tableId: string, triggerElement?: HTMLElement) => {
+    if (triggerElement) {
+      lastSelectedTableTriggerRef.current = triggerElement;
+    }
     pendingTableFocusRef.current = tableId;
     setSelectedTableId(tableId);
   };
+
+  // E11: Navegación por teclado físico y focus management accesible
+  // Escape nunca confirma pago ni mutaciones destructivas; cierra contextos en cascada.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      const isInputActive = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
+
+      // Atajo '/' para enfocar rápidamente el buscador de mesa (si no se está escribiendo)
+      if (event.key === '/' && !isInputActive && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        const searchInput = document.getElementById('table-search-input');
+        if (searchInput) {
+          searchInput.focus();
+        }
+        return;
+      }
+
+      // Escape: Cierra modales / contextos en orden inverso. NUNCA confirma pagos.
+      if (event.key === 'Escape') {
+        if (reauthAccount) {
+          event.preventDefault();
+          if (!reauthSubmitting) {
+            setReauthAccount(null);
+            setReauthPin('');
+          }
+          return;
+        }
+        if (manualOrderOpen) {
+          event.preventDefault();
+          if (!manualSubmitting) {
+            setManualOrderOpen(false);
+          }
+          return;
+        }
+        if (filterMenuOpen) {
+          event.preventDefault();
+          setFilterMenuOpen(false);
+          filterButtonRef.current?.focus();
+          return;
+        }
+        if (selectedTableId) {
+          event.preventDefault();
+          setSelectedTableId(null);
+          // Restaurar foco al elemento que abrió la mesa o al buscador
+          if (lastSelectedTableTriggerRef.current) {
+            lastSelectedTableTriggerRef.current.focus();
+            lastSelectedTableTriggerRef.current = null;
+          } else {
+            document.getElementById('table-search-input')?.focus();
+          }
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [reauthAccount, reauthSubmitting, manualOrderOpen, manualSubmitting, filterMenuOpen, selectedTableId]);
 
   // E07: el atajo de cocina no navega fuera de Servicio; enfoca la cola con filtro Cocina.
   const focusKitchen = () => {
@@ -208,6 +308,14 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
   };
 
   const refresh = async (signal?: AbortSignal): Promise<boolean> => {
+    if (onRefresh) {
+      try {
+        await onRefresh();
+        return true;
+      } catch {
+        return false;
+      }
+    }
     try {
       const data = await StaffApi.getServiceWorkspace(restaurantId, signal);
       if (signal?.aborted) return false;
@@ -230,6 +338,10 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
   }, []);
 
   useEffect(() => {
+    if (syncSnapshot !== undefined) {
+      // E08: Sincronización gobernada por el shell único. No arrancar ciclos duplicados.
+      return;
+    }
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let controller: AbortController | null = null;
@@ -285,14 +397,91 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
   const tables = snapshot?.floorPlan.tables || [];
   const accounts = snapshot?.accounts || [];
   const tasks = snapshot?.tasks || [];
+  const allowWaitersToCollectCash = Boolean(snapshot?.allowWaitersToCollectCash);
   const availableSectors = useMemo(() => {
     const sectors = new Set(tasks.map((task) => task.sector).filter(Boolean));
     return ['ALL', ...[...sectors].sort((a, b) => sectorLabel(a).localeCompare(sectorLabel(b), 'es'))];
   }, [tasks]);
-  const visibleTasks = useMemo(
-    () => tasks.filter((task) => taskFilterMatches(task, filter) && (selectedSector === 'ALL' || task.sector === selectedSector)),
-    [tasks, filter, selectedSector]
-  );
+  // Detección de tareas recién llegadas para alertar visualmente sin saltos sorpresivos
+  useEffect(() => {
+    if (tasks.length === 0) return;
+    const incomingIds = new Set(tasks.map((t) => t.targetId));
+    if (previousTaskIdsRef.current.size > 0) {
+      const brandNew = new Set<string>();
+      for (const id of incomingIds) {
+        if (!previousTaskIdsRef.current.has(id)) {
+          brandNew.add(id);
+        }
+      }
+      if (brandNew.size > 0) {
+        setNewlyArrivedTaskIds(brandNew);
+        const timer = setTimeout(() => setNewlyArrivedTaskIds(new Set()), 4000);
+        return () => clearTimeout(timer);
+      }
+    }
+    previousTaskIdsRef.current = incomingIds;
+  }, [tasks]);
+
+  // Prioridad canónica de atención física:
+  // 1. CALL (Mozo pedido en salón)
+  // 2. ORDER_DELIVERY (Plato listo en pase)
+  // 3. ACCOUNT_COLLECTION (Comensal listo para pagar)
+  // 4. ORDER_VALIDATION (Excepción en comanda)
+  // 5. TABLE_CLEANUP (Mesa por limpiar)
+  const taskPriority = (t: ServiceTaskDTO): number => {
+    switch (t.kind) {
+      case 'CALL': return 1;
+      case 'ORDER_DELIVERY': return 2;
+      case 'ACCOUNT_COLLECTION': return 3;
+      case 'ORDER_VALIDATION': return 4;
+      case 'TABLE_CLEANUP': return 5;
+      default: return 6;
+    }
+  };
+
+  const sortTasks = (taskList: ServiceTaskDTO[]): ServiceTaskDTO[] => {
+    return [...taskList].sort((a, b) => {
+      const pDiff = taskPriority(a) - taskPriority(b);
+      if (pDiff !== 0) return pDiff;
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+  };
+
+  const isInteracting = Boolean(hoveredTaskId || focusedTaskId || actionBusy);
+
+  const filteredTasks = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return tasks.filter((task) => {
+      const matchesFilter = taskFilterMatches(task, filter);
+      const matchesSector = selectedSector === 'ALL' || task.sector === selectedSector;
+      const matchesSearch = !q ||
+        task.tableLabel.toLowerCase().includes(q) ||
+        task.title.toLowerCase().includes(q) ||
+        task.summary.toLowerCase().includes(q);
+      return matchesFilter && matchesSector && matchesSearch;
+    });
+  }, [tasks, filter, selectedSector, searchQuery]);
+
+  const visibleTasks = useMemo(() => {
+    if (isInteracting && frozenTasksRef.current.length > 0) {
+      // Congelar posiciones: actualizar datos de las existentes y anexar nuevas al final
+      const taskMap = new Map(filteredTasks.map((t) => [t.taskKey, t]));
+      const preserved: ServiceTaskDTO[] = [];
+      for (const f of frozenTasksRef.current) {
+        if (taskMap.has(f.taskKey)) {
+          preserved.push(taskMap.get(f.taskKey)!);
+          taskMap.delete(f.taskKey);
+        }
+      }
+      for (const remaining of taskMap.values()) {
+        preserved.push(remaining);
+      }
+      return preserved;
+    }
+    const sorted = sortTasks(filteredTasks);
+    frozenTasksRef.current = sorted;
+    return sorted;
+  }, [filteredTasks, isInteracting]);
   const selectedTable = tables.find((table) => table.id === selectedTableId) || null;
   // E10-E11: la tarjeta sintética ACCOUNT_COLLECTION vive sólo en la cola global;
   // en el panel la cuenta ya tiene Registrar pago/Cobrar y cerrar a la derecha.
@@ -463,14 +652,17 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
   const settleFailure = (err: any): string => {
     const code = err?.code as string | undefined;
     const status = err?.statusCode as number | undefined;
+    if (code === 'TOKEN_SCOPE_MISMATCH') {
+      return 'El PIN temporal del Encargado no corresponde a esta mesa o ya expiró. Solicitá el PIN nuevamente sobre esta mesa.';
+    }
     if (code === 'STALE_ACCOUNT_VERSION' || code === 'VERSION_MISMATCH' || code === 'ACCOUNT_VERSION_MISMATCH') {
-      return `${err?.message || 'La cuenta cambió mientras cobrabas (otra ronda o pago).'} Actualizá la mesa y volvé a intentarlo con el saldo visible.`;
+      return `${err?.message || 'La cuenta cambió mientras cobrabas (otra ronda o pago registrado en otro equipo).'} Actualizá la mesa y volvé a intentarlo con el saldo visible.`;
     }
     if (code === 'SETTLE_CONFLICT' || code === 'CLOSE_CONFLICT') {
       return `${err?.message || 'Otro cobro se registró primero para esta cuenta.'} Se actualizó la mesa; reintentá sólo si persiste el saldo.`;
     }
     if (code === 'NOTHING_TO_SETTLE') {
-      return 'La cuenta ya no tiene saldo pendiente; se actualizó la mesa.';
+      return 'La cuenta ya no tiene saldo pendiente; la mesa fue actualizada.';
     }
     if (code === 'OVERPAYMENT') {
       return `${err?.message || 'El monto supera el saldo pendiente.'} Ajustá el monto al saldo visible y reintentá.`;
@@ -478,17 +670,23 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
     if (code === 'DIGITAL_METHOD_UNAVAILABLE') {
       return `${err?.message || 'El método digital no está disponible en este local.'} Cobrá en efectivo o con otro método habilitado.`;
     }
-    if (status === 409) {
-      return `${err?.message || 'La cuenta cambió mientras cobrabas (otra ronda o pago).'} Actualizá la mesa y volvé a intentarlo con el saldo visible.`;
-    }
-    if (status === 403 || code === 'FORBIDDEN' || code === 'ROLE_REQUIRED') {
-      return 'Tu rol no puede liquidar. Pedí el PIN de un Encargado; la mesa y tu sesión se conservan.';
-    }
     if (code === 'IDEMPOTENCY_KEY_REUSED') {
       return 'Ese reintento cambió algún dato (monto, método o propina). Repetilo con exactamente los mismos valores o actualizá la mesa.';
     }
-    if (code === 'BALANCE_REMAINING' || code === 'PENDING_ITEMS') {
-      return `${err?.message || 'Quedan pendientes antes de cerrar.'} Registrá el pago parcial con "Registrar pago y mantener mesa" o resolvé los pendientes.`;
+    if (code === 'BALANCE_REMAINING' || code === 'PENDING_ITEMS' || code === 'DRAFT_UNRESOLVED' || code === 'PENDING_VALIDATION_UNRESOLVED') {
+      return `${err?.message || 'Quedan pedidos o tandas pendientes antes de cerrar.'} Registrá el pago parcial con "Registrar pago y mantener mesa" o resolvé los pendientes.`;
+    }
+    if (code === 'SETTLE_CLOSURE_INCOMPLETE') {
+      return `${err?.message || 'El cobro quedó registrado pero no se pudo liberar la mesa.'} Reintentá con exactamente los mismos valores para completar el pase a limpieza.`;
+    }
+    if (status === 409) {
+      return `${err?.message || 'La cuenta cambió mientras cobrabas (otra ronda o pago).'} Actualizá la mesa y volvé a intentarlo con el saldo visible.`;
+    }
+    if (status === 403 || code === 'FORBIDDEN' || code === 'ROLE_REQUIRED' || code === 'SETTLE_REQUIRES_MANAGER') {
+      return 'Tu rol no puede liquidar este medio de cobro. Pedí el PIN de un Encargado; la mesa y tu sesión se conservan.';
+    }
+    if (err?.name === 'TypeError' || err?.message?.includes('fetch') || err?.message?.includes('network') || err?.message?.includes('Failed to fetch')) {
+      return 'Se perdió la conexión con el servidor. Comprobando el resultado del cobro... Presione reintentar para verificar si el pago impactó sin duplicar cobro.';
     }
     return err?.message || 'La acción no se pudo completar; la tarjeta sigue visible para reintentar.';
   };
@@ -560,8 +758,15 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
     }
   };
 
+  // E12 (S12/S13/H05): permiso específico de cobro en efectivo.
+  // Si allowWaitersToCollectCash está activo y el método es efectivo, el mozo puede liquidar directamente.
+  // Para métodos digitales/tarjeta o si el permiso está inactivo, se solicita PIN temporal de encargado.
   const handleCollect = async (account: ServiceAccountDTO, mode: SettleMode) => {
-    if (currentUser.role !== 'MANAGER') {
+    const selectedMethod = paymentMethodBySession[account.tableSessionId] || waiterPaymentForRequested(account.requestedPaymentMethod);
+    const isCash = selectedMethod === 'WAITER_CASH';
+    const canCollectDirectly = currentUser.role === 'MANAGER' || (allowWaitersToCollectCash && isCash);
+
+    if (!canCollectDirectly) {
       setReauthAccount(account);
       setReauthMode(mode);
       setReauthPin('');
@@ -579,7 +784,10 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
       const credentials = await StaffApi.loginTemporary({
         restaurantSlug: currentUser.restaurantId,
         pin: reauthPin,
-        terminalId: StaffApi.getTerminalId()
+        terminalId: StaffApi.getTerminalId(),
+        purpose: 'CASH_COLLECT',
+        tableId: reauthAccount.tableId,
+        sessionId: reauthAccount.tableSessionId
       });
       if (credentials.staffUser.role !== 'MANAGER' || credentials.staffUser.restaurantId !== currentUser.restaurantId) {
         throw new Error('El PIN no corresponde a un Encargado de este restaurante.');
@@ -648,9 +856,12 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
     }
     setActionError(null);
     try {
-      const menu = await StaffApi.getMenu(restaurantId);
-      setManualMenu(menu);
-      setManualItems([]);
+      if (!manualMenu) {
+        const menu = await StaffApi.getMenu(restaurantId);
+        setManualMenu(menu);
+      }
+      const existingDraft = manualDraftsByTableId[selectedTable.id] || [];
+      setManualItems(existingDraft);
       setManualOrderOpen(true);
     } catch (err: any) {
       setFailure(err);
@@ -659,11 +870,25 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
 
   const addManualItem = (item: any) => {
     const menuItemId = item.id || item.menuItemId;
-    if (!menuItemId) return;
+    if (!menuItemId || !selectedTable) return;
     setManualItems((previous) => {
       const found = previous.find((line) => line.menuItemId === menuItemId);
-      if (found) return previous.map((line) => line.menuItemId === menuItemId ? { ...line, quantity: Math.min(50, line.quantity + 1) } : line);
-      return [...previous, { menuItemId, name: item.name, price: item.price, quantity: 1 }];
+      const next = found
+        ? previous.map((line) => line.menuItemId === menuItemId ? { ...line, quantity: Math.min(50, line.quantity + 1) } : line)
+        : [...previous, { menuItemId, name: item.name, price: item.price, quantity: 1 }];
+      setManualDraftsByTableId((prev) => ({ ...prev, [selectedTable.id]: next }));
+      return next;
+    });
+  };
+
+  const removeManualItem = (id: string) => {
+    if (!selectedTable) return;
+    setManualItems((previous) => {
+      const next = previous.flatMap((line) =>
+        line.menuItemId === id ? (line.quantity > 1 ? [{ ...line, quantity: line.quantity - 1 }] : []) : [line]
+      );
+      setManualDraftsByTableId((prev) => ({ ...prev, [selectedTable.id]: next }));
+      return next;
     });
   };
 
@@ -677,6 +902,11 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
         quantity: line.quantity
       })));
       setManualOrderOpen(false);
+      setManualDraftsByTableId((prev) => {
+        const next = { ...prev };
+        delete next[selectedTable.id];
+        return next;
+      });
       setManualItems([]);
       await refresh();
     } catch (err: any) {
@@ -697,65 +927,150 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
     : '';
 
   return (
-    <section className="space-y-4" aria-labelledby="service-workspace-title">
-      <header className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/70 to-slate-900 p-4 sm:p-5 space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3 min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-200 flex items-center justify-center shrink-0">
-              <LayoutDashboard className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <h2 id="service-workspace-title" className="text-xl font-black text-white tracking-tight">Servicio</h2>
-              <p className="text-xs text-indigo-100 mt-0.5">Qué requiere acción ahora · {currentUser.name} · terminal compartido</p>
-            </div>
+    <section className="space-y-3" aria-labelledby="service-workspace-title">
+      {/* Portada Atención (E09): Barra compacta sin duplicar headers y accesible E11 */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+          {/* Selector de Sector */}
+          <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 min-h-[48px] text-xs sm:text-sm text-slate-300">
+            <span className="text-slate-400 font-bold hidden sm:inline">Sector:</span>
+            <select
+              value={selectedSector}
+              onChange={(e) => setSelectedSector(e.target.value)}
+              className="bg-transparent text-white font-bold text-xs sm:text-sm focus-visible:outline-none cursor-pointer py-1.5"
+              aria-label="Filtrar por sector del salón"
+            >
+              <option value="ALL" className="bg-slate-900 text-white">Todos los sectores</option>
+              {availableSectors.filter((s) => s !== 'ALL').map((sector) => (
+                <option key={sector} value={sector} className="bg-slate-900 text-white">
+                  {sectorLabel(sector)}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="flex items-center gap-2 text-[11px] font-bold">
-            <span className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 ${error ? 'border-amber-400/40 bg-amber-500/10 text-amber-200' : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'}`}>
-              <span className={`w-2 h-2 rounded-full ${error ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-              {error ? 'Modo recuperación' : snapshotStale ? 'Datos atrasados' : 'Datos actualizados'}
-            </span>
-            <button type="button" onClick={() => void refresh()} className="rounded-xl border border-slate-700 bg-slate-900/80 p-2.5 text-slate-300 hover:text-white" aria-label="Actualizar Servicio" title="Actualizar ahora">
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+
+          {/* Buscador de Mesa rápido (atajo '/' en PC) */}
+          <div className="relative flex items-center">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+            <input
+              type="text"
+              id="table-search-input"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar mesa..."
+              aria-label="Buscar mesa por número o nombre (atajo tecla barra /)"
+              className="bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-8 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none w-32 sm:w-44 min-h-[48px] h-[48px]"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-white text-sm font-bold focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none rounded-lg"
+                aria-label="Limpiar búsqueda"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Menú compacto de Filtros avanzados */}
+          <div className="relative">
+            <button
+              ref={filterButtonRef}
+              id="service-filter-menu-button"
+              type="button"
+              onClick={() => setFilterMenuOpen((open) => !open)}
+              className={`px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-2 transition-colors min-h-[48px] h-[48px] focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
+                filter !== 'ALL'
+                  ? 'border-indigo-400/50 bg-indigo-500/20 text-indigo-100'
+                  : 'border-slate-800 bg-slate-950 text-slate-300 hover:text-white'
+              }`}
+              aria-haspopup="menu"
+              aria-expanded={filterMenuOpen}
+              aria-controls="service-filter-menu-dropdown"
+              aria-label="Filtros avanzados de trabajo"
+            >
+              <Filter className="w-4 h-4 text-slate-400" />
+              <span>{filter === 'ALL' ? 'Filtro' : TASK_FILTER_LABELS[filter]}</span>
+              <span className="opacity-60 text-xs">▾</span>
             </button>
+
+            {filterMenuOpen && (
+              <div
+                id="service-filter-menu-dropdown"
+                role="menu"
+                aria-labelledby="service-filter-menu-button"
+                className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-52 rounded-2xl border border-slate-700 bg-slate-900 p-2 shadow-2xl space-y-1.5"
+              >
+                {(Object.keys(TASK_FILTER_LABELS) as TaskFilter[]).map((key) => {
+                  const count = key === 'ALL' ? tasks.length : tasks.filter((task) => taskFilterMatches(task, key)).length;
+                  return (
+                    <button
+                      key={key}
+                      role="menuitem"
+                      type="button"
+                      onClick={() => { setFilter(key); setFilterMenuOpen(false); }}
+                      className={`w-full min-h-[48px] rounded-xl px-3 py-2.5 text-left text-xs sm:text-sm font-bold flex items-center justify-between transition-colors focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
+                        filter === key ? 'bg-indigo-600 text-white font-black' : 'text-slate-200 hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>{TASK_FILTER_LABELS[key]}</span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 font-mono">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
-        {error && (
-          <div role="alert" className="flex items-center justify-between gap-2 rounded-xl border border-amber-400/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">
-            <span className="flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" /> {error} {snapshot ? 'Se conserva el último snapshot.' : ''}</span>
-            <button type="button" onClick={() => void refresh()} className="font-black underline">Reintentar</button>
-          </div>
-        )}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2" role="group" aria-label="Resumen de Servicio">
-          <SummaryChip label="Pendientes" value={snapshot?.summary.totalTasks ?? 0} tone="indigo" />
-          <SummaryChip label="Personas" value={snapshot?.summary.pendingCalls ?? 0} tone="rose" />
-          <SummaryChip label="Cocina" value={(snapshot?.summary.ordersToValidate ?? 0) + (snapshot?.summary.ordersToDeliver ?? 0)} tone="amber" />
-          <SummaryChip label="En preparación" value={snapshot?.summary.ordersInPreparation ?? 0} tone="orange" />
-          <SummaryChip label="Saldos" value={snapshot?.summary.accountsToCollect ?? 0} tone="emerald" />
-        </div>
-        {snapshot && <p className="text-[10px] text-indigo-100/80">Snapshot de hace {formatAge(snapshotAgeSeconds || 0)} · actualización automática pausada/reducida cuando la pantalla no está visible.</p>}
-      </header>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 rounded-2xl border border-slate-800 bg-slate-900/80 p-1.5" role="toolbar" aria-label="Filtrar trabajo pendiente">
-        {(Object.keys(TASK_FILTER_LABELS) as TaskFilter[]).map((key) => {
-          const count = key === 'ALL' ? tasks.length : tasks.filter((task) => taskFilterMatches(task, key)).length;
-          return (
-            <button key={key} type="button" onClick={() => setFilter(key)} className={`rounded-xl px-3 py-2 text-xs font-black transition-colors ${filter === key ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`} aria-pressed={filter === key}>
-              {TASK_FILTER_LABELS[key]} <span className="ml-1 opacity-70">{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none" role="group" aria-label="Sectores con pendientes">
-        {availableSectors.map((sector) => (
-          <button key={sector} type="button" onClick={() => setSelectedSector(sector)} className={`whitespace-nowrap rounded-xl border px-3 py-2 text-[11px] font-bold ${selectedSector === sector ? 'border-indigo-400/50 bg-indigo-500/20 text-indigo-100' : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-white'}`} aria-pressed={selectedSector === sector}>
-            {sector === 'ALL' ? 'Todos los sectores' : sectorLabel(sector)}
+        {/* Métricas compactas y toggle de mapa */}
+        <div className="flex items-center gap-2.5 text-xs sm:text-sm">
+          <span className="min-h-[48px] px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 font-bold text-slate-300 flex items-center">
+            {visibleTasks.length} {visibleTasks.length === 1 ? 'pendiente' : 'pendientes'}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowMap((prev) => !prev)}
+            className={`px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-2 min-h-[48px] h-[48px] transition-colors lg:hidden focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:outline-none ${
+              showMap ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200' : 'border-slate-800 bg-slate-950 text-slate-300 hover:text-white'
+            }`}
+            title="Alternar plano de mesas"
+          >
+            <MapPinned className="w-4 h-4 text-cyan-400" />
+            <span>{showMap ? 'Ocultar mapa' : 'Mapa'}</span>
           </button>
-        ))}
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-slate-300 hover:text-white min-h-[48px] min-w-[48px] h-[48px] w-[48px] flex items-center justify-center shrink-0 focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+            aria-label="Actualizar Servicio"
+            title="Actualizar ahora"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(330px,0.85fr)] gap-4 items-start">
-        <section ref={queueRef} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3.5 sm:p-4 space-y-3" aria-labelledby="service-queue-title">
+      {error && (
+        <div role="alert" className="flex items-center justify-between gap-2 rounded-xl border border-amber-400/30 bg-amber-950/30 px-3.5 py-2.5 text-xs text-amber-100">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+            {error} {snapshot ? 'Se conserva el último snapshot.' : ''}
+          </span>
+          <button type="button" onClick={() => void refresh()} className="font-black underline text-amber-200 hover:text-white">Reintentar</button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.3fr)_minmax(350px,0.9fr)] gap-4 items-start">
+        {/* Columna Izquierda: Cola de atención (en móvil/tablet vertical se oculta cuando hay mesa abierta para mostrar el detalle de inmediato sin scroll) */}
+        <section
+          ref={queueRef}
+          className={`rounded-2xl border border-slate-800 bg-slate-900/80 p-3.5 sm:p-4 space-y-3 ${
+            selectedTable ? 'hidden lg:block' : 'block'
+          }`}
+          aria-labelledby="service-queue-title"
+        >
           <div className="flex items-center justify-between gap-2">
             <div>
               <h3 id="service-queue-title" className="font-black text-white flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-indigo-300" /> Cola de atención</h3>
@@ -763,7 +1078,6 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
             </div>
             <span className="rounded-lg bg-slate-950 px-2 py-1 text-[10px] font-black text-slate-300">{visibleTasks.length} visibles</span>
           </div>
-          {/* E11: TO_CLEAN vive como tarjeta TABLE_CLEANUP en la cola; sin banner duplicado. */}
 
           {loading && !snapshot ? (
             <div className="py-16 text-center text-xs text-slate-400 animate-pulse">Cargando pendientes y cocina…</div>
@@ -782,6 +1096,11 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
                   account={accountForTask(task)}
                   currentUser={currentUser}
                   busy={actionBusy === task.taskKey || (task.kind === 'TABLE_CLEANUP' && actionBusy === `clean:${task.targetId}`)}
+                  isNew={newlyArrivedTaskIds.has(task.targetId)}
+                  onHoverStart={() => setHoveredTaskId(task.taskKey)}
+                  onHoverEnd={() => setHoveredTaskId(null)}
+                  onFocusStart={() => setFocusedTaskId(task.taskKey)}
+                  onFocusEnd={() => setFocusedTaskId(null)}
                   onOpenTable={() => requestTableContext(task.tableId)}
                   onAction={() => void handleTask(task)}
                   onReject={() => void handleRejectTask(task)}
@@ -792,61 +1111,96 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
           )}
         </section>
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3.5 sm:p-4 space-y-3" aria-labelledby="service-map-title">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h3 id="service-map-title" className="font-black text-white flex items-center gap-2"><MapPinned className="w-4 h-4 text-cyan-300" /> Mapa contextual</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">Sólo lectura · tocá una mesa para abrir su contexto.</p>
+        {/* Columna Derecha en Desktop / Vista Principal en Mobile/Tablet cuando hay mesa abierta */}
+        <div className={`space-y-4 ${selectedTable ? 'block' : (showMap ? 'block' : 'hidden lg:block')}`}>
+          {selectedTable ? (
+            <div ref={tableContextRef} id={`table-context-${selectedTable.id}`} tabIndex={-1} className="focus:outline-none" aria-label={`Contexto de ${selectedTable.label}`}>
+              <TableContextPanel
+                table={selectedTable}
+                tasks={selectedTasks}
+                account={selectedAccount}
+                currentUser={currentUser}
+                actionBusy={actionBusy}
+                paymentMethod={selectedPaymentMethod}
+                setPaymentMethod={(value) => selectedAccount && setPaymentMethodBySession((previous) => ({ ...previous, [selectedAccount.tableSessionId]: value }))}
+                tip={selectedAccount
+                  ? Object.prototype.hasOwnProperty.call(tipBySession, selectedAccount.tableSessionId)
+                    ? tipBySession[selectedAccount.tableSessionId]
+                    : Number(selectedAccount.requestedTipMinor || 0) > 0
+                      ? (Number(selectedAccount.requestedTipMinor) / 100).toFixed(2)
+                      : ''
+                  : ''}
+                setTip={(value) => selectedAccount && setTipBySession((prev) => ({ ...prev, [selectedAccount.tableSessionId]: value }))}
+                responsibleStaffUserId={selectedAccount ? (responsibleBySession[selectedAccount.tableSessionId] || selectedAccount.responsibleStaffUserId || currentUser.id) : currentUser.id}
+                setResponsibleStaffUserId={(value) => selectedAccount && setResponsibleBySession((prev) => ({ ...prev, [selectedAccount.tableSessionId]: value }))}
+                hasManualDraft={Boolean(manualDraftsByTableId[selectedTable.id]?.length)}
+                onAction={(task) => void handleTask(task)}
+                onReject={(task) => void handleRejectTask(task)}
+                onSettle={(account, mode) => void handleCollect(account, mode)}
+                onMarkClean={(tableId, label) => void handleMarkClean(tableId, label)}
+                onAddOrder={() => void openManualOrder()}
+                onCloseTable={() => void handleCloseTable()}
+                onClose={() => setSelectedTableId(null)}
+              />
             </div>
-            <button type="button" onClick={focusKitchen} className="inline-flex items-center gap-1 rounded-xl border border-amber-400/30 bg-amber-500/10 px-2.5 py-2 text-[10px] font-black text-amber-200 hover:bg-amber-500/20" title="Enfocar cocina dentro de Servicio">
-              <ChefHat className="w-3.5 h-3.5" /> Cocina <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-2">
-            <p id="service-map-description" className="sr-only">Mapa de {tables.length} mesas, sólo lectura. Cada mesa es seleccionable para abrir su contexto.</p>
-            {tables.length === 0 ? (
-              <div className="py-16 text-center text-xs text-slate-500">No hay plano configurado.</div>
-            ) : (
-              <svg viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-[235px] sm:h-[290px]" role="group" aria-labelledby="service-map-title service-map-description">
-                <rect width={mapWidth} height={mapHeight} fill="#020617" rx="24" />
-                {tables.map((table) => {
-                  const tableTasks = tasks.filter((task) => task.tableId === table.id);
-                  const isSelected = selectedTableId === table.id;
-                  const x = table.posX || 0;
-                  const y = table.posY || 0;
-                  const width = Math.max(45, table.width || 100);
-                  const height = Math.max(35, table.height || 70);
-                  const fill = table.stateColor || '#64748b';
-                  return (
-                    <g
-                      key={table.id}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`${table.label}: ${STATE_TEXT[table.currentState] || STATE_LABELS[table.currentState as TableFSMState] || table.currentState}${tableTasks.length ? `, ${tableTasks.length} pendientes` : ''}`}
-                      onClick={() => setSelectedTableId(table.id)}
-                      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTableId(table.id); } }}
-                      className="cursor-pointer"
-                    >
-                      {table.shape === 'ROUND' ? (
-                        <circle cx={x + width / 2} cy={y + height / 2} r={Math.min(width, height) / 2} fill={`${fill}45`} stroke={isSelected ? '#f8fafc' : fill} strokeWidth={isSelected ? 7 : 3} />
-                      ) : (
-                        <rect x={x} y={y} width={width} height={height} rx={table.shape === 'BOOTH' ? 8 : 16} fill={`${fill}45`} stroke={isSelected ? '#f8fafc' : fill} strokeWidth={isSelected ? 7 : 3} />
-                      )}
-                      <text x={x + width / 2} y={y + height / 2 - 4} textAnchor="middle" fill="#f8fafc" fontSize={Math.max(14, Math.min(23, width / 4))} fontWeight="800">{table.label.slice(0, 12)}</text>
-                      <text x={x + width / 2} y={y + height / 2 + 18} textAnchor="middle" fill="#cbd5e1" fontSize="13">{table.stateEmoji} {tableTasks.length ? `· ${tableTasks.length}` : ''}</text>
-                    </g>
-                  );
-                })}
-              </svg>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] text-slate-400" role="group" aria-label="Leyenda de estados">
-            <span><strong className="text-emerald-300">Disponible</strong> · lista</span>
-            <span><strong className="text-amber-300">Ocupada</strong> · atención</span>
-            <span><strong className="text-orange-300">Cocina</strong> · preparación</span>
-            <span><strong className="text-purple-300">Cuenta</strong> · cobro solicitado</span>
-          </div>
-        </section>
+          ) : (
+            <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3.5 sm:p-4 space-y-3" aria-labelledby="service-map-title">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h3 id="service-map-title" className="font-black text-white flex items-center gap-2"><MapPinned className="w-4 h-4 text-cyan-300" /> Mapa contextual</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Sólo lectura · tocá una mesa para abrir su contexto.</p>
+                </div>
+                <button type="button" onClick={focusKitchen} className="inline-flex items-center gap-1 rounded-xl border border-amber-400/30 bg-amber-500/10 px-2.5 py-2 text-[10px] font-black text-amber-200 hover:bg-amber-500/20" title="Enfocar cocina dentro de Servicio">
+                  <ChefHat className="w-3.5 h-3.5" /> Cocina <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-2">
+                <p id="service-map-description" className="sr-only">Mapa de {tables.length} mesas, sólo lectura. Cada mesa es seleccionable para abrir su contexto.</p>
+                {tables.length === 0 ? (
+                  <div className="py-16 text-center text-xs text-slate-500">No hay plano configurado.</div>
+                ) : (
+                  <svg viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-[235px] sm:h-[290px]" role="group" aria-labelledby="service-map-title service-map-description">
+                    <rect width={mapWidth} height={mapHeight} fill="#020617" rx="24" />
+                    {tables.map((table) => {
+                      const tableTasks = tasks.filter((task) => task.tableId === table.id);
+                      const isSelected = selectedTableId === table.id;
+                      const x = table.posX || 0;
+                      const y = table.posY || 0;
+                      const width = Math.max(45, table.width || 100);
+                      const height = Math.max(35, table.height || 70);
+                      const fill = table.stateColor || '#64748b';
+                      return (
+                        <g
+                          key={table.id}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`${table.label}: ${STATE_TEXT[table.currentState] || STATE_LABELS[table.currentState as TableFSMState] || table.currentState}${tableTasks.length ? `, ${tableTasks.length} pendientes` : ''}`}
+                          onClick={() => setSelectedTableId(table.id)}
+                          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTableId(table.id); } }}
+                          className="cursor-pointer"
+                        >
+                          {table.shape === 'ROUND' ? (
+                            <circle cx={x + width / 2} cy={y + height / 2} r={Math.min(width, height) / 2} fill={`${fill}45`} stroke={isSelected ? '#f8fafc' : fill} strokeWidth={isSelected ? 7 : 3} />
+                          ) : (
+                            <rect x={x} y={y} width={width} height={height} rx={table.shape === 'BOOTH' ? 8 : 16} fill={`${fill}45`} stroke={isSelected ? '#f8fafc' : fill} strokeWidth={isSelected ? 7 : 3} />
+                          )}
+                          <text x={x + width / 2} y={y + height / 2 - 4} textAnchor="middle" fill="#f8fafc" fontSize={Math.max(14, Math.min(23, width / 4))} fontWeight="800">{table.label.slice(0, 12)}</text>
+                          <text x={x + width / 2} y={y + height / 2 + 18} textAnchor="middle" fill="#cbd5e1" fontSize="13">{table.stateEmoji} {tableTasks.length ? `· ${tableTasks.length}` : ''}</text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] text-slate-400" role="group" aria-label="Leyenda de estados">
+                <span><strong className="text-emerald-300">Disponible</strong> · lista</span>
+                <span><strong className="text-amber-300">Ocupada</strong> · atención</span>
+                <span><strong className="text-orange-300">Cocina</strong> · preparación</span>
+                <span><strong className="text-purple-300">Cuenta</strong> · cobro solicitado</span>
+              </div>
+            </section>
+          )}
+        </div>
       </div>
 
       {Object.entries(recentDeliveries).filter(([, exp]) => exp > now).map(([targetId, expiresAt]) => (
@@ -873,37 +1227,6 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
         </div>
       )}
 
-      {selectedTable && (
-        <div ref={tableContextRef} id={`table-context-${selectedTable.id}`} tabIndex={-1} className="scroll-mt-4 focus:outline-none" aria-label={`Contexto de ${selectedTable.label}`}>
-        <TableContextPanel
-          table={selectedTable}
-          tasks={selectedTasks}
-          account={selectedAccount}
-          currentUser={currentUser}
-          actionBusy={actionBusy}
-          paymentMethod={selectedPaymentMethod}
-          setPaymentMethod={(value) => selectedAccount && setPaymentMethodBySession((previous) => ({ ...previous, [selectedAccount.tableSessionId]: value }))}
-          tip={selectedAccount
-            ? Object.prototype.hasOwnProperty.call(tipBySession, selectedAccount.tableSessionId)
-              ? tipBySession[selectedAccount.tableSessionId]
-              : Number(selectedAccount.requestedTipMinor || 0) > 0
-                ? (Number(selectedAccount.requestedTipMinor) / 100).toFixed(2)
-                : ''
-            : ''}
-          setTip={(value) => selectedAccount && setTipBySession((prev) => ({ ...prev, [selectedAccount.tableSessionId]: value }))}
-          responsibleStaffUserId={selectedAccount ? (responsibleBySession[selectedAccount.tableSessionId] || selectedAccount.responsibleStaffUserId || currentUser.id) : currentUser.id}
-          setResponsibleStaffUserId={(value) => selectedAccount && setResponsibleBySession((prev) => ({ ...prev, [selectedAccount.tableSessionId]: value }))}
-          onAction={(task) => void handleTask(task)}
-          onReject={(task) => void handleRejectTask(task)}
-          onSettle={(account, mode) => void handleCollect(account, mode)}
-          onMarkClean={(tableId, label) => void handleMarkClean(tableId, label)}
-          onAddOrder={() => void openManualOrder()}
-          onCloseTable={() => void handleCloseTable()}
-          onClose={() => setSelectedTableId(null)}
-        />
-        </div>
-      )}
-
       {manualOrderOpen && selectedTable && (
         <ManualOrderModal
           tableLabel={selectedTable.label}
@@ -911,7 +1234,7 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({ restaurantId
           items={manualItems}
           submitting={manualSubmitting}
           onAdd={addManualItem}
-          onRemove={(id) => setManualItems((previous) => previous.flatMap((line) => line.menuItemId === id ? (line.quantity > 1 ? [{ ...line, quantity: line.quantity - 1 }] : []) : [line]))}
+          onRemove={removeManualItem}
           onSubmit={() => void submitManualOrder()}
           onClose={() => setManualOrderOpen(false)}
         />
@@ -947,11 +1270,30 @@ const ServiceTaskCard: React.FC<{
   account: ServiceAccountDTO | null;
   currentUser: StaffUserDTO;
   busy: boolean;
+  isNew?: boolean;
+  onHoverStart?: () => void;
+  onHoverEnd?: () => void;
+  onFocusStart?: () => void;
+  onFocusEnd?: () => void;
   onOpenTable: () => void;
   onAction: () => void;
   onReject: () => void;
   onRelease: () => void;
-}> = ({ task, account, currentUser, busy, onOpenTable, onAction, onReject, onRelease }) => {
+}> = ({
+  task,
+  account,
+  currentUser,
+  busy,
+  isNew,
+  onHoverStart,
+  onHoverEnd,
+  onFocusStart,
+  onFocusEnd,
+  onOpenTable,
+  onAction,
+  onReject,
+  onRelease
+}) => {
   const isOtherClaim = Boolean(task.claim && task.claim.staffUserId !== currentUser.id);
   const isOwnClaim = Boolean(task.claim && task.claim.staffUserId === currentUser.id);
   const isBill = task.kind === 'CALL' && task.payload.callType === CallType.BILL;
@@ -959,60 +1301,137 @@ const ServiceTaskCard: React.FC<{
   const isReview = task.kind === 'ORDER_VALIDATION' && Boolean(task.payload.reviewReason);
   const badge = task.kind === 'ORDER_DELIVERY' ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200' : isBill ? 'border-purple-400/40 bg-purple-500/10 text-purple-200' : task.kind === 'ORDER_PREPARATION' ? 'border-orange-400/40 bg-orange-500/10 text-orange-200' : 'border-amber-400/40 bg-amber-500/10 text-amber-200';
   return (
-    <article className={`rounded-2xl border p-3.5 space-y-3 ${isOtherClaim ? 'border-slate-700 bg-slate-950/60 opacity-90' : 'border-slate-700/80 bg-slate-950/70 hover:border-indigo-400/40'}`} aria-label={`${task.tableLabel}: ${task.title}`}>
+    <article
+      onMouseEnter={onHoverStart}
+      onMouseLeave={onHoverEnd}
+      onFocus={onFocusStart}
+      onBlur={onFocusEnd}
+      className={`rounded-2xl border p-4 space-y-3.5 transition-all ${
+        isNew ? 'ring-2 ring-indigo-500/70 border-indigo-400 bg-indigo-950/40' : ''
+      } ${
+        isOtherClaim ? 'border-slate-700 bg-slate-950/60 opacity-90' : 'border-slate-700/80 bg-slate-950/70 hover:border-indigo-400/40'
+      }`}
+      aria-label={`${task.tableLabel}: ${task.title}`}
+    >
       <div className="flex items-start justify-between gap-3">
-        <button type="button" onClick={onOpenTable} className="min-w-0 text-left group">
-          <div className="flex items-center gap-2"><span className="rounded-lg bg-slate-800 px-2 py-1 text-[10px] font-black text-white">{task.tableLabel}</span><span className="text-[10px] text-slate-400">{sectorLabel(task.sector)}</span></div>
-          <h4 className="mt-2 font-black text-white group-hover:text-indigo-200">{task.title}</h4>
+        <button
+          type="button"
+          onClick={onOpenTable}
+          className="min-w-0 text-left group p-1 -m-1 rounded-xl focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+        >
+          <div className="flex items-center gap-2">
+            <span className="rounded-lg bg-slate-800 px-2.5 py-1 text-xs font-black text-white">{task.tableLabel}</span>
+            <span className="text-xs text-slate-400">{sectorLabel(task.sector)}</span>
+            {isNew && (
+              <span className="rounded-md bg-indigo-600 px-2 py-0.5 text-[10px] font-black text-white uppercase tracking-wider animate-pulse">
+                Nuevo
+              </span>
+            )}
+          </div>
+          <h4 className="mt-2 font-black text-sm sm:text-base text-white group-hover:text-indigo-200">{task.title}</h4>
         </button>
-        <div className="shrink-0 text-right"><span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${badge}`}>{TASK_KIND_LABELS[task.kind]}</span><span className="mt-1 flex items-center justify-end gap-1 text-[10px] font-mono text-slate-400"><Clock3 className="w-3 h-3" />{formatAge(task.ageSeconds)}</span></div>
+        <div className="shrink-0 text-right">
+          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-black ${badge}`}>{TASK_KIND_LABELS[task.kind]}</span>
+          <span className="mt-1 flex items-center justify-end gap-1 text-xs font-mono text-slate-400"><Clock3 className="w-3.5 h-3.5" />{formatAge(task.ageSeconds)}</span>
+        </div>
       </div>
-      <div className="flex items-start justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2">
-        <p className="min-w-0 text-xs text-slate-300 break-words">{task.summary}</p>
-        <span className="shrink-0 text-[10px] font-bold text-slate-400">{taskStatusLabel(task)}</span>
+      <div className="flex items-start justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/70 px-3.5 py-2.5">
+        <p className="min-w-0 text-xs sm:text-sm text-slate-300 break-words leading-relaxed">{task.summary}</p>
+        <span className="shrink-0 text-xs font-bold text-slate-400">{taskStatusLabel(task)}</span>
       </div>
-      {(isBill || isAccountCollection) && <div className="rounded-xl border border-purple-400/30 bg-purple-500/10 px-3 py-2 text-xs text-purple-100"><span className="text-purple-200">Cliente pidió pagar con </span><strong>{requestedPaymentLabel(task.payload.paymentMethod || account?.requestedPaymentMethod)}</strong></div>}
-      {(isBill || isAccountCollection) && Number(task.payload.requestedTipMinor ?? account?.requestedTipMinor ?? 0) > 0 && <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100"><span>Propina elegida por el cliente: </span><strong>{formatMinor(Number(task.payload.requestedTipMinor ?? account?.requestedTipMinor ?? 0))}</strong>{account && <span className="text-emerald-200"> · total a cobrar {formatMinor(account.account.saldoMinor + Number(task.payload.requestedTipMinor ?? account.requestedTipMinor ?? 0))}</span>}</div>}
+      {(isBill || isAccountCollection) && (
+        <div className="rounded-xl border border-purple-400/30 bg-purple-500/10 px-3.5 py-2.5 text-xs sm:text-sm text-purple-100">
+          <span className="text-purple-200">Cliente pidió pagar con </span>
+          <strong>{requestedPaymentLabel(task.payload.paymentMethod || account?.requestedPaymentMethod)}</strong>
+        </div>
+      )}
+      {(isBill || isAccountCollection) && Number(task.payload.requestedTipMinor ?? account?.requestedTipMinor ?? 0) > 0 && (
+        <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs sm:text-sm text-emerald-100">
+          <span>Propina elegida por el cliente: </span>
+          <strong>{formatMinor(Number(task.payload.requestedTipMinor ?? account?.requestedTipMinor ?? 0))}</strong>
+          {account && <span className="text-emerald-200"> · total a cobrar {formatMinor(account.account.saldoMinor + Number(task.payload.requestedTipMinor ?? account.requestedTipMinor ?? 0))}</span>}
+        </div>
+      )}
       {task.kind.startsWith('ORDER_') && task.payload.items && (
-        <div className="rounded-xl border border-indigo-400/20 bg-indigo-950/20 p-3 space-y-2" aria-label="Detalle de la comanda">
+        <div className="rounded-xl border border-indigo-400/20 bg-indigo-950/20 p-3.5 space-y-2.5" aria-label="Detalle de la comanda">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-black uppercase tracking-wide text-indigo-200">Detalle de la tanda</span>
-            <strong className="text-xs text-white">{formatMinor(task.payload.totalMinor || 0)}</strong>
+            <span className="text-xs font-black uppercase tracking-wide text-indigo-200">Detalle de la tanda</span>
+            <strong className="text-xs sm:text-sm text-white">{formatMinor(task.payload.totalMinor || 0)}</strong>
           </div>
           <ul className="max-h-56 space-y-2 overflow-y-auto" aria-label="Platos de la comanda">
             {task.payload.items.map((item) => (
               <li key={item.itemId} className="border-t border-indigo-400/10 pt-2 first:border-t-0 first:pt-0">
-                <div className="flex items-start justify-between gap-2 text-xs">
+                <div className="flex items-start justify-between gap-2 text-xs sm:text-sm">
                   <span className="min-w-0 break-words font-bold text-white">{item.quantity}× {item.name}</span>
-                  <span className="shrink-0 text-slate-300">{formatMinor(item.lineTotalMinor)}</span>
+                  <span className="shrink-0 text-slate-300 font-mono">{formatMinor(item.lineTotalMinor)}</span>
                 </div>
-                <p className="mt-0.5 text-[10px] text-indigo-200">{item.participant.label}</p>
-                {item.notes && <p className="mt-1 whitespace-pre-wrap break-words border-l-2 border-amber-400/50 pl-2 text-[11px] text-amber-100">Nota: {item.notes}</p>}
+                <p className="mt-0.5 text-xs text-indigo-200">{item.participant.label}</p>
+                {item.notes && <p className="mt-1 whitespace-pre-wrap break-words border-l-2 border-amber-400/50 pl-2 text-xs text-amber-100">Nota: {item.notes}</p>}
               </li>
             ))}
           </ul>
           {task.payload.allergenNotes && task.payload.allergenNotes.length > 0 && (
-            <p role="note" aria-label="Restricción alimentaria como contexto" className="flex items-start gap-1.5 rounded-lg border border-amber-400/30 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-100">
-              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+            <p role="note" aria-label="Restricción alimentaria como contexto" className="flex items-start gap-1.5 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
               <span>Contexto: {task.payload.allergenNotes.join(' · ')} — ya contemplado por la carta, no requiere confirmación adicional.</span>
             </p>
           )}
           {task.payload.reviewReason && (
-            <p role="alert" aria-label={`Revisión por excepción: ${task.payload.reviewReason.code}`} className="rounded-lg border border-rose-400/20 bg-rose-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-rose-100">
+            <p role="alert" aria-label={`Revisión por excepción: ${task.payload.reviewReason.code}`} className="rounded-lg border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs leading-relaxed text-rose-100">
               <strong>Qué ocurre y por qué hace falta una persona: </strong>
               {task.payload.reviewReason.label}{task.payload.reviewReason.detail ? ` · ${task.payload.reviewReason.detail}` : ''} <span className="opacity-70">[{task.payload.reviewReason.code}]</span>
             </p>
           )}
         </div>
       )}
-      {isBill && account && <div className="flex items-center justify-between rounded-xl border border-purple-500/20 bg-purple-950/20 px-3 py-2 text-xs"><span className="text-purple-100">Saldo acumulado</span><strong className="text-purple-200">{formatMinor(account.account.saldoMinor)}</strong></div>}
-      {task.claim && <div className={`flex items-center justify-between gap-2 text-[10px] ${isOwnClaim ? 'text-emerald-200' : 'text-slate-400'}`}><span className="flex items-center gap-1.5"><UserRound className="w-3 h-3" />{isOwnClaim ? 'Vos te ocupás' : `En atención: ${task.claim.staffName || 'otro operador'}`}</span>{isOwnClaim && <button type="button" onClick={onRelease} disabled={busy} className="font-black underline hover:text-white">Reasignar</button>}</div>}
+      {isBill && account && (
+        <div className="flex items-center justify-between rounded-xl border border-purple-500/20 bg-purple-950/20 px-3.5 py-2.5 text-xs sm:text-sm">
+          <span className="text-purple-100">Saldo acumulado</span>
+          <strong className="text-purple-200">{formatMinor(account.account.saldoMinor)}</strong>
+        </div>
+      )}
+      {task.claim && (
+        <div className={`flex items-center justify-between gap-2 text-xs ${isOwnClaim ? 'text-emerald-200' : 'text-slate-400'}`}>
+          <span className="flex items-center gap-1.5">
+            <UserRound className="w-3.5 h-3.5" />
+            {isOwnClaim ? 'Vos te ocupás' : `En atención: ${task.claim.staffName || 'otro operador'}`}
+          </span>
+          {isOwnClaim && (
+            <button type="button" onClick={onRelease} disabled={busy} className="font-black underline hover:text-white min-h-[36px] px-2 flex items-center">
+              Reasignar
+            </button>
+          )}
+        </div>
+      )}
       <div className={`grid gap-2 ${isReview ? 'grid-cols-[1fr_auto_auto]' : 'grid-cols-[1fr_auto]'}`}>
-        <button type="button" onClick={onAction} disabled={busy || isOtherClaim} className={`rounded-xl px-3 py-2.5 text-xs font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isBill ? 'bg-purple-600 text-white hover:bg-purple-500' : 'bg-indigo-600 text-white hover:bg-indigo-500'}`}>
-          {busy ? 'Guardando…' : taskActionLabel(task)} <ChevronRight className="ml-1 inline h-3.5 w-3.5" />
+        <button
+          type="button"
+          onClick={onAction}
+          disabled={busy || isOtherClaim}
+          className={`min-h-[48px] rounded-xl px-4 py-3 text-sm sm:text-base font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-1.5 focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 focus-visible:outline-none ${
+            isBill ? 'bg-purple-600 text-white hover:bg-purple-500' : 'bg-indigo-600 text-white hover:bg-indigo-500'
+          }`}
+        >
+          {busy ? 'Guardando…' : taskActionLabel(task)} <ChevronRight className="ml-1 inline h-4 w-4" />
         </button>
-        {isReview && <button type="button" onClick={onReject} disabled={busy || isOtherClaim} className="rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2.5 text-xs font-black text-rose-100 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50">Rechazar</button>}
-        <button type="button" onClick={onOpenTable} className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-xs font-black text-slate-200 hover:border-indigo-400/50" aria-label={`Abrir contexto de ${task.tableLabel}`}>Mesa</button>
+        {isReview && (
+          <button
+            type="button"
+            onClick={onReject}
+            disabled={busy || isOtherClaim}
+            className="min-h-[48px] rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-xs sm:text-sm font-bold text-rose-100 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none"
+          >
+            Rechazar
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onOpenTable}
+          className="min-h-[48px] min-w-[56px] rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-xs sm:text-sm font-bold text-slate-200 hover:border-indigo-400/50 flex items-center justify-center focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+          aria-label={`Abrir contexto de ${task.tableLabel}`}
+        >
+          Mesa
+        </button>
       </div>
     </article>
   );
@@ -1030,6 +1449,7 @@ const TableContextPanel: React.FC<{
   setTip: (value: string) => void;
   responsibleStaffUserId?: string;
   setResponsibleStaffUserId?: (value: string) => void;
+  hasManualDraft?: boolean;
   onAction: (task: ServiceTaskDTO) => void;
   onReject: (task: ServiceTaskDTO) => void;
   onSettle: (account: ServiceAccountDTO, mode: 'keep' | 'close') => void;
@@ -1037,7 +1457,9 @@ const TableContextPanel: React.FC<{
   onAddOrder: () => void;
   onCloseTable: () => void;
   onClose: () => void;
-}> = ({ table, tasks, account, currentUser, actionBusy, paymentMethod, setPaymentMethod, tip, setTip, responsibleStaffUserId, setResponsibleStaffUserId, onAction, onReject, onSettle, onMarkClean, onAddOrder, onCloseTable, onClose }) => {
+}> = ({ table, tasks, account, currentUser, actionBusy, paymentMethod, setPaymentMethod, tip, setTip, responsibleStaffUserId, setResponsibleStaffUserId, hasManualDraft, onAction, onReject, onSettle, onMarkClean, onAddOrder, onCloseTable, onClose }) => {
+  const [collectOpen, setCollectOpen] = useState(false);
+  const [showTipInput, setShowTipInput] = useState(false);
   const balance = account?.account.saldoMinor || 0;
   const enteredTipMinor = Math.max(0, Math.round(Number(tip || 0) * 100));
   const totalToCollect = balance + enteredTipMinor;
@@ -1053,101 +1475,290 @@ const TableContextPanel: React.FC<{
   return (
     <section className="rounded-2xl border border-cyan-400/30 bg-cyan-950/15 p-4 space-y-4" aria-labelledby="table-context-title">
       <div className="flex items-start justify-between gap-3">
-        <div><h3 id="table-context-title" className="text-lg font-black text-white">{table.label}</h3><p className="text-xs text-slate-400">{sectorLabel(table.sector)} · {STATE_TEXT[table.currentState] || table.currentState} · capacidad ×{table.capacity}</p></div>
-        <button type="button" onClick={onClose} className="rounded-xl border border-slate-700 bg-slate-900 p-2 text-slate-300 hover:text-white" aria-label="Cerrar contexto de mesa"><X className="w-4 h-4" /></button>
+        <div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-1.5 min-h-[48px] rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-300 hover:text-white lg:hidden focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none transition-colors"
+              aria-label="Volver a Atención"
+            >
+              ← Volver a Atención
+            </button>
+            <h3 id="table-context-title" className="text-lg font-black text-white">{table.label}</h3>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">{sectorLabel(table.sector)} · {STATE_TEXT[table.currentState] || table.currentState} · capacidad ×{table.capacity}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-[48px] min-w-[48px] rounded-xl border border-slate-700 bg-slate-900 p-3 text-slate-300 hover:text-white flex items-center justify-center focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:outline-none transition-colors"
+          aria-label="Cerrar contexto de mesa"
+        >
+          <X className="w-5 h-5" />
+        </button>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs"><Metric label="Necesidades" value={String(tasks.length)} /><Metric label="Consumo" value={formatMinor(account?.account.consumoMinor || 0)} /><Metric label="Pagado" value={formatMinor(account?.account.paidMinor || 0)} /><Metric label="Saldo" value={formatMinor(balance)} /><Metric label="Total a cobrar" value={formatMinor(totalToCollect)} emphasis /></div>
-      {account && <section className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3 space-y-2" aria-labelledby="table-account-detail-title">
+      {account && <section className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3.5 space-y-2.5" aria-labelledby="table-account-detail-title">
         <div className="flex items-center justify-between gap-2"><h4 id="table-account-detail-title" className="text-xs font-black uppercase tracking-wide text-slate-300">Detalle de consumo</h4><span className="text-[10px] text-slate-500">Cuenta por ocupación</span></div>
-        {account.account.tandas.length === 0 ? <p className="text-xs text-slate-500">Todavía no hay tandas aceptadas para cobrar.</p> : <div className="max-h-52 space-y-2 overflow-y-auto">{account.account.tandas.map((round) => <div key={round.orderId} className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2"><div className="flex items-center justify-between gap-2 text-[11px]"><span className="font-black text-white">Tanda · {accountRoundStatusLabel(round.status)}</span><strong className="text-emerald-200">{formatMinor(round.totalMinor)}</strong></div><p className="mt-1 text-[11px] leading-relaxed text-slate-300">{round.items.map((item) => `${item.quantity}× ${item.name}`).join(' · ') || 'Sin detalle de platos'}</p></div>)}</div>}
-        {account.account.pendingValidation.length > 0 && <p className="rounded-lg border border-rose-400/20 bg-rose-500/10 px-2.5 py-2 text-[11px] text-rose-100">Hay {account.account.pendingValidation.length} tanda(s) por validar; no integran el saldo cobrable.</p>}
-        {account.account.draft && <p className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-100">Hay un borrador sin enviar; no integra el saldo cobrable.</p>}
+        {account.account.tandas.length === 0 ? <p className="text-xs sm:text-sm text-slate-500">Todavía no hay tandas aceptadas para cobrar.</p> : <div className="max-h-52 space-y-2 overflow-y-auto">{account.account.tandas.map((round) => <div key={round.orderId} className="rounded-xl border border-slate-800 bg-slate-900/60 px-3.5 py-2.5"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-black text-white">Tanda · {accountRoundStatusLabel(round.status)}</span><strong className="text-emerald-200 font-mono">{formatMinor(round.totalMinor)}</strong></div><p className="mt-1 text-xs leading-relaxed text-slate-300">{round.items.map((item) => `${item.quantity}× ${item.name}`).join(' · ') || 'Sin detalle de platos'}</p></div>)}</div>}
+        {account.account.pendingValidation.length > 0 && <p className="rounded-lg border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">Hay {account.account.pendingValidation.length} tanda(s) por validar; no integran el saldo cobrable.</p>}
+        {account.account.draft && <p className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">Hay un borrador sin enviar; no integra el saldo cobrable.</p>}
       </section>}
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-start">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between"><h4 className="text-xs font-black uppercase tracking-wide text-slate-300">Pendientes de esta mesa</h4><button type="button" onClick={onAddOrder} className="inline-flex items-center gap-1 rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-2 py-1.5 text-[10px] font-black text-indigo-100 hover:bg-indigo-500/20"><Plus className="w-3 h-3" /> Agregar pedido</button></div>
-          {tasks.length === 0 ? <p className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-xs text-slate-400">No hay pendientes activos. El contexto de cuenta/historial sigue abajo.</p> : tasks.map((task) => <div key={task.taskKey} className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2"><div className="min-w-0"><span className="text-[10px] font-black text-indigo-200">{task.title}</span><p className="truncate text-[10px] text-slate-400">{task.summary}</p></div><div className="flex shrink-0 gap-1"><button type="button" onClick={() => onAction(task)} disabled={actionBusy === task.taskKey || (task.kind === 'TABLE_CLEANUP' && actionBusy === `clean:${task.targetId}`)} className="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[10px] font-black text-white disabled:opacity-50">{actionBusy === task.taskKey || (task.kind === 'TABLE_CLEANUP' && actionBusy === `clean:${task.targetId}`) ? 'Guardando…' : taskActionLabel(task)}</button>{task.kind === 'ORDER_VALIDATION' && task.payload.reviewReason && <button type="button" onClick={() => onReject(task)} disabled={Boolean(actionBusy)} className="rounded-lg border border-rose-400/40 px-2 py-1.5 text-[10px] font-black text-rose-100 disabled:opacity-50">Rechazar</button>}</div></div>)}
-        </div>
-        <div className="min-w-0 rounded-2xl border border-emerald-500/25 bg-emerald-950/15 p-3 space-y-2 md:min-w-[270px]">
-          <div className="flex items-center gap-2 text-xs font-black text-emerald-100"><CircleDollarSign className="w-4 h-4 text-emerald-300" /> Cuenta de la ocupación</div>
-          {isToClean ? (
-            <div className="space-y-2">
-              <p className="text-xs text-amber-100"><strong>{table.label} · pagada · falta limpiar.</strong></p>
-              <button type="button" onClick={() => onMarkClean(table.id, table.label)} disabled={actionBusy === `clean:${table.id}`} className="w-full rounded-xl bg-amber-500 px-3 py-2.5 text-xs font-black text-slate-950 hover:bg-amber-400 disabled:opacity-50">{actionBusy === `clean:${table.id}` ? 'Guardando…' : 'Mesa lista'}</button>
-              <p className="text-[10px] text-slate-400">Confirma la limpieza física y prepara la próxima sesión; el siguiente QR entra en una cuenta nueva, sin heredar la anterior.</p>
-            </div>
-          ) : account ? <>
-            <div className="flex items-center justify-between text-xs"><span className="text-slate-400">{account.account.tandas.length} tandas · {account.account.pendingValidation.length} por validar</span><strong className="text-emerald-200">{formatMinor(totalToCollect)}</strong></div>
-            {account.requestedPaymentMethod && <div className="rounded-lg border border-purple-400/30 bg-purple-500/10 px-2.5 py-2 text-[11px] text-purple-100"><span className="text-purple-200">Cliente pidió pagar con </span><strong>{requestedPaymentLabel(account.requestedPaymentMethod)}</strong></div>}
-            {Number(account.requestedTipMinor || 0) > 0 && <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-2 text-[11px] text-emerald-100">Propina elegida por el cliente: <strong>{formatMinor(Number(account.requestedTipMinor))}</strong> · total a cobrar: <strong>{formatMinor(totalToCollect)}</strong></div>}
-
-            {/* Mozo responsable predeterminado / editable */}
-            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2 space-y-1 text-[10px]">
-              <div className="flex items-center justify-between text-slate-300">
-                <span>Mozo responsable:</span>
-                <span className="font-bold text-indigo-300">
-                  {account.responsibleStaffName || currentUser.name}
-                  {account.responsibleStaffName ? ' (atendió cuenta)' : ''}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 pt-0.5">
-                <input
-                  type="text"
-                  value={responsibleStaffUserId || currentUser.id}
-                  onChange={(e) => setResponsibleStaffUserId && setResponsibleStaffUserId(e.target.value)}
-                  placeholder="ID del mozo"
-                  className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-white"
-                  title="Identificador del personal responsable del cobro"
-                />
-                {currentUser.id !== (responsibleStaffUserId || account.responsibleStaffUserId) && (
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3.5 items-start">
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-black uppercase tracking-wide text-slate-300">Pendientes de esta mesa</h4>
+            <button
+              type="button"
+              onClick={onAddOrder}
+              className={`inline-flex items-center gap-1.5 min-h-[48px] rounded-xl border px-3.5 py-2.5 text-xs sm:text-sm font-bold transition-colors focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
+                hasManualDraft
+                  ? 'border-amber-400/50 bg-amber-500/20 text-amber-200 hover:bg-amber-500/30'
+                  : 'border-indigo-400/30 bg-indigo-500/10 text-indigo-100 hover:bg-indigo-500/20'
+              }`}
+            >
+              <Plus className="w-4 h-4" />
+              {hasManualDraft ? 'Agregar pedido (borrador guardado)' : 'Agregar pedido'}
+            </button>
+          </div>
+          {tasks.length === 0 ? (
+            <p className="rounded-xl border border-slate-800 bg-slate-950/50 p-3.5 text-xs sm:text-sm text-slate-400">No hay pendientes activos. El contexto de cuenta/historial sigue abajo.</p>
+          ) : (
+            tasks.map((task) => (
+              <div key={task.taskKey} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="text-xs font-black text-indigo-200">{task.title}</span>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-0.5 leading-relaxed">{task.summary}</p>
+                  </div>
+                  <span className="rounded-lg bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-300 shrink-0">
+                    {TASK_KIND_LABELS[task.kind] || task.kind}
+                  </span>
+                </div>
+                {task.kind === 'ORDER_VALIDATION' && task.payload.reviewReason && (
+                  <p role="alert" aria-label={`Revisión por excepción: ${task.payload.reviewReason.code}`} className="rounded-lg border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs leading-relaxed text-rose-100">
+                    <strong>Qué ocurre y por qué hace falta una persona: </strong>
+                    {task.payload.reviewReason.label}{task.payload.reviewReason.detail ? ` · ${task.payload.reviewReason.detail}` : ''} <span className="opacity-70">[{task.payload.reviewReason.code}]</span>
+                  </p>
+                )}
+                <div className="flex items-center justify-end gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={() => setResponsibleStaffUserId && setResponsibleStaffUserId(currentUser.id)}
-                    className="shrink-0 rounded bg-indigo-900/60 border border-indigo-700/50 px-2 py-1 text-[9px] font-bold text-indigo-200 hover:text-white"
+                    onClick={() => onAction(task)}
+                    disabled={actionBusy === task.taskKey || (task.kind === 'TABLE_CLEANUP' && actionBusy === `clean:${task.targetId}`)}
+                    className="min-h-[48px] rounded-xl bg-indigo-600 px-3.5 py-2.5 text-xs sm:text-sm font-black text-white disabled:opacity-50 hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none flex items-center justify-center"
                   >
-                    Asignarme
+                    {actionBusy === task.taskKey || (task.kind === 'TABLE_CLEANUP' && actionBusy === `clean:${task.targetId}`) ? 'Guardando…' : taskActionLabel(task)}
                   </button>
-                )}
+                  {task.kind === 'ORDER_VALIDATION' && task.payload.reviewReason && (
+                    <button
+                      type="button"
+                      onClick={() => onReject(task)}
+                      disabled={Boolean(actionBusy)}
+                      className="min-h-[48px] rounded-xl border border-rose-400/40 px-3.5 py-2.5 text-xs sm:text-sm font-black text-rose-100 hover:bg-rose-950/30 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none flex items-center justify-center"
+                    >
+                      Rechazar
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="flex gap-2">
-              <select
-                value={paymentMethod}
-                onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod | '')}
-                className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-[10px] text-white"
-                aria-label="Medio de cobro"
+            ))
+          )}
+        </div>
+        <div className="min-w-0 rounded-2xl border border-emerald-500/25 bg-emerald-950/15 p-3.5 space-y-2.5 md:min-w-[280px]">
+          <div className="flex items-center justify-between gap-2 text-xs sm:text-sm font-black text-emerald-100">
+            <span className="flex items-center gap-1.5"><CircleDollarSign className="w-4 h-4 text-emerald-300" /> Cuenta de la ocupación</span>
+            {account && balance > 0 && !isToClean && (
+              <button
+                type="button"
+                onClick={() => setCollectOpen((open) => !open)}
+                className="text-xs font-bold text-emerald-300 hover:underline min-h-[36px] px-1 flex items-center"
               >
-                <option value="">Elegir medio de cobro…</option>
-                <option value="WAITER_CASH">Efectivo</option>
-                <option value="WAITER_CARD_DEBIT">Tarjeta Débito</option>
-                <option value="WAITER_CARD_CREDIT">Tarjeta Crédito</option>
-                <option value="WAITER_MP_QR">QR / Mercado Pago</option>
-                <option value="WAITER_TRANSFER">Transferencia</option>
-                <option value="WAITER_CARD">Tarjeta (sin especificar)</option>
-              </select>
-              <input
-                value={tip}
-                onChange={(event) => setTip(event.target.value)}
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Propina"
-                className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-[10px] text-white"
-                aria-label="Propina en pesos"
-              />
+                {collectOpen ? 'Plegar opciones' : 'Ver opciones'}
+              </button>
+            )}
+          </div>
+          {isToClean ? (
+            <div className="space-y-2.5">
+              <p className="text-xs sm:text-sm text-amber-100"><strong>{table.label} · pagada · falta limpiar.</strong></p>
+              <button
+                type="button"
+                onClick={() => onMarkClean(table.id, table.label)}
+                disabled={actionBusy === `clean:${table.id}`}
+                className="w-full min-h-[48px] rounded-xl bg-amber-500 px-4 py-3 text-sm sm:text-base font-black text-slate-950 hover:bg-amber-400 disabled:opacity-50 flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none transition-colors"
+              >
+                {actionBusy === `clean:${table.id}` ? 'Guardando…' : 'Mesa lista'}
+              </button>
+              <p className="text-[11px] text-slate-400 leading-relaxed">Confirma la limpieza física y prepara la próxima sesión; el siguiente QR entra en una cuenta nueva, sin heredar la anterior.</p>
             </div>
-            <button type="button" onClick={() => onSettle(account, 'keep')} disabled={Boolean(actionBusy) || balance <= 0 || !paymentMethod} className="w-full rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-3 py-2.5 text-xs font-black text-emerald-100 hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-50"><Banknote className="mr-1 inline h-3.5 w-3.5" />Registrar pago y mantener mesa</button>
-            <button type="button" onClick={() => onSettle(account, 'close')} disabled={Boolean(actionBusy) || balance <= 0 || !paymentMethod} className="w-full rounded-xl bg-emerald-700 px-3 py-2.5 text-xs font-black text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50">Cobrar y cerrar</button>
-            <p className="text-[10px] text-slate-400">Registrar pago mantiene la mesa para otra ronda. Cobrar y cerrar liquida el total y deja la mesa Por limpiar. {currentUser.role !== 'MANAGER' ? 'Ambas exigen PIN puntual de Encargado; tu sesión se conserva.' : ''}</p>
-          </> : <p className="text-xs text-slate-400">Todavía no hay una cuenta con tandas aceptadas.</p>}
+          ) : account ? (
+            <>
+              <div className="flex items-center justify-between text-xs sm:text-sm">
+                <span className="text-slate-400">{account.account.tandas.length} tandas · {account.account.pendingValidation.length} por validar</span>
+                <strong className="text-emerald-200 font-mono text-sm">{formatMinor(totalToCollect)}</strong>
+              </div>
+              {account.requestedPaymentMethod && (
+                <div className="rounded-xl border border-purple-400/30 bg-purple-500/10 px-3 py-2 text-xs text-purple-100">
+                  <span className="text-purple-200">Cliente pidió pagar con </span><strong>{requestedPaymentLabel(account.requestedPaymentMethod)}</strong>
+                </div>
+              )}
+              {Number(account.requestedTipMinor || 0) > 0 && (
+                <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+                  Propina elegida por el cliente: <strong>{formatMinor(Number(account.requestedTipMinor))}</strong> · total a cobrar: <strong>{formatMinor(totalToCollect)}</strong>
+                </div>
+              )}
+
+              {/* Evitar panel de cobro siempre abierto: botón inicial para abrir subflujo */}
+              {!collectOpen ? (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setCollectOpen(true)}
+                    disabled={balance <= 0}
+                    className="w-full min-h-[48px] rounded-xl bg-emerald-700 px-4 py-3 text-sm sm:text-base font-black text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none transition-colors"
+                  >
+                    <Banknote className="w-5 h-5" />
+                    {balance <= 0 ? 'Sin saldo pendiente' : `Cobrar cuenta (${formatMinor(totalToCollect)})`}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5 border-t border-emerald-500/20 pt-2.5">
+                  {/* Mozo responsable predeterminado / editable */}
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between text-slate-300">
+                      <span>Mozo responsable:</span>
+                      <span className="font-bold text-indigo-300">
+                        {account.responsibleStaffName || currentUser.name}
+                        {account.responsibleStaffName ? ' (atendió cuenta)' : ''}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 pt-0.5">
+                      <input
+                        type="text"
+                        value={responsibleStaffUserId || currentUser.id}
+                        onChange={(e) => setResponsibleStaffUserId && setResponsibleStaffUserId(e.target.value)}
+                        placeholder="ID del mozo"
+                        className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-white focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+                        title="Identificador del personal responsable del cobro"
+                      />
+                      {currentUser.id !== (responsibleStaffUserId || account.responsibleStaffUserId) && (
+                        <button
+                          type="button"
+                          onClick={() => setResponsibleStaffUserId && setResponsibleStaffUserId(currentUser.id)}
+                          className="shrink-0 rounded-lg bg-indigo-900/60 border border-indigo-700/50 px-2.5 py-1.5 text-xs font-bold text-indigo-200 hover:text-white focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+                        >
+                          Asignarme
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <select
+                      value={paymentMethod}
+                      onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod | '')}
+                      className="w-full min-h-[48px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs sm:text-sm text-white font-semibold focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+                      aria-label="Medio de cobro"
+                    >
+                      <option value="">Elegir medio de cobro…</option>
+                      <option value="WAITER_CASH">Efectivo</option>
+                      <option value="WAITER_CARD_DEBIT">Tarjeta Débito</option>
+                      <option value="WAITER_CARD_CREDIT">Tarjeta Crédito</option>
+                      <option value="WAITER_MP_QR">QR / Mercado Pago</option>
+                      <option value="WAITER_TRANSFER">Transferencia</option>
+                      <option value="WAITER_CARD">Tarjeta (sin especificar)</option>
+                    </select>
+                    {showTipInput || Number(account.requestedTipMinor || 0) > 0 || tip ? (
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <label className="text-xs text-slate-400 font-bold shrink-0">Propina $</label>
+                        <input
+                          value={tip}
+                          onChange={(event) => setTip(event.target.value)}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0.00"
+                          className="min-w-0 flex-1 min-h-[44px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs sm:text-sm text-white font-semibold focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none font-mono"
+                          aria-label="Propina en pesos"
+                        />
+                        {Number(account.requestedTipMinor || 0) <= 0 && !tip && (
+                          <button
+                            type="button"
+                            onClick={() => setShowTipInput(false)}
+                            className="text-xs text-slate-400 hover:text-white px-2 py-1 shrink-0"
+                          >
+                            Plegar
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex justify-end pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setShowTipInput(true)}
+                          className="text-xs font-semibold text-emerald-300 hover:underline min-h-[32px] px-1 flex items-center"
+                        >
+                          + Agregar propina voluntaria
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onSettle(account, 'keep')}
+                    disabled={Boolean(actionBusy) || balance <= 0 || !paymentMethod}
+                    className="w-full min-h-[48px] rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-4 py-3 text-xs sm:text-sm font-black text-emerald-100 hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none transition-colors"
+                  >
+                    <Banknote className="w-4 h-4" />
+                    Registrar pago y mantener mesa
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSettle(account, 'close')}
+                    disabled={Boolean(actionBusy) || balance <= 0 || !paymentMethod}
+                    className="w-full min-h-[48px] rounded-xl bg-emerald-700 px-4 py-3 text-xs sm:text-sm font-black text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none transition-colors"
+                  >
+                    Cobrar y cerrar
+                  </button>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">Registrar pago mantiene la mesa para otra ronda. Cobrar y cerrar liquida el total y deja la mesa Por limpiar. {currentUser.role !== 'MANAGER' ? 'Ambas exigen PIN puntual de Encargado; tu sesión se conserva.' : ''}</p>
+                  <button
+                    type="button"
+                    onClick={() => setCollectOpen(false)}
+                    className="w-full min-h-[44px] text-center text-xs sm:text-sm font-bold text-slate-400 hover:text-white py-2 flex items-center justify-center"
+                  >
+                    Plegar opciones de cobro
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-xs sm:text-sm text-slate-400">Todavía no hay una cuenta con tandas aceptadas.</p>
+          )}
         </div>
       </div>
-      <div className="border-t border-slate-800 pt-3"><div className="flex items-center justify-between gap-2"><span className="text-[11px] text-slate-400">Liberar mesa no cobra: exige saldo cero y ninguna necesidad activa. Para cobrar el total usá "Cobrar y cerrar".</span><button type="button" onClick={onCloseTable} disabled={!canClose || Boolean(actionBusy)} className="inline-flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[10px] font-black text-slate-300 hover:border-rose-400/40 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-40"><LockKeyhole className="w-3 h-3" /> Liberar mesa</button></div></div>
+      <div className="border-t border-slate-800 pt-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs text-slate-400">Liberar mesa no cobra: exige saldo cero y ninguna necesidad activa. Para cobrar el total usá "Cobrar y cerrar".</span>
+          <button
+            type="button"
+            onClick={onCloseTable}
+            disabled={!canClose || Boolean(actionBusy)}
+            className="inline-flex items-center gap-1.5 min-h-[48px] rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2.5 text-xs sm:text-sm font-black text-slate-300 hover:border-rose-400/40 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none transition-colors shrink-0"
+          >
+            <LockKeyhole className="w-4 h-4" /> Liberar mesa
+          </button>
+        </div>
+      </div>
     </section>
   );
 };
 
-const Metric: React.FC<{ label: string; value: string; emphasis?: boolean }> = ({ label, value, emphasis }) => <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2"><div className="text-[10px] text-slate-400">{label}</div><div className={`mt-1 font-black ${emphasis ? 'text-emerald-200' : 'text-white'}`}>{value}</div></div>;
+const Metric: React.FC<{ label: string; value: string; emphasis?: boolean }> = ({ label, value, emphasis }) => (
+  <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2">
+    <div className="text-[10px] text-slate-400">{label}</div>
+    <div className={`mt-1 font-black ${emphasis ? 'text-emerald-200' : 'text-white'}`}>{value}</div>
+  </div>
+);
 
 const ManagerReauthModal: React.FC<{
   tableLabel: string;
@@ -1157,19 +1768,54 @@ const ManagerReauthModal: React.FC<{
   onSubmit: () => void;
   onClose: () => void;
 }> = ({ tableLabel, pin, submitting, onPinChange, onSubmit, onClose }) => (
-  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-3" role="dialog" aria-modal="true" aria-labelledby="service-manager-reauth-title">
-    <form onSubmit={(event) => { event.preventDefault(); onSubmit(); }} className="w-full max-w-sm rounded-3xl border border-emerald-400/30 bg-slate-900 p-5 shadow-2xl space-y-4">
+  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="service-manager-reauth-title">
+    <form onSubmit={(event) => { event.preventDefault(); onSubmit(); }} className="w-full max-w-sm rounded-3xl border border-emerald-400/30 bg-slate-900 p-6 shadow-2xl space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 id="service-manager-reauth-title" className="font-black text-white">Autorizar cobro · {tableLabel}</h3>
+          <h3 id="service-manager-reauth-title" className="font-black text-white text-base">Autorizar cobro · {tableLabel}</h3>
           <p className="mt-1 text-xs text-slate-400">Ingresá el PIN de un Encargado sólo para esta operación. El operador actual no se reemplaza.</p>
         </div>
-        <button type="button" onClick={onClose} disabled={submitting} className="rounded-xl bg-slate-800 p-2 text-slate-300 hover:text-white disabled:opacity-50" aria-label="Cerrar reautorización"><X className="w-4 h-4" /></button>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          className="min-h-[48px] min-w-[48px] rounded-xl bg-slate-800 p-3 text-slate-300 hover:text-white disabled:opacity-50 flex items-center justify-center focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:outline-none"
+          aria-label="Cerrar reautorización"
+        >
+          <X className="w-5 h-5" />
+        </button>
       </div>
-      <label className="block text-xs font-bold text-slate-300" htmlFor="service-manager-pin">PIN de Encargado</label>
-      <input id="service-manager-pin" autoFocus inputMode="numeric" autoComplete="one-time-code" type="password" maxLength={32} value={pin} onChange={(event) => onPinChange(event.target.value.replace(/\D/g, ''))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-center text-2xl font-black tracking-[0.45em] text-white focus:border-emerald-400 focus:outline-none" aria-describedby="service-manager-pin-help" />
-      <p id="service-manager-pin-help" className="text-[11px] text-slate-500">La API vuelve a validar rol y restaurante; el PIN no queda guardado en el terminal.</p>
-      <div className="flex gap-2"><button type="button" onClick={onClose} disabled={submitting} className="flex-1 rounded-xl bg-slate-800 px-3 py-2.5 text-xs font-black text-slate-300 disabled:opacity-50">Cancelar</button><button type="submit" disabled={pin.length < 4 || submitting} className="flex-1 rounded-xl bg-emerald-700 px-3 py-2.5 text-xs font-black text-white hover:bg-emerald-600 disabled:opacity-50">{submitting ? 'Validando…' : 'Autorizar y cobrar'}</button></div>
+      <label className="block text-xs sm:text-sm font-bold text-slate-300" htmlFor="service-manager-pin">PIN de Encargado</label>
+      <input
+        id="service-manager-pin"
+        autoFocus
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        type="password"
+        maxLength={32}
+        value={pin}
+        onChange={(event) => onPinChange(event.target.value.replace(/\D/g, ''))}
+        className="w-full min-h-[56px] rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-center text-2xl font-black tracking-[0.45em] text-white focus:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
+        aria-describedby="service-manager-pin-help"
+      />
+      <p id="service-manager-pin-help" className="text-xs text-slate-500">La API vuelve a validar rol y restaurante; el PIN no queda guardado en el terminal.</p>
+      <div className="flex gap-2.5 pt-1">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          className="flex-1 min-h-[48px] rounded-xl bg-slate-800 px-4 py-3 text-xs sm:text-sm font-black text-slate-300 disabled:opacity-50 hover:bg-slate-700 focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:outline-none"
+        >
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          disabled={pin.length < 4 || submitting}
+          className="flex-1 min-h-[48px] rounded-xl bg-emerald-700 px-4 py-3 text-xs sm:text-sm font-black text-white hover:bg-emerald-600 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
+        >
+          {submitting ? 'Validando…' : 'Autorizar y cobrar'}
+        </button>
+      </div>
     </form>
   </div>
 );
@@ -1184,12 +1830,90 @@ const ManualOrderModal: React.FC<{
   onSubmit: () => void;
   onClose: () => void;
 }> = ({ tableLabel, menu, items, submitting, onAdd, onRemove, onSubmit, onClose }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3" role="dialog" aria-modal="true" aria-labelledby="manual-service-order-title">
-    <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-3xl border border-slate-700 bg-slate-900 p-4 shadow-2xl">
-      <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3"><div><h3 id="manual-service-order-title" className="font-black text-white">Agregar pedido · {tableLabel}</h3><p className="text-xs text-slate-400">Entra al mismo circuito de cocina y cuenta que un pedido QR.</p></div><button type="button" onClick={onClose} className="rounded-xl bg-slate-800 p-2 text-slate-300 hover:text-white" aria-label="Cerrar pedido presencial"><X className="w-4 h-4" /></button></div>
-      <div className="flex-1 space-y-3 overflow-y-auto py-3">{(menu?.categories || []).map((category: any) => <div key={category.id || category.name} className="space-y-1.5"><h4 className="text-[11px] font-black uppercase tracking-wide text-amber-300">{category.name}</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">{(category.items || []).filter((item: any) => item.isAvailable !== false).map((item: any) => <button key={item.id} type="button" onClick={() => onAdd(item)} className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-left hover:border-amber-400/50"><span className="min-w-0 truncate text-xs font-bold text-white">{item.name}<span className="ml-2 font-mono text-[10px] text-slate-500">{formatMinor(Math.round(item.price * 100))}</span></span><Plus className="h-4 w-4 shrink-0 text-amber-300" /></button>)}</div></div>)}</div>
-      {items.length > 0 && <div className="max-h-32 space-y-1 overflow-y-auto border-y border-slate-800 py-2">{items.map((item) => <div key={item.menuItemId} className="flex items-center justify-between gap-2 text-xs"><span className="min-w-0 truncate font-bold text-white">{item.quantity}× {item.name}</span><div className="flex shrink-0 items-center gap-1"><button type="button" onClick={() => onRemove(item.menuItemId)} className="min-h-9 min-w-9 rounded-lg border border-rose-400/30 px-2 py-1 text-lg leading-none text-rose-300 hover:bg-rose-950/40" aria-label={`Restar ${item.name}`}>−</button><button type="button" onClick={() => onAdd(item)} disabled={item.quantity >= 50 || submitting} className="min-h-9 min-w-9 rounded-lg border border-emerald-400/30 px-2 py-1 text-lg leading-none text-emerald-300 hover:bg-emerald-950/40 disabled:opacity-40" aria-label={`Sumar ${item.name}`}>+</button></div></div>)}</div>}
-      <div className="flex gap-2 pt-3"><button type="button" onClick={onClose} className="flex-1 rounded-xl bg-slate-800 px-3 py-2.5 text-xs font-black text-slate-300">Cancelar</button><button type="button" onClick={onSubmit} disabled={items.length === 0 || submitting} className="flex-1 rounded-xl bg-amber-500 px-3 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50">{submitting ? 'Enviando…' : <><Send className="mr-1 inline h-3.5 w-3.5" /> Enviar a cocina</>}</button></div>
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="manual-service-order-title">
+    <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-3xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
+        <div>
+          <h3 id="manual-service-order-title" className="font-black text-white text-base sm:text-lg">Agregar pedido · {tableLabel}</h3>
+          <p className="text-xs text-slate-400">Entra al mismo circuito de cocina y cuenta que un pedido QR.</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-[48px] min-w-[48px] rounded-xl bg-slate-800 p-3 text-slate-300 hover:text-white flex items-center justify-center focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:outline-none"
+          aria-label="Cerrar pedido presencial"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+      <div className="flex-1 space-y-3.5 overflow-y-auto py-3.5">
+        {(menu?.categories || []).map((category: any) => (
+          <div key={category.id || category.name} className="space-y-2">
+            <h4 className="text-xs font-black uppercase tracking-wide text-amber-300">{category.name}</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {(category.items || []).filter((item: any) => item.isAvailable !== false).map((item: any) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onAdd(item)}
+                  className="min-h-[48px] flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-left hover:border-amber-400/50 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none transition-colors"
+                >
+                  <span className="min-w-0 truncate text-xs sm:text-sm font-bold text-white">
+                    {item.name}
+                    <span className="ml-2 font-mono text-xs text-slate-400">{formatMinor(Math.round(item.price * 100))}</span>
+                  </span>
+                  <Plus className="h-4 w-4 shrink-0 text-amber-300" />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      {items.length > 0 && (
+        <div className="max-h-36 space-y-1.5 overflow-y-auto border-y border-slate-800 py-2.5">
+          {items.map((item) => (
+            <div key={item.menuItemId} className="flex items-center justify-between gap-2 text-xs sm:text-sm py-1">
+              <span className="min-w-0 truncate font-bold text-white">{item.quantity}× {item.name}</span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onRemove(item.menuItemId)}
+                  className="min-h-[48px] min-w-[48px] rounded-xl border border-rose-400/30 px-3 py-2 text-xl font-bold leading-none text-rose-300 hover:bg-rose-950/40 flex items-center justify-center focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none"
+                  aria-label={`Restar ${item.name}`}
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAdd(item)}
+                  disabled={item.quantity >= 50 || submitting}
+                  className="min-h-[48px] min-w-[48px] rounded-xl border border-emerald-400/30 px-3 py-2 text-xl font-bold leading-none text-emerald-300 hover:bg-emerald-950/40 disabled:opacity-40 flex items-center justify-center focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
+                  aria-label={`Sumar ${item.name}`}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2.5 pt-3.5">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex-1 min-h-[48px] rounded-xl bg-slate-800 px-4 py-3 text-xs sm:text-sm font-black text-slate-300 hover:bg-slate-700 focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:outline-none"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={items.length === 0 || submitting}
+          className="flex-1 min-h-[48px] rounded-xl bg-amber-500 px-4 py-3 text-xs sm:text-sm font-black text-slate-950 hover:bg-amber-400 disabled:opacity-50 flex items-center justify-center focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none"
+        >
+          {submitting ? 'Enviando…' : <><Send className="mr-1.5 inline h-4 w-4" /> Enviar a cocina</>}
+        </button>
+      </div>
     </div>
   </div>
 );

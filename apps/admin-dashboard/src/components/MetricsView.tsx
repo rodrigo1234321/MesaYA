@@ -60,8 +60,8 @@ export const MetricsView: React.FC<MetricsViewProps> = ({ restaurantId }) => {
 
   if (isLoading && !metrics) {
     return (
-      <div className="p-12 text-center flex flex-col items-center justify-center space-y-3">
-        <RefreshCw className="w-6 h-6 text-indigo-400 animate-spin" />
+      <div role="status" className="p-12 text-center flex flex-col items-center justify-center space-y-3">
+        <RefreshCw className="w-6 h-6 text-indigo-400 animate-spin" aria-hidden="true" />
         <span className="text-xs font-medium text-slate-400">Cargando métricas del turno...</span>
       </div>
     );
@@ -85,10 +85,12 @@ export const MetricsView: React.FC<MetricsViewProps> = ({ restaurantId }) => {
           )}
         </div>
         <button
+          type="button"
           onClick={() => loadMetrics(true)}
           disabled={isRefreshing}
-          className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
           title="Actualizar ahora"
+          aria-label="Actualizar métricas ahora"
         >
           <RefreshCw className={`w-3.5 h-3.5 text-indigo-400 ${isRefreshing ? 'animate-spin' : ''}`} />
           <span>{isRefreshing ? 'Actualizando...' : 'Actualizar'}</span>
@@ -96,12 +98,13 @@ export const MetricsView: React.FC<MetricsViewProps> = ({ restaurantId }) => {
       </div>
 
       {error && (
-        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs flex items-center justify-between gap-2">
+        <div role="alert" className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" aria-hidden="true" />
             <span>{error}</span>
           </div>
           <button
+            type="button"
             onClick={() => loadMetrics(true)}
             className="text-[11px] underline font-semibold hover:text-rose-200"
           >

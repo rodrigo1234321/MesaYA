@@ -57,7 +57,7 @@ function hookNamesFromOptions(optionsNode, sourceFile) {
 
 function classify(hookNames) {
   if (hookNames.includes('verifyManagerRole') || hookNames.includes('requireManagedRestaurant')) return 'MANAGER';
-  if (hookNames.includes('verifyStaffToken') || hookNames.includes('requireRestaurantAccess')) return 'STAFF';
+  if (hookNames.includes('verifyStaffToken') || hookNames.includes('requireRestaurantAccess') || hookNames.includes('verifySettlementAuthorization')) return 'STAFF';
   return 'ANON';
 }
 

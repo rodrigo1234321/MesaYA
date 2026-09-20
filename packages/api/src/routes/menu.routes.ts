@@ -6,6 +6,7 @@ import { requireManagedRestaurant } from '../middlewares/auth.middleware';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
 import { UpsellService } from '../services/upsell.service';
 import { isRestaurantInConfiguredInstance } from '../lib/environment';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 // Gestor en memoria de cuotas por sesión de mesa para Sommelier IA
 // Evita bucles infinitos y costos no controlados. Máximo 10 consultas por sesión de mesa.
@@ -125,8 +126,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
         categories: formattedCategories
       });
     } catch (err: any) {
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -166,7 +166,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
 
       return reply.send({ enabled: true, experimentGroup, sourceItem, suggestions });
     } catch (err: any) {
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -193,7 +193,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
       });
       return reply.status(201).send(result);
     } catch (err: any) {
-      return reply.status(err.statusCode || 500).send({ error: err.message, code: err.code });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -222,7 +222,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
 
       return reply.status(201).send(category);
     } catch (err: any) {
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -235,7 +235,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
       await prisma.menuCategory.delete({ where: { id: categoryId } });
       return reply.send({ success: true });
     } catch (err: any) {
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -282,7 +282,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
         tags: tags || []
       });
     } catch (err: any) {
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -337,7 +337,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
         tags: parsedTags
       });
     } catch (err: any) {
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -350,7 +350,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
       await prisma.menuItem.delete({ where: { id: itemId } });
       return reply.send({ success: true });
     } catch (err: any) {
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -453,8 +453,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
         ...result
       });
     } catch (err: any) {
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -483,7 +482,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
 
       return reply.send(updated);
     } catch (err: any) {
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -508,7 +507,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
 
       return reply.send(updated);
     } catch (err: any) {
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -573,10 +572,8 @@ export async function menuRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       if (err?.statusCode === 429) {
         reply.header('Retry-After', String(err.retryAfterSeconds || 1));
-        return reply.status(429).send({ error: err.message, code: err.code });
       }
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -675,10 +672,8 @@ export async function menuRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       if (err?.statusCode === 429) {
         reply.header('Retry-After', String(err.retryAfterSeconds || 1));
-        return reply.status(429).send({ error: err.message, code: err.code });
       }
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 }

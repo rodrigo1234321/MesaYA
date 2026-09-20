@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { CallService } from '../services/call.service';
 import { CreateCallDTO, CallStatus, CallType, PaymentMethod, CallOrigin } from '@mesaya/shared';
 import { verifyStaffToken } from '../middlewares/auth.middleware';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export async function callRoutes(fastify: FastifyInstance) {
   // Client creates a call (Public, authenticated by sessionToken)
@@ -48,7 +49,7 @@ export async function callRoutes(fastify: FastifyInstance) {
       if (status === 429 && err.retryAfterSeconds) {
         reply.header('Retry-After', String(Math.max(1, Math.ceil(err.retryAfterSeconds))));
       }
-      return reply.status(status).send({ error: err.message, code: err.code });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -81,8 +82,7 @@ export async function callRoutes(fastify: FastifyInstance) {
       const updated = await CallService.updateCallStatus(id, body.status, request.staffUser?.restaurantId, staffUserId);
       return reply.send(updated);
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message, code: err.code });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -99,8 +99,7 @@ export async function callRoutes(fastify: FastifyInstance) {
       const result = await CallService.cancelCallByClient(id, body.sessionToken);
       return reply.send(result);
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message, code: err.code });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -124,8 +123,7 @@ export async function callRoutes(fastify: FastifyInstance) {
       const activeCalls = await CallService.getActiveCalls(rest.id);
       return reply.send(activeCalls);
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message, code: err.code });
+      return sendSanitizedError(reply, err);
     }
   });
 }

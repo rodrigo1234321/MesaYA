@@ -91,6 +91,7 @@ export class ConfigService {
             restaurantId: true,
             paymentMode: true,
             allowSplitBill: true,
+            allowWaitersToCollectCash: true,
             allowOrdering: true,
             syncSocialCart: true,
             requireWaiterValidation: true,
@@ -121,6 +122,7 @@ export class ConfigService {
           restaurantId: restaurant.id,
           paymentMode: PaymentMode.WAITER_ONLY,
           allowSplitBill: false,
+          allowWaitersToCollectCash: false,
           allowOrdering: true,
           syncSocialCart: true,
           requireWaiterValidation: false,
@@ -141,6 +143,7 @@ export class ConfigService {
           restaurantId: true,
           paymentMode: true,
           allowSplitBill: true,
+          allowWaitersToCollectCash: true,
           allowOrdering: true,
           syncSocialCart: true,
           requireWaiterValidation: true,
@@ -194,6 +197,7 @@ export class ConfigService {
         restaurantId: true,
         paymentMode: true,
         allowSplitBill: true,
+        allowWaitersToCollectCash: true,
         allowOrdering: true,
         syncSocialCart: true,
         requireWaiterValidation: true,
@@ -217,6 +221,7 @@ export class ConfigService {
           restaurantId,
           paymentMode: PaymentMode.WAITER_ONLY,
           allowSplitBill: false,
+          allowWaitersToCollectCash: false,
           allowOrdering: true,
           syncSocialCart: true,
           requireWaiterValidation: false,
@@ -237,6 +242,7 @@ export class ConfigService {
           restaurantId: true,
           paymentMode: true,
           allowSplitBill: true,
+          allowWaitersToCollectCash: true,
           allowOrdering: true,
           syncSocialCart: true,
           requireWaiterValidation: true,
@@ -290,6 +296,7 @@ export class ConfigService {
     const keysToTrack: (keyof UpdateModuleConfigDTO)[] = [
       'paymentMode',
       'allowSplitBill',
+      'allowWaitersToCollectCash',
       'allowOrdering',
       'syncSocialCart',
       'requireWaiterValidation',
@@ -325,6 +332,7 @@ export class ConfigService {
 
       if (dto.paymentMode !== undefined) updateData.paymentMode = dto.paymentMode;
       if (dto.allowSplitBill !== undefined) updateData.allowSplitBill = dto.allowSplitBill;
+      if (dto.allowWaitersToCollectCash !== undefined) updateData.allowWaitersToCollectCash = dto.allowWaitersToCollectCash;
       if (dto.allowOrdering !== undefined) updateData.allowOrdering = dto.allowOrdering;
       if (dto.syncSocialCart !== undefined) updateData.syncSocialCart = dto.syncSocialCart;
       if (dto.requireWaiterValidation !== undefined) updateData.requireWaiterValidation = dto.requireWaiterValidation;
@@ -349,6 +357,7 @@ export class ConfigService {
           restaurantId: true,
           paymentMode: true,
           allowSplitBill: true,
+          allowWaitersToCollectCash: true,
           allowOrdering: true,
           syncSocialCart: true,
           requireWaiterValidation: true,
@@ -450,6 +459,17 @@ export class ConfigService {
         message: config.paymentMode !== PaymentMode.WAITER_ONLY
           ? 'Se muestra Mercado Pago como opción para el comensal; el cobro se confirma presencialmente por el personal.'
           : 'La opción Mercado Pago no se muestra al comensal. El cobro presencial sigue activo.'
+      },
+      waiter_cash_collection: {
+        key: 'waiter_cash_collection',
+        label: 'Cobro en efectivo por mozos',
+        state: CapabilityState.AVAILABLE,
+        configuredEnabled: Boolean(config.allowWaitersToCollectCash),
+        effectiveEnabled: Boolean(config.allowWaitersToCollectCash),
+        reasonCode: config.allowWaitersToCollectCash ? 'WAITER_CASH_ENABLED' : 'WAITER_CASH_DISABLED',
+        message: config.allowWaitersToCollectCash
+          ? 'Los mozos pueden liquidar cuentas en efectivo sin pedir PIN de encargado.'
+          : 'El cobro presencial requiere autorización de encargado para cada operación.'
       },
       split_bill: {
         key: 'split_bill',

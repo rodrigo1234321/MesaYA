@@ -25,6 +25,24 @@ export class StaffApi {
     return random;
   }
 
+  static getSavedRestaurant(): { id: string; name: string; slug: string } | null {
+    if (typeof localStorage === 'undefined') return null;
+    const raw = localStorage.getItem('mesaya_staff_restaurant');
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      localStorage.removeItem('mesaya_staff_restaurant');
+      return null;
+    }
+  }
+
+  static saveRestaurant(rest: { id: string; name: string; slug: string }): void {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('mesaya_staff_restaurant', JSON.stringify(rest));
+    }
+  }
+
   static getAuthToken(): string | null {
     if (typeof localStorage !== 'undefined') {
       return localStorage.getItem('mesaya_staff_token');
@@ -76,15 +94,23 @@ export class StaffApi {
     const data = await res.json();
     localStorage.setItem('mesaya_staff_token', data.token);
     localStorage.setItem('mesaya_staff_user', JSON.stringify(data.staffUser));
+    if (data.staffUser?.restaurantId) {
+      this.saveRestaurant({
+        id: data.staffUser.restaurantId,
+        name: data.staffUser.restaurantName || data.staffUser.restaurantId,
+        slug: dto.restaurantSlug
+      });
+    }
     return data;
   }
 
   /**
    * Reautorización puntual: autentica a un encargado sin reemplazar la
    * identidad persistida del operador que sigue trabajando en Servicio.
+   * Emite un token acotado a 300 segundos (5 minutos) con claim temp: true.
    */
-  static async loginTemporary(dto: StaffLoginDTO & { terminalId?: string }): Promise<{ token: string; staffUser: StaffUserDTO }> {
-    const requestDto = { ...dto, terminalId: dto.terminalId || this.getTerminalId() };
+  static async loginTemporary(dto: StaffLoginDTO & { terminalId?: string }): Promise<{ token: string; staffUser: StaffUserDTO; isTemporary?: boolean; expiresInSeconds?: number }> {
+    const requestDto = { ...dto, terminalId: dto.terminalId || this.getTerminalId(), isTemporary: true };
     const res = await fetch(`${API_BASE}/staff/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -95,9 +121,25 @@ export class StaffApi {
     return data;
   }
 
+  /** Bloquea el operador personal pero conserva el puesto/terminal y el restaurante en pantalla */
+  static lockOperator() {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('mesaya_staff_token');
+      localStorage.removeItem('mesaya_staff_user');
+    }
+  }
+
   static logout() {
-    localStorage.removeItem('mesaya_staff_token');
-    localStorage.removeItem('mesaya_staff_user');
+    this.lockOperator();
+  }
+
+  /** Desvincula el terminal de hardware por completo */
+  static logoutAll() {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('mesaya_staff_token');
+      localStorage.removeItem('mesaya_staff_user');
+      localStorage.removeItem('mesaya_staff_restaurant');
+    }
   }
 
   static async getActiveCalls(restaurantId: string, signal?: AbortSignal): Promise<CallEventData[]> {
@@ -341,14 +383,20 @@ export class StaffApi {
     return data;
   }
 
-  static async updateOrderStatus(orderId: string, status: string) {
-    const res = await fetch(`${API_BASE}/staff/orders/${orderId}/status`, {
+  static async updateOrderStatus(orderId: string, status: string, options?: { reason?: string }) {
+    const res = await fetch(`${API_BASE}/staff/orders/${encodeURIComponent(orderId)}/status`, {
       method: 'PATCH',
       headers: this.getAuthHeaders(),
-      body: JSON.stringify({ status })
+      body: JSON.stringify({ status, ...options })
     });
-    if (!res.ok) throw new Error('Error al actualizar estado');
-    return res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err: any = new Error(data.message || data.error || 'Error al actualizar estado');
+      err.code = data.code;
+      err.statusCode = res.status;
+      throw err;
+    }
+    return data;
   }
 
   static async settleSessionAccount(sessionId: string, payload: {

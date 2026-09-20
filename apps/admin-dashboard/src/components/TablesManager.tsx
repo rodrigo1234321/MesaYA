@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TableItem, AdminApi } from '../lib/api';
-import { Sector, SECTOR_LABELS } from '@mesaya/shared';
-import { Plus, QrCode, Copy, Check, ExternalLink } from 'lucide-react';
+import { Sector, SECTOR_LABELS, buildCanonicalClientTableUrl } from '@mesaya/shared';
+import { Plus, QrCode, Copy, Check, ExternalLink, Download } from 'lucide-react';
+import QRCode from 'qrcode';
 
 interface TablesManagerProps {
   tables: TableItem[];
@@ -17,6 +18,10 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
   const [newSector, setNewSector] = useState<Sector>(Sector.SALON_PRINCIPAL);
   const [isOutdoor, setIsOutdoor] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const clientBaseUrl = String((import.meta as any).env?.VITE_CLIENT_WEB_URL || '').trim().replace(/\/+$/, '');
+  const clientUrlError = clientBaseUrl
+    ? null
+    : 'No se puede generar el QR: falta configurar VITE_CLIENT_WEB_URL en el build del Admin.';
 
   const filteredTables = selectedSector === 'ALL'
     ? tables
@@ -35,27 +40,40 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
     }
   };
 
-  const getTablePermanentUrl = (label: string) => {
+  const getTablePermanentUrl = (label: string): string | null => {
+    if (!clientBaseUrl) return null;
     const slug = restaurantSlug || restaurantId;
-    // Keep QR/mesa links on the public client even when this dashboard was
-    // built with the shared VITE_CLIENT_URL variable used by the other apps.
-    const clientBaseUrl = (import.meta as any).env?.VITE_CLIENT_WEB_URL ||
-      (import.meta as any).env?.VITE_CLIENT_URL;
-    if (clientBaseUrl) {
-      const base = clientBaseUrl.replace(/\/$/, '');
-      return `${base}/?r=${encodeURIComponent(slug)}&m=${encodeURIComponent(label)}`;
-    }
-    const host = typeof window !== 'undefined' ? window.location.hostname || 'localhost' : 'localhost';
-    const protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
-    const isDev = host === 'localhost' || host === '127.0.0.1';
-    const port = isDev ? ':5173' : (window.location.port ? `:${window.location.port}` : '');
-    return `${protocol}//${host}${port}/?r=${encodeURIComponent(slug)}&m=${encodeURIComponent(label)}`;
+    return buildCanonicalClientTableUrl(clientBaseUrl, slug, label);
   };
 
   const [activeQrTable, setActiveQrTable] = useState<{ label: string; url: string } | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activeQrTable) {
+      setQrDataUrl(null);
+      return;
+    }
+    let isMounted = true;
+    QRCode.toDataURL(activeQrTable.url, {
+      width: 256,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      }
+    }).then(url => {
+      if (isMounted) setQrDataUrl(url);
+    }).catch(err => {
+      console.error('Error generando QR localmente:', err);
+    });
+    return () => { isMounted = false; };
+  }, [activeQrTable]);
 
   const copyUrl = (label: string, id: string) => {
     const url = getTablePermanentUrl(label);
+    if (!url) return;
     navigator.clipboard.writeText(url);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
@@ -63,6 +81,11 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
 
   return (
     <div className="space-y-4">
+      {clientUrlError && (
+        <div role="alert" className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200">
+          {clientUrlError}
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 max-w-full">
           {(['ALL', Sector.SALON_PRINCIPAL, Sector.TERRAZA, Sector.VEREDA, Sector.BARRA] as const).map(sec => (
@@ -113,9 +136,12 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
                 </div>
 
                 <button
-                  onClick={() => setActiveQrTable({ label: table.label, url: clientUrl })}
+                  type="button"
+                  disabled={!clientUrl}
+                  onClick={() => clientUrl && setActiveQrTable({ label: table.label, url: clientUrl })}
                   title="Ver Código QR"
-                  className="flex items-center space-x-1 text-[11px] font-bold px-2.5 py-1 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 active:scale-95 transition-all"
+                  aria-label={clientUrl ? `Ver Código QR de ${table.label}` : `QR no disponible para ${table.label}`}
+                  className="flex items-center space-x-1 text-[11px] font-bold px-2.5 py-1 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <QrCode className="w-3.5 h-3.5" />
                   <span>QR</span>
@@ -123,26 +149,36 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
               </div>
 
               <div className="bg-slate-950/80 rounded-xl p-2.5 border border-slate-800/80 flex items-center justify-between text-xs font-mono">
-                <span className="truncate max-w-[170px] text-slate-400 text-[11px]" title={clientUrl}>
-                  {clientUrl.replace(/^https?:\/\//, '')}
-                </span>
+                {clientUrl ? (
+                  <span className="truncate max-w-[170px] text-slate-400 text-[11px]" title={clientUrl}>
+                    {clientUrl.replace(/^https?:\/\//, '')}
+                  </span>
+                ) : (
+                  <span role="status" className="text-amber-200 text-[11px]">Configurá el dominio cliente para habilitar QR y enlace.</span>
+                )}
                 <div className="flex items-center space-x-1">
                   <button
+                    type="button"
+                    disabled={!clientUrl}
                     onClick={() => copyUrl(table.label, table.id)}
                     title="Copiar Link Permanente de Mesa"
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 active:scale-90 transition-transform"
+                    aria-label={clientUrl ? `Copiar enlace de ${table.label}` : `Enlace no disponible para ${table.label}`}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 active:scale-90 transition-transform disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {copiedId === table.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
-                  <a
-                    href={clientUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Abrir como Comensal"
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-400 active:scale-90 transition-transform"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
+                  {clientUrl && (
+                    <a
+                      href={clientUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Abrir como Comensal"
+                      aria-label={`Abrir ${table.label} como comensal`}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-400 active:scale-90 transition-transform"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                    </a>
+                  )}
                 </div>
               </div>
             </div>
@@ -152,34 +188,53 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
 
       {/* QR Code Modal */}
       {activeQrTable && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="admin-qr-title" className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-xs bg-slate-900 border border-slate-800 rounded-3xl p-6 text-center space-y-4 shadow-2xl">
             <div>
               <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono">
                 {restaurantId}
               </span>
-              <h3 className="text-lg font-extrabold text-white mt-1">{activeQrTable.label}</h3>
+              <h3 id="admin-qr-title" className="text-lg font-extrabold text-white mt-1">{activeQrTable.label}</h3>
               <p className="text-xs text-slate-400">Escaneá para ingresar a la carta interactiva</p>
             </div>
 
-            <div className="p-3 bg-white rounded-2xl mx-auto inline-block shadow-inner">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(activeQrTable.url)}`}
-                alt={`QR ${activeQrTable.label}`}
-                className="w-44 h-44 mx-auto rounded-lg"
-              />
+            <div className="p-3 bg-white rounded-2xl mx-auto inline-block shadow-inner min-w-[176px] min-h-[176px] flex items-center justify-center">
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt={`QR ${activeQrTable.label}`}
+                  className="w-44 h-44 mx-auto rounded-lg"
+                />
+              ) : (
+                <div className="w-44 h-44 flex items-center justify-center text-slate-400 text-xs">
+                  Generando QR local...
+                </div>
+              )}
             </div>
 
             <p className="text-[11px] font-mono text-slate-400 break-all px-2 bg-slate-950 py-1.5 rounded-xl border border-slate-800">
               {activeQrTable.url}
             </p>
 
-            <button
-              onClick={() => setActiveQrTable(null)}
-              className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs active:scale-95 transition-all"
-            >
-              Cerrar
-            </button>
+            <div className="flex gap-2">
+              {qrDataUrl && (
+                <a
+                  href={qrDataUrl}
+                  download={`qr-${activeQrTable.label.toLowerCase().replace(/\s+/g, '-')}.png`}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Descargar PNG
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveQrTable(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs active:scale-95 transition-all"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

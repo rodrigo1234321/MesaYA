@@ -3,6 +3,7 @@ import { SalesReportsService } from '../services/sales-reports.service';
 import { ReceiptService } from '../services/receipt.service';
 import { FiscalService } from '../services/fiscal.service';
 import { verifyManagerRole, requireRestaurantAccess } from '../middlewares/auth.middleware';
+import { sendSanitizedError } from '../lib/errorHandler';
 import { prisma } from '../lib/prisma';
 
 export const salesRoutes: FastifyPluginAsync = async (fastify) => {
@@ -16,6 +17,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
       period?: 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM';
       dateFrom?: string;
       dateTo?: string;
+      shiftId?: string;
       paymentMethod?: string;
       responsibleStaffUserId?: string;
       hasFiscalDocument?: string;
@@ -31,14 +33,14 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
           period: q.period,
           dateFrom: q.dateFrom,
           dateTo: q.dateTo,
+          shiftId: q.shiftId,
           paymentMethod: q.paymentMethod,
           responsibleStaffUserId: q.responsibleStaffUserId,
           hasFiscalDocument: q.hasFiscalDocument !== undefined ? q.hasFiscalDocument === 'true' : undefined
         });
         return reply.send(summary);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -53,6 +55,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
       period?: 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM';
       dateFrom?: string;
       dateTo?: string;
+      shiftId?: string;
       paymentMethod?: string;
       responsibleStaffUserId?: string;
       hasFiscalDocument?: string;
@@ -68,14 +71,14 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
           period: q.period,
           dateFrom: q.dateFrom,
           dateTo: q.dateTo,
+          shiftId: q.shiftId,
           paymentMethod: q.paymentMethod,
           responsibleStaffUserId: q.responsibleStaffUserId,
           hasFiscalDocument: q.hasFiscalDocument !== undefined ? q.hasFiscalDocument === 'true' : undefined
         });
         return reply.send({ operations: ops });
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -90,8 +93,10 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
       period?: 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM';
       dateFrom?: string;
       dateTo?: string;
+      shiftId?: string;
       paymentMethod?: string;
       responsibleStaffUserId?: string;
+      hasFiscalDocument?: string;
     };
   }>(
     '/admin/restaurants/:restaurantId/sales/summary/pdf',
@@ -104,8 +109,10 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
           period: q.period,
           dateFrom: q.dateFrom,
           dateTo: q.dateTo,
+          shiftId: q.shiftId,
           paymentMethod: q.paymentMethod,
-          responsibleStaffUserId: q.responsibleStaffUserId
+          responsibleStaffUserId: q.responsibleStaffUserId,
+          hasFiscalDocument: q.hasFiscalDocument !== undefined ? q.hasFiscalDocument === 'true' : undefined
         });
 
         const restaurant = await prisma.restaurant.findUnique({
@@ -124,8 +131,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         );
         return reply.send(pdfBuffer);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -157,8 +163,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(201).send(adjustment);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -173,6 +178,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
       period?: 'TODAY' | 'YESTERDAY' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM';
       dateFrom?: string;
       dateTo?: string;
+      shiftId?: string;
       paymentMethod?: string;
       responsibleStaffUserId?: string;
       hasFiscalDocument?: string;
@@ -188,6 +194,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
           period: q.period,
           dateFrom: q.dateFrom,
           dateTo: q.dateTo,
+          shiftId: q.shiftId,
           paymentMethod: q.paymentMethod,
           responsibleStaffUserId: q.responsibleStaffUserId,
           hasFiscalDocument: q.hasFiscalDocument !== undefined ? q.hasFiscalDocument === 'true' : undefined
@@ -197,26 +204,36 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
           SalesReportsService.getSalesOperations(restaurantId, filters)
         ]);
 
-        // Generar CSV
-        const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+        // Generar CSV con protección contra inyección de fórmulas (=, +, -, @, \t, \r)
+        const csvCell = (value: unknown) => {
+          let str = String(value ?? '').replace(/"/g, '""');
+          if (/^[=+\-@\t\r]/.test(str)) {
+            str = `'${str}`;
+          }
+          return `"${str}"`;
+        };
+        // E16: etiquetas canónicas (consumo, cobrado neto, propina,
+        // devolución, saldo, turno) con la misma semántica del resumen y el
+        // detalle. El saldo es de la cuenta completa; el resto, del período.
         const headers = [
           'restaurantId',
           'currency',
           'timezone',
           'periodFrom',
           'periodTo',
+          'turno',
           'tableSessionId',
           'tableLabel',
           'sector',
           'sessionStartedAt',
           'sessionClosedAt',
           'status',
-          'consumoTotalPesos',
-          'cobradoTotalPesos',
-          'propinaTotalPesos',
+          'consumoPesos',
+          'cobradoNetoPesos',
+          'propinaPesos',
+          'devolucionPesos',
           'saldoPesos',
           'responsables',
-          'ajustesPesos',
           'tickets',
           'pagosDetalle'
         ];
@@ -230,10 +247,6 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
             })
             .join(' | ');
           const responsables = [...new Set(op.settlements.map((s) => s.responsibleStaffUserId))].join(' | ');
-          const ajustesMinor = op.settlements.reduce(
-            (sum, settlement) => sum + (settlement.adjustments || []).reduce((inner, adjustment) => inner + adjustment.totalAdjustedMinor, 0),
-            0
-          );
           const tickets = op.receipts.map((receipt) => `${receipt.receiptNumber} (${receipt.receiptType})`).join(' | ');
           const row = [
             csvCell(restaurantId),
@@ -241,6 +254,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
             csvCell(summary.timezone),
             csvCell(summary.dateFrom),
             csvCell(summary.dateTo),
+            csvCell(summary.shiftLabel || summary.period),
             csvCell(op.tableSessionId),
             csvCell(op.tableLabel),
             csvCell(op.sector),
@@ -250,9 +264,9 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
             csvCell((op.consumoTotalMinor / 100).toFixed(2)),
             csvCell((op.cobradoTotalMinor / 100).toFixed(2)),
             csvCell((op.propinaTotalMinor / 100).toFixed(2)),
+            csvCell((op.devolucionTotalMinor / 100).toFixed(2)),
             csvCell((op.saldoMinor / 100).toFixed(2)),
             csvCell(responsables),
-            csvCell((ajustesMinor / 100).toFixed(2)),
             csvCell(tickets),
             csvCell(pagosStr)
           ];
@@ -267,8 +281,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         );
         return reply.send(csvContent);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -301,8 +314,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(201).send(receipt);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -322,8 +334,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         const receipt = await ReceiptService.getReceiptById(restaurantId, receiptId);
         return reply.send(receipt);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -346,8 +357,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         reply.header('Content-Disposition', `inline; filename="${receipt.receiptNumber}.pdf"`);
         return reply.send(pdfBuffer);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -393,8 +403,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(201).send(created);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -414,8 +423,7 @@ export const salesRoutes: FastifyPluginAsync = async (fastify) => {
         const docs = await FiscalService.listFiscalDocuments(restaurantId);
         return reply.send({ documents: docs });
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );

@@ -222,6 +222,19 @@ describe('Etapa 04 — Contención IA', () => {
     expect(res.answer).toMatch(/personal/i);
   });
 
+  it('consulta de alergia con diacríticos (alérgica, celíaco): abstención y contención determinística', async () => {
+    mocks.findFirst.mockResolvedValue(
+      fakeRestaurant([itemRow('g1', 'Ensalada Ficticia', ['GLUTEN_FREE'])])
+    );
+
+    const resAlergia = await AIService.askSommelier('rest-ficticio', 'Soy sumamente alérgica al maní, qué puedo comer?');
+    expect(resAlergia.recommendedDishIds).toEqual([]);
+    expect(resAlergia.answer).toMatch(/personal|abstengo/i);
+
+    const resCeliaco = await AIService.askSommelier('rest-ficticio', 'Mi hijo es celíaco severo');
+    expect(resCeliaco.answer).toMatch(/personal|sin tacc/i);
+  });
+
   it('catálogo con tags: sugiere sólo coincidencias y sin promesa de seguridad', async () => {
     mocks.findFirst.mockResolvedValue(
       fakeRestaurant([

@@ -16,14 +16,15 @@ const postgresHeader = `datasource db {
 
 const updated = content.replace(/datasource db \{[\s\S]*?\}/, postgresHeader);
 const current = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : null;
+const normalizeLineEndings = (value) => value?.replace(/\r\n?/g, '\n') ?? null;
 
 if (checkOnly) {
-  if (current === updated) {
+  if (normalizeLineEndings(current) === normalizeLineEndings(updated)) {
     console.log('✅ schema.supabase.prisma está sincronizado con el schema canónico.');
     process.exit(0);
   }
-  const expectedLines = updated.split('\n');
-  const currentLines = (current || '').split('\n');
+  const expectedLines = normalizeLineEndings(updated).split('\n');
+  const currentLines = normalizeLineEndings(current || '').split('\n');
   const differences = [];
   const max = Math.max(expectedLines.length, currentLines.length);
   for (let i = 0; i < max && differences.length < 8; i += 1) {

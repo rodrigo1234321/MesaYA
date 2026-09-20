@@ -15,7 +15,11 @@ import {
   TableFSMState,
   SignalSource,
   DEFAULT_REVIEW_QUANTITY_THRESHOLD,
-  ServiceReviewReasonDTO
+  ServiceReviewReasonDTO,
+  calculateOrderTotalMinor,
+  calculateOrderItemTotalMinor,
+  calculateSessionBalance,
+  isOrderComputable
 } from '@mesaya/shared';
 
 export class DigitalPaymentsUnavailableError extends Error {
@@ -57,7 +61,8 @@ export const ALLOWED_ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus
   [OrderStatus.READY_TO_SERVE]: Object.freeze([
     OrderStatus.SERVED,
     OrderStatus.CANCELLED,
-    OrderStatus.PAID
+    OrderStatus.PAID,
+    OrderStatus.IN_KITCHEN
   ]),
   [OrderStatus.SERVED]: Object.freeze([
     OrderStatus.PAID,
@@ -108,6 +113,10 @@ export interface SessionAccountDTO {
  */
 function toMinor(amount: number): number {
   return Math.round(Number(amount || 0) * 100);
+}
+
+function fromMinor(minor: number): number {
+  return Number(minor || 0) / 100;
 }
 
 type OrderReviewReason = Pick<ServiceReviewReasonDTO, 'code' | 'detail'>;
@@ -726,7 +735,10 @@ export class OrderService {
     });
     const settlements = await client.accountSettlement.findMany({
       where: { tableSessionId, status: 'SETTLED' },
-      include: { allocations: { orderBy: { orderId: 'asc' } } },
+      include: {
+        allocations: { orderBy: { orderId: 'asc' } },
+        adjustments: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }
+      },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
     });
     return { session, orders, settlements };
@@ -746,9 +758,17 @@ export class OrderService {
     let tipMinor = 0;
 
     for (const order of orders) {
-      // Minor persistido cuando existe; fallback redondeado SOLO para historia Float
-      // (C3, estado B04: escritores fuera de B04 aún no rellenan *Minor — ver §19).
-      const totalMinor = order.totalAmountMinor ?? toMinor(order.totalAmount);
+      // Reconciliación canónica: si la orden incluye items, su total minor se calcula de sus líneas
+      const computedFromItems =
+        order.items && order.items.length > 0
+          ? calculateOrderTotalMinor(
+              order.items.map((i: any) => ({
+                quantity: i.quantity,
+                unitPriceMinor: i.unitPriceMinor ?? toMinor(i.unitPrice)
+              }))
+            )
+          : null;
+      const totalMinor = computedFromItems ?? order.totalAmountMinor ?? toMinor(order.totalAmount);
       const createdAt =
         order.createdAt instanceof Date ? order.createdAt.toISOString() : order.createdAt;
       const updatedAt =
@@ -765,7 +785,7 @@ export class OrderService {
         continue;
       }
       if (order.status === OrderStatus.CANCELLED) continue;
-      if (!SESSION_CONSUMO_STATUSES.includes(order.status as OrderStatus)) continue;
+      if (!isOrderComputable(order.status as OrderStatus)) continue;
 
       consumoMinor += totalMinor;
       tandas.push(this.formatSessionTandaLine(order));
@@ -777,16 +797,34 @@ export class OrderService {
       }
     }
 
-    // Vía nueva B04 (tablas disjuntas de la legada: jamás se suma dos veces la misma fila).
+    // Vía nueva B04 (computando ajustes y devoluciones asociados a cada settlement).
+    let adjustmentsMinor = 0;
     for (const settlement of settlements) {
-      paidMinor += settlement.amountMinor;
-      tipMinor += settlement.tipMinor;
+      const refundConsumption = (settlement.adjustments || []).reduce(
+        (sum: number, a: any) => sum + (a.amountMinor || 0),
+        0
+      );
+      const refundTip = (settlement.adjustments || []).reduce(
+        (sum: number, a: any) => sum + (a.tipMinor || 0),
+        0
+      );
+      const effectiveConsumption = Math.max(0, settlement.amountMinor - refundConsumption);
+      const effectiveTip = Math.max(0, settlement.tipMinor - refundTip);
+
+      paidMinor += effectiveConsumption;
+      tipMinor += effectiveTip;
+      adjustmentsMinor += refundConsumption + refundTip;
     }
 
-    const saldoMinor = Math.max(0, consumoMinor - paidMinor);
+    const { saldoMinor } = calculateSessionBalance({
+      consumoMinor,
+      paidMinor,
+      tipMinor,
+      adjustmentsMinor: 0
+    });
     // Fingerprint completo del estado contable para control optimista B04: cubre
     // tandas (id, estado, total, created/updated, líneas estables), pagos
-    // (id, orderId, estado, importes, createdAt) y pending/draft con importes y
+    // (id, orderId, estado, importes, createdAt), settlements con adjustments y pending/draft con importes y
     // timestamps. Sin secretos: sin tokens de sesión, sin guestSessionId,
     // sin mpPaymentId. Cualquier cambio contable mueve la versión.
     const version = createHash('sha1')
@@ -810,8 +848,12 @@ export class OrderService {
             .join(';'),
           settlements
             .map(
-              (s: any) =>
-                `${s.id}:${s.amountMinor}:${s.tipMinor}:${s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt}`
+              (s: any) => {
+                const adjStr = (s.adjustments || [])
+                  .map((a: any) => `${a.id}:${a.amountMinor}:${a.tipMinor}`)
+                  .join(',');
+                return `${s.id}:${s.amountMinor}:${s.tipMinor}:${s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt}:adj[${adjStr}]`;
+              }
             )
             .join(';'),
           `consumo=${consumoMinor}`,
@@ -880,7 +922,12 @@ export class OrderService {
     idempotentReplay: boolean;
   }> {
     if (!input || typeof input !== 'object') return this.settleError(400, 'INVALID_SETTLE_REQUEST', 'Datos de liquidación requeridos');
-    if (input.staffRole !== 'MANAGER') return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar requiere rol MANAGER.');
+    if (input.staffRole !== 'MANAGER' && input.staffRole !== 'WAITER') {
+      return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar requiere rol MANAGER o WAITER.');
+    }
+    if (input.staffRole === 'WAITER' && input.method !== 'WAITER_CASH') {
+      return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar con medios no-efectivo requiere rol MANAGER.');
+    }
     if (typeof input.tableSessionId !== 'string' || !input.tableSessionId) {
       return this.settleError(400, 'INVALID_SETTLE_REQUEST', 'tableSessionId requerido');
     }
@@ -937,6 +984,15 @@ export class OrderService {
         const { session, orders, settlements } = await this.loadAccountData(tx, input.tableSessionId);
         if (session.table.restaurantId !== input.staffRestaurantId) {
           return this.settleError(403, 'STAFF_TENANT_MISMATCH', 'No autorizado para cobrar otra cuenta/restaurante');
+        }
+        if (input.staffRole === 'WAITER') {
+          const moduleConfig = await tx.restaurantModuleConfig.findUnique({
+            where: { restaurantId: session.table.restaurantId },
+            select: { allowWaitersToCollectCash: true }
+          });
+          if (!moduleConfig?.allowWaitersToCollectCash) {
+            return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'El cobro en efectivo por mozos no está habilitado para este local.');
+          }
         }
         const fresh = this.buildSessionAccount(session.id, session.tableId, orders, settlements);
 
@@ -1151,7 +1207,12 @@ export class OrderService {
     tableId: string;
   }> {
     if (!input || typeof input !== 'object') return this.settleError(400, 'INVALID_SETTLE_REQUEST', 'Datos de liquidación requeridos');
-    if (input.staffRole !== 'MANAGER') return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar requiere rol MANAGER.');
+    if (input.staffRole !== 'MANAGER' && input.staffRole !== 'WAITER') {
+      return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar requiere rol MANAGER o WAITER.');
+    }
+    if (input.staffRole === 'WAITER' && input.method !== 'WAITER_CASH') {
+      return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'Cobrar con medios no-efectivo requiere rol MANAGER.');
+    }
     if (typeof input.tableSessionId !== 'string' || !input.tableSessionId) {
       return this.settleError(400, 'INVALID_SETTLE_REQUEST', 'tableSessionId requerido');
     }
@@ -1200,6 +1261,15 @@ export class OrderService {
         const { session, orders, settlements } = await this.loadAccountData(tx, input.tableSessionId);
         if (session.table.restaurantId !== input.staffRestaurantId) {
           return this.settleError(403, 'STAFF_TENANT_MISMATCH', 'No autorizado para cobrar otra cuenta/restaurante');
+        }
+        if (input.staffRole === 'WAITER') {
+          const moduleConfig = await tx.restaurantModuleConfig.findUnique({
+            where: { restaurantId: session.table.restaurantId },
+            select: { allowWaitersToCollectCash: true }
+          });
+          if (!moduleConfig?.allowWaitersToCollectCash) {
+            return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'El cobro en efectivo por mozos no está habilitado para este local.');
+          }
         }
         const fresh = this.buildSessionAccount(session.id, session.tableId, orders, settlements);
 
@@ -2362,10 +2432,20 @@ export class OrderService {
       throw error;
     }
 
+    // Recalcular de forma canónica y atómica los totales de la orden desde sus líneas (P0-01)
+    const calculatedTotalMinor = calculateOrderTotalMinor(
+      order.items.map((item: any) => ({
+        quantity: item.quantity,
+        unitPriceMinor: item.unitPriceMinor ?? toMinor(item.unitPrice)
+      }))
+    );
+
     await prisma.order.updateMany({
       where: { id: orderId, status: OrderStatus.PENDING_VALIDATION },
       data: {
         status: OrderStatus.IN_KITCHEN,
+        totalAmountMinor: calculatedTotalMinor,
+        totalAmount: fromMinor(calculatedTotalMinor),
         draftKey: null,
         reviewReasonCode: null,
         reviewReasonDetail: null
@@ -2461,7 +2541,12 @@ export class OrderService {
       error.code = 'STAFF_ACTOR_REQUIRED';
       throw error;
     }
-    if (order.status !== OrderStatus.PENDING_VALIDATION) {
+    // E14: la cancelación segura con motivo auditado también cubre tandas en
+    // cocina (IN_KITCHEN) o listas para servir (READY_TO_SERVE). Coherente con
+    // ALLOWED_ORDER_TRANSITIONS; los estados finales siguen inmutables y las
+    // tandas ya servidas/cobradas no se cancelan por este camino.
+    const cancellableFrom = [OrderStatus.PENDING_VALIDATION, OrderStatus.IN_KITCHEN, OrderStatus.READY_TO_SERVE];
+    if (!cancellableFrom.includes(order.status as OrderStatus)) {
       const error: any = new Error('La comanda ya no está pendiente de revisión');
       error.statusCode = 422;
       error.code = 'ORDER_NOT_REVIEWABLE';
@@ -2470,7 +2555,7 @@ export class OrderService {
 
     const cancelledAt = new Date();
     const changed = await prisma.order.updateMany({
-      where: { id: order.id, status: OrderStatus.PENDING_VALIDATION },
+      where: { id: order.id, status: { in: cancellableFrom } },
       data: {
         status: OrderStatus.CANCELLED,
         draftKey: null,
@@ -3362,7 +3447,7 @@ export class OrderService {
         },
         items: {
           include: {
-            menuItem: { select: { name: true } }
+            menuItem: { select: { name: true, tags: true } }
           },
           orderBy: { createdAt: 'asc' }
         }
@@ -3388,15 +3473,26 @@ export class OrderService {
         createdAt: o.createdAt.toISOString(),
         elapsedMinutes,
         urgency: elapsedMinutes >= 25 ? 'CRITICAL' : elapsedMinutes >= 15 ? 'WARNING' : 'NORMAL',
-        items: o.items.map((it) => ({
-          id: it.id,
-          name: it.menuItem.name,
-          quantity: it.quantity,
-          notes: it.notes,
-          guestName: it.guestName ?? null,
-          unitPrice: it.unitPrice,
-          unitPriceMinor: it.unitPriceMinor ?? null
-        }))
+        items: o.items.map((it) => {
+          let tags: string[] = [];
+          if ((it.menuItem as any)?.tags) {
+            try {
+              tags = JSON.parse((it.menuItem as any).tags);
+            } catch {
+              tags = [];
+            }
+          }
+          return {
+            id: it.id,
+            name: it.menuItem.name,
+            quantity: it.quantity,
+            notes: it.notes,
+            tags,
+            guestName: it.guestName ?? null,
+            unitPrice: it.unitPrice,
+            unitPriceMinor: it.unitPriceMinor ?? null
+          };
+        })
       };
     });
   }

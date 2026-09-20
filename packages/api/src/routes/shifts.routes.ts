@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/prisma';
 import { ShiftService } from '../services/shift.service';
 import { verifyStaffToken, verifyManagerRole } from '../middlewares/auth.middleware';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export async function shiftRoutes(fastify: FastifyInstance) {
   fastify.post('/shifts/open', { preHandler: [verifyManagerRole] }, async (request, reply) => {
@@ -24,8 +25,7 @@ export async function shiftRoutes(fastify: FastifyInstance) {
         sessionsCount: result.sessionsCount
       });
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -55,8 +55,7 @@ export async function shiftRoutes(fastify: FastifyInstance) {
       const updated = await ShiftService.closeShift(id, rest.id);
       return reply.send(updated);
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -77,8 +76,7 @@ export async function shiftRoutes(fastify: FastifyInstance) {
       const shift = await ShiftService.getCurrentShift(rest.id);
       return reply.send(shift || { active: false });
     } catch (err: any) {
-      const code = err.statusCode || 500;
-      return reply.status(code).send({ error: err.message });
+      return sendSanitizedError(reply, err);
     }
   });
 }

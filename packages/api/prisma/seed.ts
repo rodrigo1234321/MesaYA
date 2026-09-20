@@ -531,6 +531,54 @@ async function runSeedLogic(prisma: PrismaClient) {
   console.log(`🍽️ Categorías de menú creadas: ${menuCategories.length}`);
 }
 
+/**
+ * Fixture E22 exclusivamente para un PostgreSQL efímero del runner CI.
+ *
+ * No reutiliza el seed de producción de forma implícita: exige un opt-in
+ * explícito y rechaza cualquier host remoto, Supabase o URL ausente. El
+ * wrapper del workflow silencia los logs del fixture para no publicar PINs o
+ * tokens generados durante la preparación.
+ */
+export async function seedEphemeralPostgres(customPrisma?: PrismaClient) {
+  if (process.env.NODE_ENV !== 'test' || process.env.E22_PG_EPHEMERAL !== 'true') {
+    throw new Error('GUARD_VIOLATION: E22 PostgreSQL requiere NODE_ENV=test y E22_PG_EPHEMERAL=true');
+  }
+
+  const urls = [process.env.DATABASE_URL, process.env.DIRECT_URL];
+  if (urls.some((value) => !value)) {
+    throw new Error('GUARD_VIOLATION: E22 PostgreSQL requiere DATABASE_URL y DIRECT_URL');
+  }
+
+  for (const value of urls as string[]) {
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw new Error('GUARD_VIOLATION: URL PostgreSQL inválida para E22');
+    }
+    if (!['postgres:', 'postgresql:'].includes(parsed.protocol)) {
+      throw new Error('GUARD_VIOLATION: E22 sólo acepta PostgreSQL efímero');
+    }
+    if (!['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) {
+      throw new Error('GUARD_VIOLATION: E22 rechaza destinos PostgreSQL remotos');
+    }
+  }
+
+  const prisma = customPrisma ?? new PrismaClient();
+  try {
+    const existingRestaurants = await prisma.restaurant.count();
+    if (existingRestaurants !== 0) {
+      throw new Error('GUARD_VIOLATION: el PostgreSQL efímero E22 no está vacío');
+    }
+    await runSeedLogic(prisma);
+    return { seeded: true } as const;
+  } finally {
+    if (!customPrisma) {
+      await prisma.$disconnect();
+    }
+  }
+}
+
 export async function main() {
   return seedDatabase();
 }

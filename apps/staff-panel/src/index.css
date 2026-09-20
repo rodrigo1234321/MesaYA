@@ -11,3 +11,74 @@
     scrollbar-width: none;
   }
 }
+
+/* E20 — comanda de cocina imprimible en un puesto único.
+ * El ocultamiento de la interfaz ocurre SÓLO al imprimir: en render normal
+ * la hoja convive con el panel sin romper accesibilidad. */
+.e20-kitchen-ticket {
+  color: #020617;
+  background: #ffffff;
+}
+
+.e20-format-58 {
+  max-width: 58mm;
+}
+
+.e20-format-80 {
+  max-width: 80mm;
+}
+
+.e20-format-A4 {
+  max-width: 210mm;
+}
+
+@media print {
+  .e20-kitchen-scope > *:not(.e20-print-overlay) {
+    display: none !important;
+  }
+
+  .e20-no-print {
+    display: none !important;
+  }
+
+  .e20-print-overlay {
+    position: static !important;
+    display: block !important;
+    background: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .e20-kitchen-ticket {
+    display: block !important;
+    width: 100%;
+    max-height: none !important;
+    overflow: visible !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 auto;
+    padding: 4mm;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .e20-format-58 {
+    width: 58mm;
+    max-width: 58mm;
+  }
+
+  .e20-format-80 {
+    width: 80mm;
+    max-width: 80mm;
+  }
+
+  .e20-format-A4 {
+    width: 190mm;
+    max-width: 190mm;
+  }
+
+  @page {
+    margin: 5mm;
+  }
+}

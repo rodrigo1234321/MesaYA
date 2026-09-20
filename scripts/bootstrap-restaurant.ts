@@ -24,6 +24,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { isValidPinFormat } from '@mesaya/shared';
 
 const prisma = new PrismaClient();
 
@@ -35,11 +36,13 @@ function getArg(flag: string): string | undefined {
   return undefined;
 }
 
+const shouldRotatePin = process.argv.includes('--rotate-pin');
+
 async function main() {
   const name = getArg('--name') || process.env.BOOTSTRAP_RESTAURANT_NAME || 'Trattoria del Puerto';
   const rawSlug = getArg('--slug') || process.env.BOOTSTRAP_RESTAURANT_SLUG || 'trattoria-del-puerto';
   const managerName = getArg('--manager') || process.env.BOOTSTRAP_MANAGER_NAME || 'Encargado';
-  const pin = getArg('--pin') || process.env.BOOTSTRAP_MANAGER_PIN || '9999';
+  const rawPin = getArg('--pin') || process.env.BOOTSTRAP_MANAGER_PIN;
   const tablesCount = parseInt(getArg('--tables') || process.env.BOOTSTRAP_TABLES_COUNT || '8', 10);
   const templateId = getArg('--template') || 'GOURMET_OBSIDIAN';
   const themeColor = getArg('--color') || '#f59e0b';
@@ -50,8 +53,14 @@ async function main() {
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-');
 
-  if (!pin || pin.length < 4 || pin.length > 8) {
-    console.error('❌ Error: El PIN debe tener entre 4 y 8 dígitos.');
+  if (!rawPin) {
+    console.error('❌ Error de seguridad (P0-03): Debe suministrar un PIN para el Manager mediante --pin o BOOTSTRAP_MANAGER_PIN. Prohibido valor por defecto.');
+    process.exit(1);
+  }
+
+  const pin = rawPin.trim();
+  if (!isValidPinFormat(pin)) {
+    console.error('❌ Error de validación: El PIN debe contener estrictamente entre 4 y 6 dígitos numéricos exclusivamente.');
     process.exit(1);
   }
 
@@ -102,12 +111,15 @@ async function main() {
       });
       console.log(`✅ Encargado administrativo creado: ${manager.name} (Rol: MANAGER)`);
     } else {
-      // Actualizar PIN si se solicita explícitamente
-      manager = await tx.staffUser.update({
-        where: { id: manager.id },
-        data: { pinHash }
-      });
-      console.log(`ℹ️ PIN del encargado "${manager.name}" actualizado.`);
+      if (shouldRotatePin) {
+        manager = await tx.staffUser.update({
+          where: { id: manager.id },
+          data: { pinHash }
+        });
+        console.log(`🔄 PIN del encargado "${manager.name}" rotado explícitamente (--rotate-pin).`);
+      } else {
+        console.log(`🔒 Encargado "${manager.name}" ya existe. PIN preservado sin cambios (use --rotate-pin para actualizarlo).`);
+      }
     }
 
     // 3. Crear Mesas si es un restaurante nuevo
@@ -132,7 +144,7 @@ async function main() {
   console.log(`🏠 Restaurante: ${result.restaurant.name}`);
   console.log(`🔗 Slug:        ${result.restaurant.slug}`);
   console.log(`👤 Manager:     ${result.manager.name}`);
-  console.log(`🔑 PIN:         ${pin}`);
+  console.log(`🔑 PIN:         [CONFIGURADO DE FORMA SEGURA - NO REGISTRADO EN LOGS]`);
   console.log('📌 Turno:       CERRADO (abrir desde el Admin Dashboard)');
   console.log('=============================================================\n');
 }

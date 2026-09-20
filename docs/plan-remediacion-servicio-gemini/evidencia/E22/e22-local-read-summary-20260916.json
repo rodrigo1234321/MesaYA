@@ -1,0 +1,259 @@
+{
+  "metrics": {
+    "vus_max": {
+      "value": 8,
+      "min": 8,
+      "max": 8
+    },
+    "business_check_pass": {
+      "passes": 450,
+      "fails": 0,
+      "thresholds": {
+        "rate>0.99": false
+      },
+      "value": 1
+    },
+    "checks": {
+      "passes": 546,
+      "fails": 0,
+      "thresholds": {
+        "rate>0.99": false
+      },
+      "value": 1
+    },
+    "http_req_connecting": {
+      "avg": 0.011014902807775378,
+      "min": 0,
+      "med": 0,
+      "max": 1.6265,
+      "p(90)": 0,
+      "p(95)": 0
+    },
+    "business_error_rate": {
+      "passes": 0,
+      "fails": 450,
+      "thresholds": {
+        "rate<0.01": false
+      },
+      "value": 0
+    },
+    "http_req_duration": {
+      "avg": 24.727404535637138,
+      "min": 0.8542,
+      "med": 17.2335,
+      "max": 291.4343,
+      "p(90)": 48.73738000000002,
+      "p(95)": 69.80597999999998
+    },
+    "data_sent": {
+      "count": 142916,
+      "rate": 1449.9552627279095
+    },
+    "iteration_duration": {
+      "med": 2582.8837,
+      "max": 5122.1359,
+      "p(90)": 4150.51808,
+      "p(95)": 5032.8947800000005,
+      "avg": 3251.506988702929,
+      "min": 2002.1459
+    },
+    "business_latency_ms": {
+      "min": 0.8542,
+      "med": 17.23715,
+      "max": 291.4343,
+      "p(90)": 45.86137000000003,
+      "p(95)": 67.42488999999998,
+      "avg": 24.09080711111111,
+      "thresholds": {
+        "p(50)<500": false,
+        "p(95)<800": false,
+        "p(99)<1500": false
+      }
+    },
+    "http_req_tls_handshaking": {
+      "max": 0,
+      "p(90)": 0,
+      "p(95)": 0,
+      "avg": 0,
+      "min": 0,
+      "med": 0
+    },
+    "http_req_sending": {
+      "avg": 0.035766090712742976,
+      "min": 0,
+      "med": 0,
+      "max": 2.0791,
+      "p(90)": 0,
+      "p(95)": 0
+    },
+    "http_req_duration{expected_response:true}": {
+      "p(95)": 69.80597999999998,
+      "avg": 24.727404535637138,
+      "min": 0.8542,
+      "med": 17.2335,
+      "max": 291.4343,
+      "p(90)": 48.73738000000002
+    },
+    "polling_requests": {
+      "count": 450,
+      "rate": 4.565478100615461
+    },
+    "data_received": {
+      "rate": 20382.21174194968,
+      "count": 2008989
+    },
+    "iterations": {
+      "rate": 2.4247761467713227,
+      "count": 239
+    },
+    "http_req_receiving": {
+      "avg": 0.7454462203023756,
+      "min": 0,
+      "med": 0,
+      "max": 10.3697,
+      "p(90)": 2.26508,
+      "p(95)": 3.0409099999999962
+    },
+    "vus": {
+      "value": 4,
+      "min": 4,
+      "max": 8
+    },
+    "http_req_failed": {
+      "fails": 463,
+      "passes": 0,
+      "thresholds": {
+        "rate<0.01": false
+      },
+      "value": 0
+    },
+    "http_req_blocked": {
+      "max": 1.6265,
+      "p(90)": 0,
+      "p(95)": 0,
+      "avg": 0.02073758099352052,
+      "min": 0,
+      "med": 0
+    },
+    "http_req_waiting": {
+      "med": 16.342,
+      "max": 291.4343,
+      "p(90)": 45.68462,
+      "p(95)": 68.77488999999997,
+      "avg": 23.94619222462202,
+      "min": 0.8542
+    },
+    "http_reqs": {
+      "count": 463,
+      "rate": 4.697369690188797
+    },
+    "group_duration": {
+      "min": 1.6159,
+      "med": 36.177,
+      "max": 448.7321,
+      "p(90)": 87.3504,
+      "p(95)": 112.45326,
+      "avg": 47.3896309623431
+    }
+  },
+  "setup_data": {
+    "redacted": true,
+    "reason": "setup tokens removed from evidence"
+  },
+  "root_group": {
+    "groups": {
+      "lectura comensal: menu + sesion QR": {
+        "name": "lectura comensal: menu + sesion QR",
+        "path": "::lectura comensal: menu + sesion QR",
+        "id": "0ac0616b3bba43d161c98518a81d84af",
+        "groups": {},
+        "checks": {
+          "menu 200 + estructura real": {
+            "fails": 0,
+            "name": "menu 200 + estructura real",
+            "path": "::lectura comensal: menu + sesion QR::menu 200 + estructura real",
+            "id": "a35e25fb4f9acbf9bc1689f0482c73ef",
+            "passes": 96
+          },
+          "qr 200 + valid===true + token": {
+            "name": "qr 200 + valid===true + token",
+            "path": "::lectura comensal: menu + sesion QR::qr 200 + valid===true + token",
+            "id": "f784094fb1617d8b28d48968081fbdbf",
+            "passes": 96,
+            "fails": 0
+          },
+          "qr nunca 404": {
+            "name": "qr nunca 404",
+            "path": "::lectura comensal: menu + sesion QR::qr nunca 404",
+            "id": "c613d11aabd19643971b8b7d5b7461d2",
+            "passes": 96,
+            "fails": 0
+          },
+          "orden activa: 200 + cuenta/historial coherentes": {
+            "name": "orden activa: 200 + cuenta/historial coherentes",
+            "path": "::lectura comensal: menu + sesion QR::orden activa: 200 + cuenta/historial coherentes",
+            "id": "1c6b27cc30ec411c3ff9d9ff70935b6e",
+            "passes": 96,
+            "fails": 0
+          }
+        }
+      },
+      "cocina: kitchen-orders": {
+        "name": "cocina: kitchen-orders",
+        "path": "::cocina: kitchen-orders",
+        "id": "a657474c33d36ada5ae80fc07e53aef9",
+        "groups": {},
+        "checks": {
+          "kitchen 200 + orders[] con identidad": {
+            "name": "kitchen 200 + orders[] con identidad",
+            "path": "::cocina: kitchen-orders::kitchen 200 + orders[] con identidad",
+            "id": "3718ffb35d4f595057687aeefa3de9da",
+            "passes": 48,
+            "fails": 0
+          }
+        }
+      },
+      "caja: cash-orders + resumen ventas": {
+        "name": "caja: cash-orders + resumen ventas",
+        "path": "::caja: cash-orders + resumen ventas",
+        "id": "ec709ef90b5868455ca3534473b99a7d",
+        "groups": {},
+        "checks": {
+          "cash 200 + orders[]/accounts[]": {
+            "id": "ce44c8c0fcd7f2fbeb00fa1511aed2d7",
+            "passes": 19,
+            "fails": 0,
+            "name": "cash 200 + orders[]/accounts[]",
+            "path": "::caja: cash-orders + resumen ventas::cash 200 + orders[]/accounts[]"
+          },
+          "ventas 200 + resumen ARS_MINOR": {
+            "name": "ventas 200 + resumen ARS_MINOR",
+            "path": "::caja: cash-orders + resumen ventas::ventas 200 + resumen ARS_MINOR",
+            "id": "aa1fe0c05f53cd0c5145d982160f3705",
+            "passes": 19,
+            "fails": 0
+          }
+        }
+      },
+      "salon: workspace unificado": {
+        "path": "::salon: workspace unificado",
+        "id": "db9b661acbfcd9e7fed9bd5e9253a87d",
+        "groups": {},
+        "checks": {
+          "workspace 200 + tasks/accounts + tenant": {
+            "name": "workspace 200 + tasks/accounts + tenant",
+            "path": "::salon: workspace unificado::workspace 200 + tasks/accounts + tenant",
+            "id": "5c63335df63e53208173715c05c65382",
+            "passes": 76,
+            "fails": 0
+          }
+        },
+        "name": "salon: workspace unificado"
+      }
+    },
+    "checks": {},
+    "name": "",
+    "path": "",
+    "id": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+}

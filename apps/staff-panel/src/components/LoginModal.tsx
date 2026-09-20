@@ -54,12 +54,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
   }, [slug, loading, onSuccess]);
 
   const handleKeyPress = (num: string) => {
-    if (pin.length < 4) {
+    if (pin.length < 6) {
       const newPin = pin + num;
       setPin(newPin);
       setError(null);
       unlockAudio();
-      if (newPin.length === 4) {
+      if (newPin.length === 6) {
         doLogin(newPin);
       }
     }
@@ -78,9 +78,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
       if (e.key >= '0' && e.key <= '9') {
         e.preventDefault();
         setPin(prev => {
-          if (prev.length < 4) {
+          if (prev.length < 6) {
             const next = prev + e.key;
-            if (next.length === 4) {
+            if (next.length === 6) {
               setTimeout(() => doLogin(next), 50);
             }
             return next;
@@ -95,7 +95,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
         setError(null);
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        if (pin.length >= 4) {
+        if (pin.length >= 4 && pin.length <= 6) {
           doLogin(pin);
         }
       }
@@ -119,7 +119,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
           </div>
           <h2 className="text-xl font-black text-white tracking-tight">Panel Mozo / Staff</h2>
           <p className="text-xs text-slate-400">
-            Terminal compartido · ingresá tu PIN de 4 dígitos
+            Terminal compartido · ingresá tu PIN de 4 a 6 dígitos
           </p>
         </div>
 
@@ -147,12 +147,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
           </div>
         )}
 
-        {/* PIN display dots */}
-        <div className="flex justify-center items-center space-x-3.5 py-1">
-          {[0, 1, 2, 3].map(idx => (
+        {/* PIN display dots (soporta 4 a 6 dígitos) */}
+        <div className="flex justify-center items-center space-x-3 py-1">
+          {Array.from({ length: Math.max(4, Math.min(6, pin.length + 1)) }).map((_, idx) => (
             <div
               key={idx}
-              className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
+              className={`w-3.5 h-3.5 rounded-full border-2 transition-all duration-200 ${
                 pin.length > idx
                   ? 'bg-indigo-500 border-indigo-300 scale-125 shadow-md shadow-indigo-500/50'
                   : 'bg-slate-800 border-slate-700'
@@ -192,7 +192,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
           </button>
           <button
             type="button"
-            disabled={loading || pin.length < 4}
+            disabled={loading || pin.length < 4 || pin.length > 6}
             onClick={() => doLogin(pin)}
             className="py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold flex items-center justify-center shadow-lg shadow-indigo-600/40 active:scale-95 transition-all"
           >

@@ -1,7 +1,10 @@
 # MesaYA — Release controlada de migraciones (MANUAL, separada del build/preview).
 #
-# - Sólo ejecución manual (`workflow_dispatch`) contra el entorno `production`
-#   (aprobadores requeridos en GitHub Environments).
+# - Sólo ejecución manual (`workflow_dispatch`) contra el entorno `production`.
+# - La operación por defecto es un preflight de sólo lectura; la migración se
+#   selecciona explícitamente como `operation=migrate`.
+# - `operation=backup-drill` copia sólo el esquema público de la aplicación a
+#   un runner efímero para restaurarlo y borrarlo; no se conserva un artefacto.
 # - Aplica ÚNICAMENTE el historial revisado con `migrate deploy` mediante
 #   `scripts/postgres-migrate.mjs`, que exige MESAYA_PG_DATABASE_URL y
 #   MESAYA_PG_DIRECT_URL explícitas y no acepta DATABASE_URL/DIRECT_URL.
@@ -11,9 +14,233 @@ name: release-migrate
 
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Operación cloud: preflight, backup-drill aislado o migración'
+        required: true
+        type: choice
+        default: preflight
+        options:
+          - preflight
+          - backup-drill
+          - migrate
 
 jobs:
+  backup_drill:
+    if: ${{ inputs.operation == 'backup-drill' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: backup-drill
+          POSTGRES_DB: mesaya_restore_drill
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mesaya_restore_drill"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MESAYA_PG_DIRECT_URL: ${{ secrets.MESAYA_PG_DIRECT_URL }}
+      PGCONNECT_TIMEOUT: '15'
+    steps:
+      - name: Backup y restore aislado sin publicar datos
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          test -n "${MESAYA_PG_DIRECT_URL}" || { echo "Falta MESAYA_PG_DIRECT_URL"; exit 2; }
+          pg_dump_version="$(pg_dump --version 2>/dev/null || true)"
+          if [[ "${pg_dump_version}" != *" 17."* ]]; then
+            sudo apt-get update
+            sudo apt-get install -y ca-certificates curl gnupg
+            sudo install -d -m 0755 /etc/apt/keyrings
+            curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+              | sudo gpg --dearmor --yes -o /etc/apt/keyrings/postgresql.gpg
+            . /etc/os-release
+            echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+              | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client-17
+          fi
+          export PATH="/usr/lib/postgresql/17/bin:${PATH}"
+          pg_dump --version
+          pg_restore --version
+          psql --version
+
+          strip_prisma_options() {
+            INPUT_URL="$1" node --input-type=module -e '
+              const url = new URL(process.env.INPUT_URL);
+              url.searchParams.delete("pgbouncer");
+              process.stdout.write(url.toString());
+            '
+          }
+
+          source_psql_url="$(strip_prisma_options "${MESAYA_PG_DIRECT_URL}")"
+          restore_url='postgresql://postgres:backup-drill@127.0.0.1:5432/mesaya_restore_drill'
+          dump_file="${RUNNER_TEMP}/mesaya-backup-${GITHUB_RUN_ID}.dump"
+          trap 'rm -f "${dump_file}"' EXIT
+
+          for attempt in $(seq 1 30); do
+            if pg_isready -h 127.0.0.1 -p 5432 -U postgres -d mesaya_restore_drill >/dev/null 2>&1; then
+              break
+            fi
+            test "${attempt}" -lt 30 || { echo "PostgreSQL aislado no inició"; exit 1; }
+            sleep 1
+          done
+
+          drill_start="$(date +%s)"
+          pg_dump "${source_psql_url}" \
+            --schema=public \
+            --format=custom \
+            --no-owner \
+            --no-privileges \
+            --file="${dump_file}"
+          test -s "${dump_file}" || { echo "El backup quedó vacío"; exit 1; }
+          backup_sha256="$(sha256sum "${dump_file}" | awk '{print $1}')"
+          backup_bytes="$(wc -c < "${dump_file}")"
+
+          pg_restore --list "${dump_file}" >/dev/null
+          pg_restore \
+            --dbname="${restore_url}" \
+            --clean \
+            --if-exists \
+            --no-owner \
+            --no-privileges \
+            --exit-on-error \
+            "${dump_file}"
+
+          required_tables="$(psql "${restore_url}" -X -A -t -v ON_ERROR_STOP=1 -c "
+            SELECT count(*)
+            FROM (VALUES
+              ('Restaurant'), ('Table'), ('TableSession'), ('Order'),
+              ('OrderItem'), ('PaymentTransaction'), ('StaffUser'), ('Shift'),
+              ('AccountSettlement'), ('ReceiptSnapshot'), ('TableStateEvent')
+            ) AS required(table_name)
+            WHERE to_regclass('public.' || quote_ident(required.table_name)) IS NULL
+          ")"
+          test "${required_tables}" = "0" || { echo "El restore no contiene el esquema núcleo"; exit 1; }
+
+          row_digest_sql="
+            SELECT md5(string_agg(table_name || ':' || row_count::text, '|' ORDER BY table_name))
+            FROM (
+              SELECT 'Restaurant' AS table_name, count(*)::bigint AS row_count FROM \"Restaurant\"
+              UNION ALL SELECT 'Table', count(*)::bigint FROM \"Table\"
+              UNION ALL SELECT 'TableSession', count(*)::bigint FROM \"TableSession\"
+              UNION ALL SELECT 'Order', count(*)::bigint FROM \"Order\"
+              UNION ALL SELECT 'OrderItem', count(*)::bigint FROM \"OrderItem\"
+              UNION ALL SELECT 'PaymentTransaction', count(*)::bigint FROM \"PaymentTransaction\"
+              UNION ALL SELECT 'StaffUser', count(*)::bigint FROM \"StaffUser\"
+              UNION ALL SELECT 'Shift', count(*)::bigint FROM \"Shift\"
+              UNION ALL SELECT 'AccountSettlement', count(*)::bigint FROM \"AccountSettlement\"
+              UNION ALL SELECT 'ReceiptSnapshot', count(*)::bigint FROM \"ReceiptSnapshot\"
+              UNION ALL SELECT 'TableStateEvent', count(*)::bigint FROM \"TableStateEvent\"
+            ) AS table_rows
+          "
+          source_row_digest="$(psql "${source_psql_url}" -X -A -t -v ON_ERROR_STOP=1 -c "${row_digest_sql}")"
+          restore_row_digest="$(psql "${restore_url}" -X -A -t -v ON_ERROR_STOP=1 -c "${row_digest_sql}")"
+          test "${source_row_digest}" = "${restore_row_digest}" || { echo "El digest de filas núcleo no coincide después del restore"; exit 1; }
+
+          schema_digest_sql="
+            SELECT md5(coalesce(string_agg(
+              table_name || ':' || ordinal_position::text || ':' || column_name || ':' ||
+              data_type || ':' || coalesce(character_maximum_length::text, '') || ':' || is_nullable,
+              '|' ORDER BY table_name, ordinal_position
+            ), ''))
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+          "
+          source_schema_digest="$(psql "${source_psql_url}" -X -A -t -v ON_ERROR_STOP=1 -c "${schema_digest_sql}")"
+          restore_schema_digest="$(psql "${restore_url}" -X -A -t -v ON_ERROR_STOP=1 -c "${schema_digest_sql}")"
+          test "${source_schema_digest}" = "${restore_schema_digest}" || { echo "El schema público restaurado no coincide"; exit 1; }
+
+          orphan_count="$(psql "${restore_url}" -X -A -t -v ON_ERROR_STOP=1 -c '
+            SELECT
+              (SELECT count(*) FROM "Table" t LEFT JOIN "Restaurant" r ON r.id = t."restaurantId" WHERE r.id IS NULL)
+              + (SELECT count(*) FROM "TableSession" s LEFT JOIN "Table" t ON t.id = s."tableId" WHERE t.id IS NULL)
+              + (SELECT count(*) FROM "Order" o LEFT JOIN "TableSession" s ON s.id = o."tableSessionId" WHERE s.id IS NULL)
+              + (SELECT count(*) FROM "OrderItem" i LEFT JOIN "Order" o ON o.id = i."orderId" WHERE o.id IS NULL)
+              + (SELECT count(*) FROM "AccountSettlement" a LEFT JOIN "Restaurant" r ON r.id = a."restaurantId" WHERE r.id IS NULL)
+          ')"
+          test "${orphan_count}" = "0" || { echo "El restore contiene relaciones núcleo huérfanas"; exit 1; }
+
+          drill_seconds="$(( $(date +%s) - drill_start ))"
+          echo "BACKUP_RESTORE_DRILL=PASS"
+          echo "BACKUP_SCOPE=public"
+          echo "BACKUP_SHA256=${backup_sha256}"
+          echo "BACKUP_BYTES=${backup_bytes}"
+          echo "PUBLIC_SCHEMA_MATCH=PASS"
+          echo "CORE_ROW_DIGEST_MATCH=PASS"
+          echo "CORE_RELATIONS=PASS"
+          echo "RESTORE_DRILL_SECONDS=${drill_seconds}"
+
+  preflight:
+    if: ${{ inputs.operation == 'preflight' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      MESAYA_PG_DATABASE_URL: ${{ secrets.MESAYA_PG_DATABASE_URL }}
+      MESAYA_PG_DIRECT_URL: ${{ secrets.MESAYA_PG_DIRECT_URL }}
+      PGCONNECT_TIMEOUT: '15'
+    steps:
+      - name: Validar destino PostgreSQL sin mutaciones
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -n "${MESAYA_PG_DATABASE_URL}" || { echo "Falta MESAYA_PG_DATABASE_URL"; exit 2; }
+          test -n "${MESAYA_PG_DIRECT_URL}" || { echo "Falta MESAYA_PG_DIRECT_URL"; exit 2; }
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+
+          strip_prisma_options() {
+            INPUT_URL="$1" node --input-type=module -e '
+              const url = new URL(process.env.INPUT_URL);
+              url.searchParams.delete("pgbouncer");
+              process.stdout.write(url.toString());
+            '
+          }
+
+          # `pgbouncer` es una opción de Prisma, no de libpq/psql. Se elimina
+          # sólo para este SELECT; la URL original queda intacta para migrate.
+          runtime_psql_url="$(strip_prisma_options "${MESAYA_PG_DATABASE_URL}")"
+          direct_psql_url="$(strip_prisma_options "${MESAYA_PG_DIRECT_URL}")"
+          runtime_db="$(psql "${runtime_psql_url}" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT current_database()')"
+          direct_db="$(psql "${direct_psql_url}" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT current_database()')"
+          test -n "${runtime_db}" || { echo "La conexión runtime no devolvió identidad de base"; exit 1; }
+          test "${runtime_db}" = "${direct_db}" || { echo "Las conexiones runtime y directa no apuntan a la misma base"; exit 1; }
+
+          migration_table="$(psql "${direct_psql_url}" -X -A -t -v ON_ERROR_STOP=1 -c \
+            "SELECT CASE WHEN to_regclass('public._prisma_migrations') IS NULL THEN 'MISSING' ELSE 'PRESENT' END")"
+          test "${migration_table}" = "PRESENT" || { echo "Falta public._prisma_migrations en el destino"; exit 1; }
+
+          missing_core="$(psql "${direct_psql_url}" -X -A -t -v ON_ERROR_STOP=1 -c "
+            SELECT count(*)
+            FROM (VALUES
+              ('Restaurant'), ('Table'), ('TableSession'), ('Order'),
+              ('OrderItem'), ('PaymentTransaction'), ('StaffUser'), ('Shift'),
+              ('AccountSettlement'), ('ReceiptSnapshot'), ('TableStateEvent')
+            ) AS required(table_name)
+            WHERE to_regclass('public.' || quote_ident(required.table_name)) IS NULL
+          ")"
+          test "${missing_core}" = "0" || { echo "Faltan tablas núcleo del contrato MesaYA"; exit 1; }
+
+          # No se imprimen hosts, URLs, usuarios, filas ni datos.
+          echo "CLOUD_PREFLIGHT=PASS"
+          echo "CONNECTION_TARGET_MATCH=PASS"
+          echo "PRISMA_MIGRATION_TABLE=PRESENT"
+          echo "CORE_SCHEMA=PASS"
+
   migrate:
+    if: ${{ inputs.operation == 'migrate' }}
     runs-on: ubuntu-latest
     environment: production
     steps:

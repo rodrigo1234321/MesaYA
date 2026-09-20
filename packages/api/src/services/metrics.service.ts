@@ -3,21 +3,47 @@ import { MetricsDTO, CallType, PaymentMethod, AnalyticsMetricDTO } from '@mesaya
 
 export class MetricsService {
   static async getMetrics(restaurantId: string): Promise<MetricsDTO> {
-    const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
       select: { timezone: true }
     });
+
+    const timezone = restaurant?.timezone || 'America/Argentina/Buenos_Aires';
+    const now = new Date();
+
+    // Calcular inicio del día en la zona horaria del restaurante (P1-03)
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false,
+      hourCycle: 'h23'
+    });
+    const parts = formatter.formatToParts(now);
+    const getPart = (t: string) => parseInt(parts.find((p) => p.type === t)?.value || '0', 10);
+    const year = getPart('year');
+    const month = getPart('month');
+    const day = getPart('day');
+
+    const utcEstimated = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+    const invParts = formatter.formatToParts(utcEstimated);
+    const invPart = (t: string) => parseInt(invParts.find((p) => p.type === t)?.value || '0', 10);
+    const diffMs = Date.UTC(invPart('year'), invPart('month') - 1, invPart('day'), invPart('hour'), invPart('minute'), invPart('second')) - utcEstimated.getTime();
+    const today = new Date(utcEstimated.getTime() - diffMs);
 
     const currentShift = await prisma.shift.findFirst({
       where: { restaurantId, closedAt: null },
       orderBy: { openedAt: 'desc' }
     });
 
-    const shiftStart = currentShift?.openedAt ? currentShift.openedAt : today;
+    // Si el turno abierto tiene más de 24 hs (turno huérfano/olvidado), se acota a las últimas 24 hs
+    const shiftStart = currentShift?.openedAt
+      ? new Date(Math.max(currentShift.openedAt.getTime(), Date.now() - 24 * 60 * 60 * 1000))
+      : today;
 
     const calls = await prisma.callRequest.findMany({
       where: {
@@ -84,7 +110,6 @@ export class MetricsService {
       : 0;
 
     const period = { from: shiftStart.toISOString(), to: now.toISOString() };
-    const timezone = restaurant?.timezone || 'UTC';
     const warnings: string[] = [];
     if (responseTimes.length === 0) warnings.push('No hay llamados resueltos con tiempo de atención medido.');
     if (feedbacks.length === 0) warnings.push('No hay valoraciones en el período seleccionado.');

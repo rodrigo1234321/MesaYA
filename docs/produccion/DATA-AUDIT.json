@@ -1,0 +1,9 @@
+{
+  "auditedAt": "2026-09-13T23:40:56.170Z",
+  "totalOrdersAudited": 0,
+  "discrepanciesCount": 0,
+  "fixedCount": 0,
+  "status": "LEGACY_SCHEMA_DETECTED",
+  "note": "La base actual no tiene totalAmountMinor; requiere migración o base efímera canónica.",
+  "discrepancies": []
+}

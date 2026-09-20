@@ -58,7 +58,8 @@ function normalizeNote(value: unknown): string | null {
 }
 
 function isDeclaredRestrictionNote(note: string) {
-  return /alerg|anafil|intoleran|celiac|tacc|gluten/i.test(note);
+  const normalized = note.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return /alerg|anafil|intoleran|celiac|tacc|gluten/i.test(normalized);
 }
 
 function participantForOrder(source: unknown, guestName: unknown): ServiceParticipantDTO {
@@ -132,10 +133,15 @@ function tableInfo(tableById: Map<string, any>, tableId: string, fallbackLabel?:
 }
 
 export class ServiceWorkspaceService {
-  static async getSnapshot(restaurantIdOrSlug: string, staffRestaurantId?: string): Promise<ServiceWorkspaceDTO> {
+  static async getSnapshot(restaurantIdOrSlug: string, staffRestaurantId?: string, isTerminalOnly: boolean = false): Promise<ServiceWorkspaceDTO> {
     const restaurant = await prisma.restaurant.findFirst({
       where: { OR: [{ id: restaurantIdOrSlug }, { slug: restaurantIdOrSlug }] },
-      select: { id: true }
+      select: {
+        id: true,
+        moduleConfig: {
+          select: { allowWaitersToCollectCash: true }
+        }
+      }
     });
     if (!restaurant) throw workspaceError(404, 'RESTAURANT_NOT_FOUND', 'Restaurante no encontrado');
     if (staffRestaurantId && restaurant.id !== staffRestaurantId) {
@@ -271,7 +277,7 @@ export class ServiceWorkspaceService {
         ? 'Cobrar cuenta'
         : (CALL_TYPE_LABELS[call.type] || 'Atender solicitud');
       const summary = call.note?.trim() || (call.type === CallType.BILL
-        ? `Saldo pendiente ${formatMinor(account?.account.saldoMinor || 0)}`
+        ? (isTerminalOnly ? 'Solicita cuenta' : `Saldo pendiente ${formatMinor(account?.account.saldoMinor || 0)}`)
         : 'La mesa solicitó atención');
       tasks.push({
         id: `call:${call.id}`,
@@ -295,7 +301,7 @@ export class ServiceWorkspaceService {
             paymentMethod: call.paymentMethod,
             requestedTipMinor: call.tipMinor || 0
           } : {}),
-          balanceMinor: call.type === CallType.BILL ? account?.account.saldoMinor || 0 : undefined
+          balanceMinor: (call.type === CallType.BILL && !isTerminalOnly) ? account?.account.saldoMinor || 0 : undefined
         }
       });
     }
@@ -432,7 +438,8 @@ export class ServiceWorkspaceService {
       staleAfterSeconds: 12,
       floorPlan,
       tasks,
-      accounts: [...accountByTableId.values()].sort((a, b) => a.tableLabel.localeCompare(b.tableLabel, 'es', { numeric: true })),
+      accounts: isTerminalOnly ? [] : [...accountByTableId.values()].sort((a, b) => a.tableLabel.localeCompare(b.tableLabel, 'es', { numeric: true })),
+      allowWaitersToCollectCash: Boolean(restaurant.moduleConfig?.allowWaitersToCollectCash),
       summary: {
         totalTasks: tasks.length,
         pendingCalls,

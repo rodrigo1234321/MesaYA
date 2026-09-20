@@ -8,6 +8,7 @@ import {
   TablePositionUpdateSchema
 } from '@mesaya/shared';
 import { verifyStaffToken, verifyManagerRole } from '../middlewares/auth.middleware';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export async function floorPlanRoutes(fastify: FastifyInstance) {
   /**
@@ -30,8 +31,7 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
       const data = await floorPlanService.getFloorPlan(restaurant.id);
       return reply.send(data);
     } catch (err: any) {
-      request.log.error(err);
-      return reply.status(404).send({ error: err.message || 'Error al obtener plano de mesas' });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -102,7 +102,6 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
       const result = await floorPlanService.updateFloorPlan(restaurant.id, parsed.data);
       return reply.send(result);
     } catch (err: any) {
-      request.log.error(err);
       if (err.statusCode === 400 || err.statusCode === 404 || err.statusCode === 409) {
         return reply.status(err.statusCode).send({
           error: err.code || 'FLOOR_PLAN_ERROR',
@@ -110,7 +109,7 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
           ...(err.details !== undefined && { details: err.details })
         });
       }
-      return reply.status(500).send({ error: err.message || 'Error al guardar plano' });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -164,7 +163,6 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
       const result = await floorPlanService.updateTablePosition(tableId, parsed.data);
       return reply.send(result);
     } catch (err: any) {
-      request.log.error(err);
       if (err.statusCode === 400 || err.statusCode === 404 || err.statusCode === 409) {
         return reply.status(err.statusCode).send({
           error: err.code || 'TABLE_POSITION_ERROR',
@@ -172,7 +170,7 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
           ...(err.details !== undefined && { details: err.details })
         });
       }
-      return reply.status(500).send({ error: err.message || 'Error al mover mesa' });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -205,8 +203,7 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
       const zone = await floorPlanService.createZone(restaurant.id, parsed.data);
       return reply.status(201).send(zone);
     } catch (err: any) {
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message || 'Error al crear zona' });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -248,8 +245,7 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
       const updatedZone = await floorPlanService.updateZone(id, parsed.data);
       return reply.send(updatedZone);
     } catch (err: any) {
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message || 'Error al actualizar zona' });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -282,8 +278,7 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
       await floorPlanService.deleteZone(id);
       return reply.send({ success: true, message: 'Zona eliminada correctamente' });
     } catch (err: any) {
-      request.log.error(err);
-      return reply.status(500).send({ error: err.message || 'Error al eliminar zona' });
+      return sendSanitizedError(reply, err);
     }
   });
 
@@ -316,15 +311,7 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
       const result = await floorPlanService.deleteTable(restaurant.id, tableId);
       return reply.send({ ...result, message: 'Mesa eliminada correctamente' });
     } catch (err: any) {
-      request.log.error(err);
-      if (err.statusCode === 404 || err.statusCode === 409) {
-        return reply.status(err.statusCode).send({
-          error: err.code || 'DELETE_TABLE_ERROR',
-          message: err.message,
-          ...(err.details !== undefined && { details: err.details })
-        });
-      }
-      return reply.status(500).send({ error: err.message || 'Error al eliminar mesa' });
+      return sendSanitizedError(reply, err);
     }
   });
 }

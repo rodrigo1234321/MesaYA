@@ -8,6 +8,9 @@ describe('Rewards ledger', () => {
 
   afterEach(async () => {
     for (const restaurantId of createdRestaurantIds.splice(0)) {
+      await prisma.rewardRedemption.deleteMany({
+        where: { customerLoyalty: { restaurantId } }
+      }).catch(() => undefined);
       await prisma.restaurant.delete({ where: { id: restaurantId } }).catch(() => undefined);
     }
   });

@@ -1,8 +1,9 @@
 import { FastifyPluginAsync } from 'fastify';
 import { OrderService } from '../services/order.service';
 import { prisma } from '../lib/prisma';
-import { verifyStaffToken, verifyManagerRole } from '../middlewares/auth.middleware';
+import { verifyStaffToken, verifyManagerRole, verifySettlementAuthorization } from '../middlewares/auth.middleware';
 import { AddOrderItemDTO, ClaimItemDTO, SplitMode, OrderStatus } from '@mesaya/shared';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 export const orderRoutes: FastifyPluginAsync = async (fastify) => {
   /**
@@ -17,8 +18,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         const result = await OrderService.getActiveOrderForGuest(token);
         return reply.send(result);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code, details: err.details });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -43,8 +43,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         const result = await OrderService.getActiveOrderForGuest(sessionToken);
         return reply.send(result);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code, details: err.details });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -61,8 +60,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         const order = await OrderService.addItem(body);
         return reply.status(201).send(order);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -88,8 +86,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         const order = await OrderService.removeItem(sessionToken, id);
         return reply.send(order);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -119,8 +116,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         const order = await OrderService.submitOrder(sessionToken, { idempotencyKey });
         return reply.send(order);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code, details: err.details });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -140,8 +136,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         const order = await OrderService.validateOrder(id, staffName, staffRestaurantId);
         return reply.send(order);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -166,8 +161,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.send(order);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code, details: err.details });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -187,8 +181,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         const orders = await OrderService.getKitchenOrders(id, staffRestaurantId);
         return reply.send({ orders });
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -210,8 +203,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         const accounts = await OrderService.getCashAccounts(id, request.staffUser?.restaurantId);
         return reply.send({ orders, accounts });
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -236,7 +228,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/staff/sessions/:sessionId/settle',
-    { preHandler: [verifyStaffToken, verifyManagerRole] },
+    { preHandler: [verifySettlementAuthorization] },
     async (request, reply) => {
       const { sessionId } = request.params;
       const body = request.body || ({} as any);
@@ -256,8 +248,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(result.idempotentReplay ? 200 : 201).send(result);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code, details: err.details });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -282,7 +273,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/staff/sessions/:sessionId/settle-and-close',
-    { preHandler: [verifyStaffToken, verifyManagerRole] },
+    { preHandler: [verifySettlementAuthorization] },
     async (request, reply) => {
       const { sessionId } = request.params;
       const body = request.body || ({} as any);
@@ -302,8 +293,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(result.idempotentReplay ? 200 : 201).send(result);
       } catch (err: any) {
-        const status = err.statusCode || 500;
-        return reply.status(status).send({ error: err.message, code: err.code, details: err.details });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -343,8 +333,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
 
         return reply.status(201).send(order);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -377,8 +366,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(201).send(order);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -416,8 +404,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.send(order);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -467,8 +454,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.send(result);
       } catch (err: any) {
-        const status = err.statusCode || 400;
-        return reply.status(status).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );

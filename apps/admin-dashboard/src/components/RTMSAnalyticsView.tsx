@@ -27,6 +27,7 @@ interface RTMSAnalyticsViewProps {
 
 export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurantSlug }) => {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [summary, setSummary] = useState<RTMSAnalyticsSummaryDTO | null>(null);
   const [phases, setPhases] = useState<PhaseMetricsDTO | null>(null);
   const [heatmap, setHeatmap] = useState<HeatmapHourCellDTO[]>([]);
@@ -36,6 +37,7 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
 
   const fetchData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const now = new Date();
       let from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -56,8 +58,9 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
       setPhases(phaseRes);
       setHeatmap(heatRes);
       setTablePerf(perfRes);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error cargando analytics RTMS:', err);
+      setLoadError(err?.message || 'No se pudieron cargar las métricas RTMS del local.');
     } finally {
       setLoading(false);
     }
@@ -69,7 +72,7 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
 
   if (loading && !summary) {
     return (
-      <div className="flex flex-col items-center justify-center p-16 text-slate-400">
+      <div role="status" className="flex flex-col items-center justify-center p-16 text-slate-400">
         <Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-3" />
         <p className="text-sm font-medium">Calculando métricas de RevPASH y rotación...</p>
       </div>
@@ -103,8 +106,10 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+          <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800" role="group" aria-label="Rango de fechas de RTMS">
             <button
+              type="button"
+              aria-pressed={selectedRange === 'today'}
               onClick={() => setSelectedRange('today')}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
                 selectedRange === 'today'
@@ -115,6 +120,8 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
               Hoy
             </button>
             <button
+              type="button"
+              aria-pressed={selectedRange === '7d'}
               onClick={() => setSelectedRange('7d')}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
                 selectedRange === '7d'
@@ -125,6 +132,8 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
               7 Días
             </button>
             <button
+              type="button"
+              aria-pressed={selectedRange === '30d'}
               onClick={() => setSelectedRange('30d')}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
                 selectedRange === '30d'
@@ -137,14 +146,29 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
           </div>
 
           <button
+            type="button"
             onClick={fetchData}
             title="Refrescar métricas"
-            className="p-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white transition-colors"
+            aria-label="Refrescar métricas RTMS"
+            className="p-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
           </button>
         </div>
       </div>
+
+      {loadError && (
+        <div role="alert" className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs flex items-center justify-between gap-2">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={fetchData}
+            className="text-[11px] underline font-semibold hover:text-rose-200"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
 
       {/* Top Key Metrics Cards (RevPASH, Turn Time, Occupancy, Revenue) */}
       {summary && (
@@ -324,8 +348,8 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
             </div>
           </div>
 
-          {/* Grid Container */}
-          <div className="overflow-x-auto">
+          {/* Grid Container: visual complementaria; los datos están en la tabla accesible siguiente */}
+          <div className="overflow-x-auto" aria-hidden="true">
             <div className="min-w-[700px]">
               {/* Hour header */}
               <div className="grid grid-cols-[50px_repeat(24,1fr)] gap-1 mb-1 text-[10px] text-slate-500 font-mono text-center">
@@ -378,7 +402,7 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
 
           {/* Hovered cell info badge */}
           {hoveredCell && (
-            <div className="mt-3 p-2.5 rounded-xl bg-slate-800/90 border border-slate-700 text-xs flex items-center justify-between text-slate-300">
+            <div role="status" className="mt-3 p-2.5 rounded-xl bg-slate-800/90 border border-slate-700 text-xs flex items-center justify-between text-slate-300">
               <span className="font-bold text-white">
                 {hoveredCell.dayLabel} a las {hoveredCell.hour}:00 hs
               </span>
@@ -387,6 +411,41 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
               <span>Facturado estimado: <strong className="text-emerald-400">${hoveredCell.revenue.toLocaleString('es-AR')}</strong></span>
             </div>
           )}
+
+          {/* Alternativa textual del mapa de calor: no usar sólo color/hover */}
+          <details className="mt-3 rounded-xl bg-slate-950/60 border border-slate-800 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-bold text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400">
+              Ver ocupación por día y hora como texto
+            </summary>
+            <div className="overflow-x-auto mt-2">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-400">
+                    <th scope="col" className="py-2 pr-3">Día</th>
+                    <th scope="col" className="py-2 pr-3">Hora</th>
+                    <th scope="col" className="py-2 pr-3">Ocupación</th>
+                    <th scope="col" className="py-2 pr-3">Mesas activas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {heatmap
+                    .filter((c) => c.occupancyPercentage > 0)
+                    .slice(0, 60)
+                    .map((c) => (
+                      <tr key={`${c.dayOfWeek}-${c.hour}`} className="border-b border-slate-800/60">
+                        <td className="py-1.5 pr-3">{c.dayLabel}</td>
+                        <td className="py-1.5 pr-3 font-mono">{c.hour}:00</td>
+                        <td className="py-1.5 pr-3 font-mono">{c.occupancyPercentage}%</td>
+                        <td className="py-1.5 pr-3 font-mono">{c.sessionsCount}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+              {heatmap.filter((c) => c.occupancyPercentage > 0).length === 0 && (
+                <p className="py-2 text-[11px] text-slate-500">Sin ocupación registrada en el rango seleccionado.</p>
+              )}
+            </div>
+          </details>
         </div>
       )}
 
@@ -404,14 +463,14 @@ export const RTMSAnalyticsView: React.FC<RTMSAnalyticsViewProps> = ({ restaurant
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                  <th className="py-2.5 px-3">Mesa</th>
-                  <th className="py-2.5 px-3">Zona</th>
-                  <th className="py-2.5 px-3">Capacidad</th>
-                  <th className="py-2.5 px-3">Turnos Atendidos</th>
-                  <th className="py-2.5 px-3">Rotación Promedio</th>
-                  <th className="py-2.5 px-3">RevPASH</th>
-                  <th className="py-2.5 px-3">Utilización</th>
-                  <th className="py-2.5 px-3 text-right">Facturación</th>
+                  <th scope="col" className="py-2.5 px-3">Mesa</th>
+                  <th scope="col" className="py-2.5 px-3">Zona</th>
+                  <th scope="col" className="py-2.5 px-3">Capacidad</th>
+                  <th scope="col" className="py-2.5 px-3">Turnos Atendidos</th>
+                  <th scope="col" className="py-2.5 px-3">Rotación Promedio</th>
+                  <th scope="col" className="py-2.5 px-3">RevPASH</th>
+                  <th scope="col" className="py-2.5 px-3">Utilización</th>
+                  <th scope="col" className="py-2.5 px-3 text-right">Facturación</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">

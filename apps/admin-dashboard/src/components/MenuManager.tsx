@@ -1038,6 +1038,10 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
 
               <div>
                 <label className="font-bold text-slate-300 block mb-1.5">Etiquetas Especiales</label>
+                {/* E19: las etiquetas dietarias se muestran tal cual en la carta pública; marcar sólo las confirmadas por el local. */}
+                <p className="text-[11px] leading-relaxed text-slate-400 mb-1.5">
+                  Marcá sólo etiquetas confirmadas por el local: se muestran tal cual en la carta pública para filtrar Sin TACC, Vegano y Vegetariano. Sin etiqueta confirmada el plato sigue visible en “Todas” y se indica sin información confirmada.
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(MENU_TAGS).map(([tagKey, tagData]) => {
                     const isSelected = newItemTags.includes(tagKey);

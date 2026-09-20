@@ -20,6 +20,22 @@ export const App: React.FC = () => {
   });
 
   const [activeTab, setActiveTab] = useState<'floorplan' | 'tables' | 'menu' | 'staff' | 'modules' | 'metrics' | 'sales'>('floorplan');
+  const activeTabOrder = ['floorplan', 'tables', 'menu', 'modules', 'staff', 'metrics', 'sales'] as const;
+
+  const handleTabListKeyDown = (e: React.KeyboardEvent) => {
+    const currentIndex = activeTabOrder.indexOf(activeTab);
+    let nextIndex: number | null = null;
+    if (e.key === 'ArrowRight') nextIndex = (currentIndex + 1) % activeTabOrder.length;
+    else if (e.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + activeTabOrder.length) % activeTabOrder.length;
+    else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = activeTabOrder.length - 1;
+    if (nextIndex !== null) {
+      e.preventDefault();
+      const next = activeTabOrder[nextIndex];
+      setActiveTab(next);
+      document.getElementById(`admin-tab-${next}`)?.focus();
+    }
+  };
   const [tables, setTables] = useState<TableItem[]>([]);
   const [currentShift, setCurrentShift] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -191,6 +207,7 @@ export const App: React.FC = () => {
 
           {publicOnboardingEnabled && (
             <button
+              type="button"
               onClick={() => setShowRegisterModal(true)}
               className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/20 active:scale-95 transition-all"
             >
@@ -200,6 +217,7 @@ export const App: React.FC = () => {
           )}
 
           <button
+            type="button"
             onClick={loadData}
             title="Refrescar Datos"
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-semibold active:scale-95 transition-all"
@@ -218,88 +236,130 @@ export const App: React.FC = () => {
       />
 
       {/* Tabs Navigation */}
-      <div className="flex items-center space-x-2 border-b border-slate-800 pb-2 overflow-x-auto no-scrollbar">
+      <div role="tablist" aria-label="Secciones del panel de administración" onKeyDown={handleTabListKeyDown} className="flex items-center space-x-2 border-b border-slate-800 pb-2 overflow-x-auto no-scrollbar">
         <button
+          type="button"
+          role="tab"
+          id="admin-tab-floorplan"
+          aria-selected={activeTab === 'floorplan'}
+          aria-controls="admin-panel-floorplan"
+          tabIndex={activeTab === 'floorplan' ? 0 : -1}
           onClick={() => setActiveTab('floorplan')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
             activeTab === 'floorplan'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/25'
               : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
-          <Map className="w-4 h-4" />
+          <Map className="w-4 h-4" aria-hidden="true" />
           <span>Plano en Vivo (Tablet RTMS)</span>
         </button>
 
         <button
+          type="button"
+          role="tab"
+          id="admin-tab-tables"
+          aria-selected={activeTab === 'tables'}
+          aria-controls="admin-panel-tables"
+          tabIndex={activeTab === 'tables' ? 0 : -1}
           onClick={() => setActiveTab('tables')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
             activeTab === 'tables'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
               : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
-          <LayoutGrid className="w-4 h-4" />
+          <LayoutGrid className="w-4 h-4" aria-hidden="true" />
           <span>Mesas & Códigos QR ({tables.length})</span>
         </button>
 
         <button
+          type="button"
+          role="tab"
+          id="admin-tab-menu"
+          aria-selected={activeTab === 'menu'}
+          aria-controls="admin-panel-menu"
+          tabIndex={activeTab === 'menu' ? 0 : -1}
           onClick={() => setActiveTab('menu')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
             activeTab === 'menu'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
               : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
-          <BookOpen className="w-4 h-4 text-amber-400" />
+          <BookOpen className="w-4 h-4 text-amber-400" aria-hidden="true" />
           <span>Carta & Precios</span>
         </button>
 
         <button
+          type="button"
+          role="tab"
+          id="admin-tab-modules"
+          aria-selected={activeTab === 'modules'}
+          aria-controls="admin-panel-modules"
+          tabIndex={activeTab === 'modules' ? 0 : -1}
           onClick={() => setActiveTab('modules')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
             activeTab === 'modules'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
               : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
-          <Sliders className="w-4 h-4 text-emerald-400" />
+          <Sliders className="w-4 h-4 text-emerald-400" aria-hidden="true" />
           <span>Módulos & Configuración</span>
         </button>
 
         <button
+          type="button"
+          role="tab"
+          id="admin-tab-staff"
+          aria-selected={activeTab === 'staff'}
+          aria-controls="admin-panel-staff"
+          tabIndex={activeTab === 'staff' ? 0 : -1}
           onClick={() => setActiveTab('staff')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
             activeTab === 'staff'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
               : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
-          <Users className="w-4 h-4" />
+          <Users className="w-4 h-4" aria-hidden="true" />
           <span>Personal & Mozos</span>
         </button>
 
         <button
+          type="button"
+          role="tab"
+          id="admin-tab-metrics"
+          aria-selected={activeTab === 'metrics'}
+          aria-controls="admin-panel-metrics"
+          tabIndex={activeTab === 'metrics' ? 0 : -1}
           onClick={() => setActiveTab('metrics')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
             activeTab === 'metrics'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
               : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
-          <BarChart3 className="w-4 h-4" />
+          <BarChart3 className="w-4 h-4" aria-hidden="true" />
           <span>Métricas & Rendimiento</span>
         </button>
 
         <button
+          type="button"
+          role="tab"
+          id="admin-tab-sales"
+          aria-selected={activeTab === 'sales'}
+          aria-controls="admin-panel-sales"
+          tabIndex={activeTab === 'sales' ? 0 : -1}
           onClick={() => setActiveTab('sales')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
             activeTab === 'sales'
               ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
               : 'text-slate-400 hover:text-white hover:bg-slate-900'
           }`}
         >
-          <DollarSign className="w-4 h-4 text-emerald-300" />
+          <DollarSign className="w-4 h-4 text-emerald-300" aria-hidden="true" />
           <span>Ventas y cobros</span>
         </button>
       </div>
@@ -307,34 +367,47 @@ export const App: React.FC = () => {
       {/* Active Tab Content */}
       <main className="pb-12">
         {activeTab === 'floorplan' && (
+          <div role="tabpanel" id="admin-panel-floorplan" aria-labelledby="admin-tab-floorplan">
           <FloorPlanManager restaurantSlug={selectedSlug} refreshKey={floorPlanRefreshKey} />
+          </div>
         )}
         {activeTab === 'tables' && (
+          <div role="tabpanel" id="admin-panel-tables" aria-labelledby="admin-tab-tables">
           <TablesManager
             tables={tables}
             restaurantId={activeRestaurant.id}
             restaurantSlug={activeRestaurant.slug}
             onRefresh={loadData}
           />
+          </div>
         )}
         {activeTab === 'menu' && (
+          <div role="tabpanel" id="admin-panel-menu" aria-labelledby="admin-tab-menu">
           <MenuManager
             restaurantId={selectedSlug}
           />
+          </div>
         )}
         {activeTab === 'modules' && (
+          <div role="tabpanel" id="admin-panel-modules" aria-labelledby="admin-tab-modules">
           <ModuleConfigManager
             restaurantId={activeRestaurant.id}
           />
+          </div>
         )}
         {activeTab === 'staff' && (
+          <div role="tabpanel" id="admin-panel-staff" aria-labelledby="admin-tab-staff">
           <StaffManager
             restaurantId={activeRestaurant.id}
           />
+          </div>
         )}
         {activeTab === 'metrics' && (
+          <div role="tabpanel" id="admin-panel-metrics" aria-labelledby="admin-tab-metrics">
           <div className="space-y-8">
-            <RTMSAnalyticsView restaurantSlug={activeRestaurant.id} />
+            {/* E18: el backend resuelve id o slug; se pasa el slug canónico
+                porque el prop se llama restaurantSlug y el plano se resuelve por local. */}
+            <RTMSAnalyticsView restaurantSlug={activeRestaurant.slug || activeRestaurant.id} />
             <div className="pt-6 border-t border-slate-800">
               <h3 className="text-sm font-bold text-slate-400 mb-4 uppercase tracking-wider">
                 Métricas Clásicas de Servicio & Mozo
@@ -342,29 +415,33 @@ export const App: React.FC = () => {
               <MetricsView restaurantId={activeRestaurant.id} />
             </div>
           </div>
+          </div>
         )}
         {activeTab === 'sales' && (
+          <div role="tabpanel" id="admin-panel-sales" aria-labelledby="admin-tab-sales">
           <SalesManager restaurantId={activeRestaurant.id} />
+          </div>
         )}
       </main>
 
       {authRequired && restaurants.length > 0 && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="admin-login-title" className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleLogin} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl">
             <div>
-              <h2 className="text-lg font-extrabold text-white">Ingresar a Administración</h2>
+              <h2 id="admin-login-title" className="text-lg font-extrabold text-white">Ingresar a Administración</h2>
               <p className="text-xs text-slate-400 mt-1">
                 {activeRestaurant.name} · Usá el PIN de encargado.
               </p>
             </div>
             {loginError && (
-              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs font-semibold">
+              <div role="alert" className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs font-semibold">
                 {loginError}
               </div>
             )}
-            <label className="block text-xs font-semibold text-slate-300">
+            <label htmlFor="admin-login-pin" className="block text-xs font-semibold text-slate-300">
               PIN de encargado
               <input
+                id="admin-login-pin"
                 type="password"
                 inputMode="numeric"
                 autoComplete="current-password"
@@ -388,14 +465,14 @@ export const App: React.FC = () => {
 
       {/* SaaS Register New Restaurant Modal */}
       {publicOnboardingEnabled && showRegisterModal && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="admin-register-title" className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleRegisterSubmit} className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
             <div className="flex items-center space-x-2.5">
               <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
                 <Store className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-white">Registrar Nuevo Restaurante</h3>
+                <h3 id="admin-register-title" className="text-base font-extrabold text-white">Registrar Nuevo Restaurante</h3>
                 <p className="text-xs text-slate-400">Crea un nuevo local con mesas y carta digital propia</p>
               </div>
             </div>
@@ -408,8 +485,9 @@ export const App: React.FC = () => {
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-400 mb-1">Nombre del Restaurante / Bar</label>
+                <label htmlFor="admin-register-name" className="block text-slate-400 mb-1">Nombre del Restaurante / Bar</label>
                 <input
+                  id="admin-register-name"
                   type="text"
                   placeholder="Ej: Parrilla El Gaucho, Hamburguesería Holy"
                   value={regName}
@@ -425,10 +503,11 @@ export const App: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Slug URL del Local (Único)</label>
+                <label htmlFor="admin-register-slug" className="block text-slate-400 mb-1">Slug URL del Local (Único)</label>
                 <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-400">
                   <span className="text-[11px] font-mono select-none">mesaya.app/?r=</span>
                   <input
+                    id="admin-register-slug"
                     type="text"
                     value={regSlug}
                     onChange={(e) => setRegSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
@@ -441,8 +520,9 @@ export const App: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-slate-400 mb-1">PIN Inicial Admin</label>
+                  <label htmlFor="admin-register-pin" className="block text-slate-400 mb-1">PIN Inicial Admin</label>
                   <input
+                    id="admin-register-pin"
                     type="password"
                     maxLength={6}
                     value={regPin}
@@ -453,8 +533,9 @@ export const App: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-slate-400 mb-1">Cantidad de Mesas</label>
+                  <label htmlFor="admin-register-tables" className="block text-slate-400 mb-1">Cantidad de Mesas</label>
                   <input
+                    id="admin-register-tables"
                     type="number"
                     min={1}
                     max={50}
@@ -467,8 +548,9 @@ export const App: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Plantilla Visual / Estilo</label>
+                <label htmlFor="admin-register-template" className="block text-slate-400 mb-1">Plantilla Visual / Estilo</label>
                 <select
+                  id="admin-register-template"
                   value={regTemplate}
                   onChange={(e) => setRegTemplate(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500"

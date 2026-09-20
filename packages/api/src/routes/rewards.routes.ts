@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { requireRestaurantAccess, verifyManagerRole } from '../middlewares/auth.middleware';
 import { RewardsService } from '../services/rewards.service';
+import { sendSanitizedError } from '../lib/errorHandler';
 
 function bodyObject(body: unknown): Record<string, any> {
   return body && typeof body === 'object' ? body as Record<string, any> : {};
@@ -15,7 +16,7 @@ export const rewardsRoutes: FastifyPluginAsync = async (fastify) => {
         const phone = request.query.phone || '';
         return reply.send(await RewardsService.getBalance(request.params.id, phone, true));
       } catch (err: any) {
-        return reply.status(err.statusCode || 400).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -28,7 +29,7 @@ export const rewardsRoutes: FastifyPluginAsync = async (fastify) => {
         const items = await RewardsService.listRewardItems(request.params.id);
         return reply.send({ items });
       } catch (err: any) {
-        return reply.status(err.statusCode || 400).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -53,7 +54,7 @@ export const rewardsRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(result.idempotentReplay ? 200 : 201).send(result);
       } catch (err: any) {
-        return reply.status(err.statusCode || 400).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -73,7 +74,7 @@ export const rewardsRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(result.idempotentReplay ? 200 : 201).send(result);
       } catch (err: any) {
-        return reply.status(err.statusCode || 400).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -95,7 +96,7 @@ export const rewardsRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.send(result);
       } catch (err: any) {
-        return reply.status(err.statusCode || 400).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
@@ -117,7 +118,7 @@ export const rewardsRoutes: FastifyPluginAsync = async (fastify) => {
         });
         return reply.status(201).send(item);
       } catch (err: any) {
-        return reply.status(err.statusCode || 400).send({ error: err.message, code: err.code });
+        return sendSanitizedError(reply, err);
       }
     }
   );
