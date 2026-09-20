@@ -1,17 +1,20 @@
-# Cierre de integración local MesaYA
+# Cierre de integración y sincronización MesaYA
 
 Fecha: 2026-09-20
-Rama candidata: `codex/cierre-integracion-20260920`
-Commit candidato: `64d807a0661b86ac85079d4b452b559629e5b3de`
+Rama canónica publicada: `codex/servicio-remediacion`
+SHA de código publicado/desplegado: `7c38bd526cf39c2162f399160f6aa12792eccd50`
+Commit candidato original: `64d807a0661b86ac85079d4b452b559629e5b3de`
 Merge local: `a1a7b08b14caa4992d0732bb3e3aaa3ee135dc26`
 Base: `codex/servicio-remediacion@97d67a598e15da47feb29f69a8085d9da0899901`
 
 ## Alcance
 
 Este cierre deja consolidado el código, los tests, los builds y la documentación
-programable en la rama canónica local. No incluye push, deploy, migraciones ni
-cambios de variables en Supabase o Vercel; esos gates quedan para la siguiente
-fase de sincronización de producción.
+programable en la rama canónica. El SHA quedó publicado en GitHub y desplegado
+manualmente en los cuatro proyectos Vercel desde el checkout exacto. Supabase
+fue verificado en sólo lectura: las migraciones ya están alineadas, por lo que
+no se ejecutó una migración redundante. Backup/restore y hardening siguen
+separados hasta contar con una evidencia segura.
 
 ## Cambios cerrados
 
@@ -45,6 +48,10 @@ fase de sincronización de producción.
 | Suite aislada supervisada `isolated-final-retry2-20260920` | PASS: 30/30 suites, 0 fallos; `root_exit=0`, `verified_empty`, `ActiveProcesses=0` |
 | `npm run build:pg` y restauración SQLite | PASS |
 | `git diff --cached --check` | PASS; sólo advertencias informativas de CRLF de Windows |
+| GitHub Actions `ci` sobre `7c38bd5` | PASS: PostgreSQL + build/test aislado |
+| Supabase remoto, tabla `_prisma_migrations` | PASS: 26/26 migraciones locales aplicadas; 0 pendientes |
+| Vercel: API, cliente, Staff y Admin | PASS: 4/4 deployments `READY` |
+| Smoke HTTPS remoto | PASS: API `/health`, cliente, Staff, Admin y QR `mesaya-piloto/Mesa 1` responden `200` |
 
 La suite aislada no encontró una `dev.db` previa y no tocó datos demo. Durante
 la repetición final hubo un corte de infraestructura por memoria libre de
@@ -73,15 +80,49 @@ El gate JEV final (`jev-1.13.0`) evaluó la misma decisión estrecha con
 gates cloud y físicos. Una evaluación preliminar incierta (`noul=0.60`) no se
 usó como aprobación; se repitió después de la revisión final.
 
+## Sincronización remota ejecutada
+
+### GitHub
+
+- `origin/codex/servicio-remediacion` quedó en `7c38bd5`.
+- CI: [run 35544324209](https://github.com/rodrigo1234321/MesaYA/actions/runs/35544324209), `success`.
+- Las variantes históricas y `codex/solo-mozos` no se fusionaron: el manifiesto
+  canónico las clasifica como líneas separadas o históricas.
+
+### Vercel
+
+Los cuatro deployments fueron ejecutados desde el checkout limpio cuyo HEAD era
+`7c38bd5`; el CLI manual no adjuntó `gitSha` en los metadatos, por eso el SHA se
+registra explícitamente aquí.
+
+| Proyecto | Deployment | Estado | URL pública |
+| --- | --- | --- | --- |
+| API | `dpl_Ac6ZzfDrnxFLMBBP6kxyoUK4uBdB` | READY | <https://api-mesa-ya.vercel.app> |
+| Cliente | `dpl_A2LJrMqU4RNCKX2LpnnoZbn6K1h3` | READY | <https://client-web-mesa-ya.vercel.app> |
+| Staff | `dpl_HsYquG4KNrzmmg65TWTj2ksJbAAz` | READY | <https://staff-panel-mesa-ya.vercel.app> |
+| Admin | `dpl_67664C1ve7x4cdDJ7gns7CEWRusp` | READY | <https://admin-dashboard-mesa-ya.vercel.app> |
+
+### Supabase
+
+- Conexión PostgreSQL remota de sólo lectura: PASS.
+- Restaurante remoto verificado: `mesaya-piloto`.
+- `config`, `menu` y sesión QR de `Mesa 1`: PASS HTTP 200.
+- Historial PostgreSQL: 26/26 migraciones locales aplicadas; no hay migración
+  pendiente para este SHA.
+- Hardening: NO APLICADO; `anon` y `authenticated` todavía tienen `USAGE` en
+  `public`. No se ejecutó `scripts/supabase-hardening.sql` sin backup verificable.
+
 ## Pendientes explícitos para producción
 
-`PENDING_CLOUD`: conexión y migración contra el Supabase/PostgreSQL real,
-verificación de RLS en el proyecto destino, deploy/promoción de SHA en Vercel,
-smoke remoto, backup/restore y prueba RPO/RTO.
+`PENDING_CLOUD`: identificar/registrar el project ref exacto fuera del repositorio,
+crear y restaurar un backup verificable, medir RPO/RTO y aplicar/revalidar el
+hardening de permisos con una ventana aprobada. El código, el esquema remoto y
+los cuatro deployments Vercel ya tienen evidencia positiva.
 
 `PENDING_HUMAN`: recorrido físico con QR/NFC generado por Admin, validación en
 teléfonos/tablets reales, aprobación operativa y comprobación de impresión.
 
-Estos pendientes no bloquean el merge local de la fase programable, pero sí
-mantienen el estado global de producción fuera de GO hasta que exista evidencia
-externa y aprobación humana.
+Estos pendientes no bloquean el código publicado, pero sí mantienen el estado
+global de producción fuera de GO hasta que exista evidencia de backup/hardening
+y aprobación humana. Para la prueba rápida del flujo público usar:
+<https://client-web-mesa-ya.vercel.app/r/mesaya-piloto/mesa/Mesa%201>.
