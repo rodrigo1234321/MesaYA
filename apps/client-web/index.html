@@ -224,6 +224,7 @@
       MODAL: VISOR DE CARTA COMPLETA INTERACTIVA
   ========================================== -->
   <div id="modalMenu" class="fixed inset-0 bg-slate-950/95 backdrop-blur-lg z-50 hidden flex flex-col p-3 sm:p-5" role="dialog" aria-modal="true" aria-labelledby="menuHeading" tabindex="-1">
+    <div id="menuScrollContent" class="flex-1 min-h-0 overflow-y-auto overscroll-contain">
     <div class="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
       <div class="flex items-center gap-2">
         <span class="text-lg">📖</span>
@@ -261,17 +262,18 @@
     </section>
 
     <!-- Category Switcher Pills Inside Modal -->
-    <div id="modalMenuCategoryPillsContainer" class="flex items-center gap-1.5 overflow-x-auto py-2.5 no-scrollbar border-b border-slate-800 shrink-0">
+    <div id="modalMenuCategoryPillsContainer" class="sticky top-0 z-20 flex items-center gap-1.5 overflow-x-auto py-2.5 no-scrollbar border-b border-slate-800 shrink-0">
       <!-- Injected Dynamically -->
     </div>
 
     <!-- Interactive Menu Sections & Food Items Container -->
-    <div id="dynamicMenuCategoriesContainer" class="flex-1 min-h-0 overflow-y-auto py-4 space-y-6 pr-1">
+    <div id="dynamicMenuCategoriesContainer" class="py-4 space-y-6 pr-1">
       <!-- Injected Dynamically -->
+    </div>
     </div>
 
     <!-- In-Modal Call Action Button -->
-    <div class="pt-3 border-t border-slate-800 flex gap-2 shrink-0">
+    <div class="pt-3 border-t border-slate-800 flex gap-2 shrink-0 pb-[env(safe-area-inset-bottom)]">
       <button id="btnOpenSommelierModal" class="px-3.5 py-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 font-extrabold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-sm">
         <span class="text-sm">✨</span>
         <span>Sommelier IA</span>
