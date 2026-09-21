@@ -33,6 +33,8 @@
     "bootstrap:restaurant": "node scripts/run-tsx.mjs scripts/bootstrap-restaurant.ts",
     "instance:validate": "node scripts/validate-instance-manifest.mjs",
     "instance:provision:plan": "node scripts/provision-instance-plan.mjs",
+    "fauno:catalog": "node scripts/parse-fauno-catalog.mjs",
+    "fauno:catalog:test": "node --test scripts/fauno-catalog.test.mjs",
     "instance:test": "node --test scripts/instance-manifest.test.mjs",
     "test:local": "node scripts/test-local.mjs",
     "test": "npm --workspace=@mesaya/api run test",

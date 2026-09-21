@@ -83,6 +83,75 @@ html.theme-neon, body.theme-neon, .theme-neon {
   letter-spacing: -0.02em;
 }
 
+/* ========================================================================
+   THEME 5: FAUNO NIGHT — cerveza artesanal, barra y platos para compartir
+   ======================================================================== */
+html.theme-fauno, body.theme-fauno, .theme-fauno {
+  --bg-canvas: #061416;
+  --card-bg: rgba(10, 31, 33, 0.96);
+  --accent-primary: #16c5df;
+  --accent-hover: #0ea5b7;
+  --accent-glow: rgba(22, 197, 223, 0.35);
+  --border-subtle: rgba(22, 197, 223, 0.3);
+  --font-family: 'Outfit', sans-serif;
+  --font-heading: 'Outfit', sans-serif;
+  background-color: #061416 !important;
+  background-image:
+    radial-gradient(circle at 50% -12%, rgba(22, 197, 223, 0.2) 0%, transparent 48%),
+    radial-gradient(circle at 100% 92%, rgba(184, 134, 11, 0.16) 0%, transparent 42%) !important;
+}
+
+.theme-fauno .font-heading {
+  font-family: 'Outfit', sans-serif !important;
+  font-weight: 900 !important;
+}
+
+.theme-fauno header {
+  border-color: rgba(22, 197, 223, 0.3) !important;
+}
+
+.theme-fauno #restaurantLogoBadge {
+  padding: 0.15rem;
+  background: #061416 !important;
+  border: 1px solid rgba(239, 224, 167, 0.7);
+  box-shadow: 0 0 18px rgba(22, 197, 223, 0.3) !important;
+}
+
+.theme-fauno #restaurantLogoBadge img {
+  filter: drop-shadow(0 0 4px rgba(22, 197, 223, 0.38));
+}
+
+.theme-fauno #tableBadge {
+  background: rgba(22, 197, 223, 0.16) !important;
+  border-color: rgba(22, 197, 223, 0.52) !important;
+  color: #83f0ff !important;
+}
+
+.theme-fauno #heroMenuCard {
+  border-color: rgba(22, 197, 223, 0.56) !important;
+  box-shadow: 0 20px 48px -18px rgba(22, 197, 223, 0.32), 0 12px 24px -16px rgba(184, 134, 11, 0.5) !important;
+}
+
+.theme-fauno #heroCoverImage {
+  filter: saturate(1.08) contrast(1.06) brightness(0.64) !important;
+}
+
+.theme-fauno #btnOpenMenuHero {
+  background: linear-gradient(135deg, #16c5df, #0e8fa2) !important;
+  color: #041113 !important;
+  box-shadow: 0 8px 25px rgba(22, 197, 223, 0.34) !important;
+}
+
+.theme-fauno #modalMenuCategoryPillsContainer .btn-modal-cat-pill:hover,
+.theme-fauno .btn-category-pill:hover {
+  border-color: rgba(22, 197, 223, 0.65) !important;
+  color: #16c5df !important;
+}
+
+.theme-fauno .card-dish-row {
+  border-color: rgba(22, 197, 223, 0.28) !important;
+}
+
 .theme-neon header {
   border-color: rgba(163, 230, 53, 0.25) !important;
 }

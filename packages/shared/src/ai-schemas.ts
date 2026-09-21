@@ -4,7 +4,8 @@ export const MenuTemplateIdSchema = z.enum([
   'GOURMET_OBSIDIAN',
   'NEON_BURGER',
   'COASTAL_BEACH',
-  'MINIMAL_BISTRO'
+  'MINIMAL_BISTRO',
+  'FAUNO_NIGHT'
 ]);
 
 /**

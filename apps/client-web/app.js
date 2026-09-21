@@ -15,6 +15,7 @@ const API_BASE = (() => {
 
 let currentSession = null;
 let currentToken = null;
+let publicMenuOnly = false;
 let activeCall = null;
 let activeCalls = [];
 let pollTimer = null;
@@ -431,7 +432,8 @@ function getTableParams() {
     token: null,
     restaurantSlug: null,
     tableLabel: null,
-    queueSlug: null
+    queueSlug: null,
+    menuSlug: null
   };
   if (typeof window === 'undefined') return parsed;
 
@@ -442,6 +444,10 @@ function getTableParams() {
   const queueMatch = pathname.match(/\/fila\/([^\/]+)/i);
   if (queueMatch) parsed.queueSlug = queueMatch[1];
   if (params.get('fila') || params.get('queue')) parsed.queueSlug = params.get('fila') || params.get('queue');
+
+  const publicMenuMatch = pathname.match(/\/carta\/([^\/]+)/i);
+  if (publicMenuMatch) parsed.menuSlug = publicMenuMatch[1];
+  if (params.get('carta')) parsed.menuSlug = params.get('carta');
 
   // 1. Pathname: /r/:slug/mesa/:label
   const rMatch = pathname.match(/\/r\/([^\/]+)\/mesa\/([^\/]+)/i);
@@ -965,6 +971,11 @@ async function init(overrideToken) {
     await initWaitlistPublic(tableParams.queueSlug);
     return;
   }
+  if (tableParams.menuSlug && !overrideToken) {
+    await initPublicMenuOnly(tableParams.menuSlug);
+    return;
+  }
+  publicMenuOnly = false;
   const token = overrideToken || tableParams.token;
   const restaurantSlug = tableParams.restaurantSlug;
   const tableParam = tableParams.tableLabel;
@@ -1076,6 +1087,69 @@ async function init(overrideToken) {
     console.warn('Falla al conectar sesión:', err);
     if (el.stateLoading) el.stateLoading.classList.add('hidden');
     showConnectionState('No pudimos comprobar la mesa. Revisá la conexión y reintentá; la carta sigue disponible para consultar.');
+  }
+}
+
+async function initPublicMenuOnly(slug) {
+  publicMenuOnly = true;
+  currentSession = null;
+  currentToken = null;
+  try { sessionStorage.removeItem('mesaya_token'); } catch (_) {}
+
+  if (el.stateLoading) el.stateLoading.classList.remove('hidden');
+  if (el.stateExpired) el.stateExpired.classList.add('hidden');
+  if (el.actionsContainer) el.actionsContainer.classList.add('hidden');
+  if (el.activeCallCard) el.activeCallCard.classList.add('hidden');
+  if (el.btnOpenCartHeader) el.btnOpenCartHeader.classList.add('hidden');
+
+  if (slug !== 'fauno-olavarria') {
+    if (el.stateLoading) el.stateLoading.classList.add('hidden');
+    showExpiredState('Carta pública no encontrada.');
+    return;
+  }
+
+  try {
+    const response = await fetch('/demo/fauno-olavarria/catalog.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error(`Carta estática ${response.status}`);
+    const catalog = await response.json();
+    const menuResponse = {
+      restaurant: {
+        id: 'fauno-olavarria-demo',
+        ...catalog.restaurant,
+        customFont: 'outfit'
+      },
+      categories: catalog.categories.map((category, categoryIndex) => ({
+        id: `fauno-category-${categoryIndex + 1}`,
+        restaurantId: 'fauno-olavarria-demo',
+        name: category.name,
+        icon: category.icon,
+        orderIndex: category.orderIndex,
+        items: category.items.map((item, itemIndex) => ({
+          id: `fauno-item-${categoryIndex + 1}-${itemIndex + 1}`,
+          categoryId: `fauno-category-${categoryIndex + 1}`,
+          ...item,
+          imageUrl: item.imageUrl || null
+        }))
+      }))
+    };
+    if (el.stateLoading) el.stateLoading.classList.add('hidden');
+    if (el.restaurantName) el.restaurantName.textContent = catalog.restaurant.name;
+    if (el.tableBadge) el.tableBadge.textContent = 'Carta pública';
+    if (el.sectorBadge) el.sectorBadge.textContent = 'Olavarría 3232';
+    renderDynamicMenu(menuResponse);
+    const heading = document.getElementById('menuHeading');
+    if (heading) heading.textContent = 'Carta Fauno Olavarría';
+    const orderButton = document.getElementById('btnOrderFromMenu');
+    if (orderButton) orderButton.classList.add('hidden');
+    if (el.modalMenu) {
+      el.modalMenu.classList.remove('hidden');
+      document.body.classList.add('modal-open');
+      focusManagedModal(el.modalMenu);
+    }
+  } catch (error) {
+    console.warn('No se pudo cargar la carta pública Fauno:', error);
+    if (el.stateLoading) el.stateLoading.classList.add('hidden');
+    showConnectionState('No se pudo cargar la carta Fauno. Recargá la página para reintentar.');
   }
 }
 
@@ -1371,14 +1445,15 @@ function openDishDetailSheet(item, categoryId) {
     }
   }
   if (orderSpecificBtn) {
-    orderSpecificBtn.disabled = !dishAvailable;
-    orderSpecificBtn.setAttribute('aria-disabled', String(!dishAvailable));
-    orderSpecificBtn.classList.toggle('opacity-50', !dishAvailable);
-    orderSpecificBtn.classList.toggle('cursor-not-allowed', !dishAvailable);
+    const canOrder = dishAvailable && !publicMenuOnly;
+    orderSpecificBtn.disabled = !canOrder;
+    orderSpecificBtn.setAttribute('aria-disabled', String(!canOrder));
+    orderSpecificBtn.classList.toggle('opacity-50', !canOrder);
+    orderSpecificBtn.classList.toggle('cursor-not-allowed', !canOrder);
     const orderLabel = orderSpecificBtn.querySelector('span');
-    if (orderLabel) {
-      orderLabel.textContent = dishAvailable ? '🛒 Agregar al carrito — no se cobra aún' : '⛔ No disponible';
-    }
+    if (orderLabel) orderLabel.textContent = publicMenuOnly
+      ? '📖 Sólo consulta en esta demo'
+      : (dishAvailable ? '🛒 Agregar al carrito — no se cobra aún' : '⛔ No disponible');
   }
 
   rememberModalFocus(trigger);
@@ -2019,7 +2094,7 @@ function closeCartModal() {
 function applyTemplateTheme(templateId, manual = true) {
   const appBody = document.getElementById('appBody');
   const appHtml = document.documentElement;
-  const themeClasses = ['theme-gourmet', 'theme-neon', 'theme-coastal', 'theme-minimal'];
+  const themeClasses = ['theme-gourmet', 'theme-neon', 'theme-coastal', 'theme-minimal', 'theme-fauno'];
 
   if (appBody) appBody.classList.remove(...themeClasses);
   if (appHtml) appHtml.classList.remove(...themeClasses);
@@ -2028,7 +2103,8 @@ function applyTemplateTheme(templateId, manual = true) {
     GOURMET_OBSIDIAN: 'theme-gourmet',
     NEON_BURGER: 'theme-neon',
     COASTAL_BEACH: 'theme-coastal',
-    MINIMAL_BISTRO: 'theme-minimal'
+    MINIMAL_BISTRO: 'theme-minimal',
+    FAUNO_NIGHT: 'theme-fauno'
   };
   const targetClass = themeClassMap[templateId] || 'theme-gourmet';
   if (appBody) appBody.classList.add(targetClass);
@@ -2039,7 +2115,8 @@ function applyTemplateTheme(templateId, manual = true) {
     GOURMET_OBSIDIAN: '/assets/images/restaurantes/pastas-artesanales-gourmet.jpg',
     NEON_BURGER: '/assets/images/rotiserias-fastfood/hamburguesa-smash-doble-cheddar.jpg',
     COASTAL_BEACH: '/assets/images/restaurantes/banquete-gastronomia-mediterranea.jpg',
-    MINIMAL_BISTRO: '/assets/images/cafeterias-bakery/espresso-perfecto-granos-cafe.jpg'
+    MINIMAL_BISTRO: '/assets/images/cafeterias-bakery/espresso-perfecto-granos-cafe.jpg',
+    FAUNO_NIGHT: '/assets/branding/fauno-olavarria-logo.png'
   };
 
   if (el.heroCoverImage) {
@@ -2091,6 +2168,22 @@ function renderDynamicMenu(menuResponse) {
   // 0. Apply Dynamic Theme Classes on Body
   applyTemplateTheme(templateId, false);
 
+  if (el.restaurantName && restaurant.name) el.restaurantName.textContent = restaurant.name;
+  const logoBadge = document.getElementById('restaurantLogoBadge');
+  if (logoBadge) {
+    const safeLogoUrl = sanitizeUrl(restaurant.logoUrl, '');
+    logoBadge.replaceChildren();
+    if (safeLogoUrl) {
+      const logo = document.createElement('img');
+      logo.src = safeLogoUrl;
+      logo.alt = `${restaurant.name || 'Restaurante'} logo`;
+      logo.className = 'h-full w-full rounded-xl object-contain';
+      logoBadge.appendChild(logo);
+    } else {
+      logoBadge.textContent = '🍽️';
+    }
+  }
+
   const subtitleEl = document.getElementById('menuRestaurantSubtitle');
   if (subtitleEl && restaurant.name) {
     if (templateId === 'NEON_BURGER') {
@@ -2099,6 +2192,8 @@ function renderDynamicMenu(menuResponse) {
       subtitleEl.textContent = `${restaurant.name} • Selección costera de la casa`;
     } else if (templateId === 'MINIMAL_BISTRO') {
       subtitleEl.textContent = `${restaurant.name} • Specialty Roasters & Bakery`;
+    } else if (templateId === 'FAUNO_NIGHT') {
+      subtitleEl.textContent = `${restaurant.name} • Mitología cervecera`;
     } else {
       subtitleEl.textContent = `${restaurant.name} • Carta Tradicional de Autor`;
     }
