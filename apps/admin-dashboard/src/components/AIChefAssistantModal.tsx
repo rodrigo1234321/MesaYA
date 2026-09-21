@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChefAIGenerateResponse, MenuTemplateId } from '@mesaya/shared';
 import { AdminApi } from '../lib/api';
 import { Sparkles, Bot, Check, ArrowRight, Loader2, Utensils, Flame, Waves, Coffee, X, AlertTriangle } from 'lucide-react';
@@ -21,6 +21,15 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [generatedResult, setGeneratedResult] = useState<ChefAIGenerateResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -87,7 +96,12 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl shadow-amber-950/30 animate-in fade-in zoom-in-95">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-chef-title"
+        className="bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl shadow-amber-950/30 animate-in fade-in zoom-in-95"
+      >
         
         {/* Header */}
         <div className="p-5 sm:p-6 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
@@ -96,7 +110,7 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
               <Sparkles className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+              <h3 id="ai-chef-title" className="text-base font-extrabold text-white flex items-center gap-2">
                 <span>Chef Copilot IA</span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
                   Inteligencia Gastronómica
@@ -109,6 +123,7 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label="Cerrar modal IA"
             className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold transition-all"
           >
             <X className="w-4 h-4" />
@@ -118,7 +133,7 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
         {/* Scrollable Body */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1 text-xs">
           {errorMsg && (
-            <div className="p-3.5 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs font-medium">
+            <div role="alert" className="p-3.5 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs font-medium">
               {errorMsg}
             </div>
           )}

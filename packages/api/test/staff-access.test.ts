@@ -132,8 +132,41 @@ describe('Etapa 07 — personal y login administrativo', () => {
       expect(response.json()).toMatchObject({ error: 'PUBLIC_ONBOARDING_DISABLED' });
       expect(mocks.findRestaurantUnique).not.toHaveBeenCalled();
       expect(mocks.transaction).not.toHaveBeenCalled();
-    } finally { await app.close(); }
+    } finally {
+      await app.close();
+    }
   });
+
+  it('onboarding público cuando está habilitado rechaza PIN faltante o inválido con 400 INVALID_PIN', async () => {
+    const app = Fastify();
+    await app.register(jwt, { secret: SECRET });
+    await app.register(authRoutes);
+    const prevEnv = process.env.PUBLIC_ONBOARDING_ENABLED;
+    process.env.PUBLIC_ONBOARDING_ENABLED = 'true';
+    try {
+      // 1. Missing pin
+      const resNoPin = await app.inject({
+        method: 'POST',
+        url: '/auth/register-restaurant',
+        payload: { name: 'Ficticio', slug: 'ficticio' }
+      });
+      expect(resNoPin.statusCode).toBe(400);
+      expect(resNoPin.json().code).toBe('INVALID_PIN');
+
+      // 2. Short pin
+      const resShortPin = await app.inject({
+        method: 'POST',
+        url: '/auth/register-restaurant',
+        payload: { name: 'Ficticio', slug: 'ficticio', pin: '12' }
+      });
+      expect(resShortPin.statusCode).toBe(400);
+      expect(resShortPin.json().code).toBe('INVALID_PIN');
+    } finally {
+      process.env.PUBLIC_ONBOARDING_ENABLED = prevEnv;
+      await app.close();
+    }
+  });
+
 
   it('login de staff valida input, rechaza restaurante inexistente y aplica rate limiting', async () => {
     const app = await staffApp();

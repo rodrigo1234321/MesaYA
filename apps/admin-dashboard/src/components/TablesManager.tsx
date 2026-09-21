@@ -17,6 +17,8 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
   const [newLabel, setNewLabel] = useState('');
   const [newSector, setNewSector] = useState<Sector>(Sector.SALON_PRINCIPAL);
   const [isOutdoor, setIsOutdoor] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createSubmitting, setCreateSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const clientBaseUrl = String((import.meta as any).env?.VITE_CLIENT_WEB_URL || '').trim().replace(/\/+$/, '');
   const clientUrlError = clientBaseUrl
@@ -29,14 +31,19 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
 
   const handleCreateTable = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newLabel) return;
+    if (!newLabel.trim()) return;
+
+    setCreateSubmitting(true);
+    setCreateError(null);
     try {
-      await AdminApi.createTable(restaurantId, newLabel, newSector, isOutdoor);
+      await AdminApi.createTable(restaurantId, newLabel.trim(), newSector, isOutdoor);
       setShowAddModal(false);
       setNewLabel('');
       onRefresh();
     } catch (err) {
-      console.error(err);
+      setCreateError(err instanceof Error ? err.message : 'No se pudo crear la mesa. Por favor reintenta.');
+    } finally {
+      setCreateSubmitting(false);
     }
   };
 
@@ -104,7 +111,11 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
         </div>
 
         <button
-          onClick={() => setShowAddModal(true)}
+          type="button"
+          onClick={() => {
+            setCreateError(null);
+            setShowAddModal(true);
+          }}
           className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-600/30 active:scale-95 transition-all"
         >
           <Plus className="w-4 h-4" />
@@ -241,9 +252,15 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
 
       {/* Add Table Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="add-table-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleCreateTable} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
-            <h3 className="text-base font-bold text-white">Agregar Nueva Mesa</h3>
+            <h3 id="add-table-title" className="text-base font-bold text-white">Agregar Nueva Mesa</h3>
+
+            {createError && (
+              <div role="alert" className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs font-semibold">
+                {createError}
+              </div>
+            )}
 
             <div className="space-y-3 text-xs">
               <div>
@@ -288,16 +305,20 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
             <div className="flex items-center space-x-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowAddModal(false)}
-                className="w-1/2 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs"
+                onClick={() => {
+                  setCreateError(null);
+                  setShowAddModal(false);
+                }}
+                className="w-1/2 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs hover:bg-slate-700 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="w-1/2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs"
+                disabled={createSubmitting}
+                className="w-1/2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-indigo-600/30 transition-all"
               >
-                Guardar Mesa
+                {createSubmitting ? 'Guardando...' : 'Guardar Mesa'}
               </button>
             </div>
           </form>

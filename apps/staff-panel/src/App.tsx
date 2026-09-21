@@ -8,6 +8,7 @@ import { WaitlistManager } from './components/WaitlistManager';
 import { RewardsManager } from './components/RewardsManager';
 import { KitchenOrdersManager } from './components/KitchenOrdersManager';
 import { ServiceWorkspace } from './components/ServiceWorkspace';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { playChimeAlert, unlockAudio, getAudioState } from './lib/audio';
 import { Bell, ExternalLink, Gift, LayoutDashboard, LockKeyhole, UserRound, Users, Volume2, VolumeX, LogIn, UtensilsCrossed } from 'lucide-react';
 
@@ -414,22 +415,47 @@ export const App: React.FC = () => {
         )}
 
         {activeTab === 'service' ? (
-          <ServiceWorkspace
-            restaurantId={effectiveRestaurantId}
-            currentUser={currentUser!}
-            onRequireOperatorPin={(action) => handleOpenPinModal(action)}
-            syncSnapshot={snapshot}
-            syncLoading={!snapshot && connected === false && !lastSuccessTimestamp}
-            syncError={syncState === 'auth_error' ? 'Sesión de staff expirada' : undefined}
-            syncLastSuccessTimestamp={lastSuccessTimestamp}
-            onRefresh={refreshSync}
-          />
+          <ErrorBoundary
+            isolate
+            fallbackTitle="Error en Área de Atención / Salón"
+            fallbackMessage="Ocurrió un problema al cargar el área de servicio de mesas. Puedes reintentar sin perder tu sesión."
+            onReset={refreshSync}
+          >
+            <ServiceWorkspace
+              restaurantId={effectiveRestaurantId}
+              currentUser={currentUser!}
+              onRequireOperatorPin={(action) => handleOpenPinModal(action)}
+              syncSnapshot={snapshot}
+              syncLoading={!snapshot && connected === false && !lastSuccessTimestamp}
+              syncError={syncState === 'auth_error' ? 'Sesión de staff expirada' : undefined}
+              syncLastSuccessTimestamp={lastSuccessTimestamp}
+              onRefresh={refreshSync}
+            />
+          </ErrorBoundary>
         ) : activeTab === 'kitchen' ? (
-          <KitchenOrdersManager restaurantId={effectiveRestaurantId} />
+          <ErrorBoundary
+            isolate
+            fallbackTitle="Error en Cocina (KDS)"
+            fallbackMessage="Ocurrió un problema en la pantalla de comandas de cocina. Puedes reintentar cargar las órdenes."
+          >
+            <KitchenOrdersManager restaurantId={effectiveRestaurantId} />
+          </ErrorBoundary>
         ) : activeTab === 'waitlist' ? (
-          <WaitlistManager restaurantId={effectiveRestaurantId} />
+          <ErrorBoundary
+            isolate
+            fallbackTitle="Error en Fila de Puerta"
+            fallbackMessage="Ocurrió un problema en la lista de espera de comensales. Puedes reintentar cargar la fila."
+          >
+            <WaitlistManager restaurantId={effectiveRestaurantId} />
+          </ErrorBoundary>
         ) : (
-          <RewardsManager restaurantId={effectiveRestaurantId} />
+          <ErrorBoundary
+            isolate
+            fallbackTitle="Error en Fidelización / Rewards"
+            fallbackMessage="Ocurrió un problema en el módulo de fidelización. Puedes reintentar cargar las recompensas."
+          >
+            <RewardsManager restaurantId={effectiveRestaurantId} />
+          </ErrorBoundary>
         )}
       </main>
 

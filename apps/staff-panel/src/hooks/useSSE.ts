@@ -3,10 +3,8 @@ import { CallEventData } from '@mesaya/shared';
 import { API_BASE } from '../lib/api';
 
 /**
- * Construye la URL para el endpoint legacy de stream.
- * Regla de seguridad:
- * - Jamás anexa credenciales (token, bearer, authorization) a query string.
- * - Evita la filtración de JWTs a logs del navegador, proxies intermedios o reintentos de EventSource.
+ * @deprecated El backend responde 410 GONE en /stream; la arquitectura usa HTTP Polling con PollingCoordinator.
+ * Se conserva para compatibilidad de contratos pero no debe usarse en nuevos componentes.
  */
 export function buildStaffStreamUrl(restaurantId: string): string {
   const queryParams = new URLSearchParams();
@@ -38,5 +36,10 @@ export function useSSE(
     urgentTasksCount: sync.urgentTasksCount
   };
 }
+
+/**
+ * Nombre canónico alineado con el comportamiento real del hook (PollingCoordinator).
+ */
+export const useCallsPolling = useSSE;
 
 export * from './useServiceSync';

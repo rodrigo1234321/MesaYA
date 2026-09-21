@@ -37,15 +37,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       );
       return reply.send(sessionData);
     } catch (err: any) {
-      if (err?.statusCode === 404) {
-        return reply.status(404).send({
-          error: err.message || 'Restaurante o mesa no encontrados',
-          code: err.code || 'NOT_FOUND',
-          details: err.details,
-          valid: false
-        });
-      }
-      return sendSanitizedError(reply, err);
+      return sendSanitizedError(reply, err, { valid: false });
     }
   });
 
@@ -68,13 +60,7 @@ export async function sessionRoutes(fastify: FastifyInstance) {
       const sessionData = await SessionService.getOrCreateActiveDemoSession(decoded);
       return reply.send(sessionData);
     } catch (err: any) {
-      if (err?.statusCode === 404) {
-        return reply.status(404).send({
-          error: err.message || 'Mesa no encontrada',
-          valid: false
-        });
-      }
-      return sendSanitizedError(reply, err);
+      return sendSanitizedError(reply, err, { valid: false });
     }
   });
 }

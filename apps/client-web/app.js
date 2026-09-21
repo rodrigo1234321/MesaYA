@@ -1395,6 +1395,7 @@ function openDishDetailSheet(item, categoryId) {
   if (imgEl) {
     const defaultImg = 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80';
     imgEl.src = sanitizeUrl(item.imageUrl, defaultImg);
+    imgEl.alt = item.name ? `Fotografía de ${item.name}` : 'Plato del menú';
   }
   if (titleEl) titleEl.textContent = item.name;
   if (descEl) descEl.textContent = item.description || 'Elaborado artesanalmente en el momento con ingredientes frescos de primera calidad.';
@@ -3104,9 +3105,11 @@ async function loadBillDetails() {
       const isHidden = el.modalBillItemsContainer.classList.contains('hidden');
       if (isHidden) {
         el.modalBillItemsContainer.classList.remove('hidden');
+        el.btnToggleBillDetails.setAttribute('aria-expanded', 'true');
         if (el.accordionArrow) el.accordionArrow.style.transform = 'rotate(180deg)';
       } else {
         el.modalBillItemsContainer.classList.add('hidden');
+        el.btnToggleBillDetails.setAttribute('aria-expanded', 'false');
         if (el.accordionArrow) el.accordionArrow.style.transform = 'rotate(0deg)';
       }
     });

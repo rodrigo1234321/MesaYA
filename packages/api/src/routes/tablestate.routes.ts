@@ -65,37 +65,6 @@ export async function tableStateRoutes(fastify: FastifyInstance) {
 
       return reply.send(result);
     } catch (err: any) {
-      if (err.code === 'TABLE_NOT_FOUND' || err.statusCode === 404) {
-        return reply.status(404).send({
-          error: 'TABLE_NOT_FOUND',
-          message: err.message
-        });
-      }
-
-      if (err.code === 'MISSING_TARGET_STATE' || err.statusCode === 400) {
-        return reply.status(400).send({
-          error: 'MISSING_TARGET_STATE',
-          message: err.message
-        });
-      }
-
-      if (err.code === 'STATE_CONFLICT' || err.statusCode === 409) {
-        return reply.status(409).send({
-          error: err.code || 'STATE_CONFLICT',
-          code: err.code || 'STATE_CONFLICT',
-          message: err.message,
-          details: err.details
-        });
-      }
-
-      if (err.code === 'INVALID_TRANSITION' || err.statusCode === 422) {
-        return reply.status(422).send({
-          error: 'INVALID_TRANSITION',
-          message: err.message,
-          details: err.details
-        });
-      }
-
       return sendSanitizedError(reply, err);
     }
   });
@@ -163,11 +132,6 @@ export async function tableStateRoutes(fastify: FastifyInstance) {
 
       return reply.send(result);
     } catch (err: any) {
-      const status = err.statusCode || 500;
-      const code = err.code || 'OVERRIDE_FAILED';
-      if (status !== 500) {
-        return reply.status(status).send({ error: code, message: err.message, details: err.details });
-      }
       return sendSanitizedError(reply, err);
     }
   });

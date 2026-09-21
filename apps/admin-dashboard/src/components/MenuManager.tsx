@@ -70,6 +70,15 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
 
   // Category Collapsed state
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({});
+  const [feedback, setFeedback] = useState<{ message: string; isError?: boolean } | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [actionSubmitting, setActionSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(null), 4000);
+    return () => clearTimeout(timer);
+  }, [feedback]);
 
   const clientPreviewUrl = (import.meta.env.VITE_CLIENT_URL as string) ||
     (typeof window !== 'undefined'
@@ -84,7 +93,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
       if (data.restaurant.themeColor) setBrandColor(data.restaurant.themeColor);
       if (data.restaurant.coverImageUrl) setBrandCover(data.restaurant.coverImageUrl);
     } catch (err) {
-      console.error('Error al cargar menú:', err);
+      setFeedback({ message: err instanceof Error ? err.message : 'Error al cargar la carta digital.', isError: true });
     } finally {
       setLoading(false);
     }
@@ -240,8 +249,9 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
       await AdminApi.updateMenuItem(restaurantId, item.id, {
         isAvailable: !item.isAvailable
       });
+      setFeedback({ message: `Disponibilidad de "${item.name}" actualizada.` });
     } catch (err) {
-      console.error(err);
+      setFeedback({ message: err instanceof Error ? err.message : 'Error al cambiar disponibilidad.', isError: true });
       loadMenu();
     }
   };
@@ -250,8 +260,9 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
     if (isNaN(newPrice) || newPrice < 0) return;
     try {
       await AdminApi.updateMenuItem(restaurantId, itemId, { price: newPrice });
+      setFeedback({ message: 'Precio actualizado con éxito.' });
     } catch (err) {
-      console.error(err);
+      setFeedback({ message: err instanceof Error ? err.message : 'Error al actualizar el precio.', isError: true });
       loadMenu();
     }
   };
@@ -260,9 +271,10 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
     if (!window.confirm('¿Eliminar este plato de la carta?')) return;
     try {
       await AdminApi.deleteMenuItem(restaurantId, itemId);
+      setFeedback({ message: 'Plato eliminado de la carta.' });
       loadMenu();
     } catch (err) {
-      console.error(err);
+      setFeedback({ message: err instanceof Error ? err.message : 'Error al eliminar el plato.', isError: true });
     }
   };
 
@@ -270,28 +282,36 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
     if (!window.confirm(`¿Eliminar la categoría "${name}" y todos sus platos?`)) return;
     try {
       await AdminApi.deleteCategory(restaurantId, catId);
+      setFeedback({ message: `Categoría "${name}" eliminada.` });
       loadMenu();
     } catch (err) {
-      console.error(err);
+      setFeedback({ message: err instanceof Error ? err.message : 'Error al eliminar la categoría.', isError: true });
     }
   };
 
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
+    setActionSubmitting(true);
+    setModalError(null);
     try {
       await AdminApi.createCategory(restaurantId, newCatName.trim(), newCatIcon);
       setNewCatName('');
       setShowAddCategoryModal(false);
+      setFeedback({ message: 'Categoría creada con éxito.' });
       loadMenu();
     } catch (err) {
-      console.error(err);
+      setModalError(err instanceof Error ? err.message : 'Error al crear la categoría.');
+    } finally {
+      setActionSubmitting(false);
     }
   };
 
   const handleCreateItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showAddItemModal || !newItemName.trim() || newItemPrice === '') return;
+    setActionSubmitting(true);
+    setModalError(null);
     try {
       await AdminApi.createMenuItem(restaurantId, {
         categoryId: showAddItemModal,
@@ -311,23 +331,31 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
       setNewItemTags([]);
       setNewItemFeatured(false);
       setShowAddItemModal(null);
+      setFeedback({ message: `Plato "${newItemName.trim()}" agregado al menú.` });
       loadMenu();
     } catch (err) {
-      console.error(err);
+      setModalError(err instanceof Error ? err.message : 'Error al crear el plato.');
+    } finally {
+      setActionSubmitting(false);
     }
   };
 
   const handleSaveBranding = async (e: React.FormEvent) => {
     e.preventDefault();
+    setActionSubmitting(true);
+    setModalError(null);
     try {
       await AdminApi.updateBranding(restaurantId, {
         themeColor: brandColor,
         coverImageUrl: brandCover.trim() || undefined
       });
       setShowBrandingModal(false);
+      setFeedback({ message: 'Identidad y estilo de carta guardados.' });
       loadMenu();
     } catch (err) {
-      console.error(err);
+      setModalError(err instanceof Error ? err.message : 'Error al guardar la identidad visual.');
+    } finally {
+      setActionSubmitting(false);
     }
   };
 
@@ -360,6 +388,27 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
 
   return (
     <div className="space-y-6">
+      {feedback && (
+        <div
+          role="alert"
+          className={`p-3.5 rounded-2xl border text-xs font-semibold flex items-center justify-between transition-all ${
+            feedback.isError
+              ? 'bg-rose-500/20 border-rose-500/30 text-rose-200'
+              : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-200'
+          }`}
+        >
+          <span>{feedback.message}</span>
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            className="text-slate-400 hover:text-white text-xs px-2 py-0.5 rounded"
+            aria-label="Cerrar notificación"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* TOP HEADER & ACTION BAR */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-900/90 border border-slate-800 p-5 rounded-3xl shadow-xl">
         <div>
@@ -608,6 +657,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
                       onClick={() => handleDeleteCategory(cat.id, cat.name)}
                       className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-all"
                       title="Eliminar categoría"
+                      aria-label={`Eliminar categoría ${cat.name}`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -615,6 +665,8 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
                     <button
                       onClick={() => setCollapsedCats((prev) => ({ ...prev, [cat.id]: !isCollapsed }))}
                       className="p-1.5 text-slate-400 hover:text-white"
+                      aria-expanded={!isCollapsed}
+                      aria-label={`${isCollapsed ? 'Desplegar' : 'Plegar'} categoría ${cat.name}`}
                     >
                       {isCollapsed ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
                     </button>
@@ -729,6 +781,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
                                   onClick={() => handleDeleteItem(item.id)}
                                   className="p-1 text-slate-500 hover:text-rose-400 transition-colors"
                                   title="Eliminar plato"
+                                  aria-label={`Eliminar plato ${item.name}`}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -750,18 +803,24 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
           MODAL: IMPORTAR DESDE EXCEL / CSV
       ========================================== */}
       {showImportModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-import-title"
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4"
+        >
           <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 space-y-5 max-h-[90vh] flex flex-col shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-base font-extrabold text-white">
+                <h3 id="modal-import-title" className="text-base font-extrabold text-white">
                   Carga Masiva de Menú (Excel / CSV)
                 </h3>
               </div>
               <button
                 onClick={() => setShowImportModal(false)}
                 className="text-slate-400 hover:text-white font-bold"
+                aria-label="Cerrar modal"
               >
                 ✕
               </button>
@@ -898,21 +957,31 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
           MODAL: NUEVA CATEGORÍA
       ========================================== */}
       {showAddCategoryModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="add-category-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleCreateCategory}
             className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl"
           >
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-extrabold text-white">Nueva Categoría de Carta</h3>
+              <h3 id="add-category-title" className="text-base font-extrabold text-white">Nueva Categoría de Carta</h3>
               <button
                 type="button"
-                onClick={() => setShowAddCategoryModal(false)}
+                onClick={() => {
+                  setModalError(null);
+                  setShowAddCategoryModal(false);
+                }}
                 className="text-slate-400 hover:text-white font-bold"
+                aria-label="Cerrar modal"
               >
                 ✕
               </button>
             </div>
+
+            {modalError && (
+              <div role="alert" className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs font-semibold">
+                {modalError}
+              </div>
+            )}
 
             <div className="space-y-3 text-xs">
               <div>
@@ -923,6 +992,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
                       key={icon}
                       type="button"
                       onClick={() => setNewCatIcon(icon)}
+                      aria-label={`Seleccionar ícono ${icon}`}
                       className={`w-9 h-9 rounded-xl text-lg flex items-center justify-center border transition-all ${
                         newCatIcon === icon
                           ? 'bg-indigo-600/30 border-indigo-500 scale-110'
@@ -951,16 +1021,20 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
               <button
                 type="button"
-                onClick={() => setShowAddCategoryModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                onClick={() => {
+                  setModalError(null);
+                  setShowAddCategoryModal(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+                disabled={actionSubmitting}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-indigo-600/30"
               >
-                Crear Categoría
+                {actionSubmitting ? 'Creando...' : 'Crear Categoría'}
               </button>
             </div>
           </form>
@@ -971,21 +1045,31 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
           MODAL: NUEVO PLATO
       ========================================== */}
       {showAddItemModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="add-item-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleCreateItem}
             className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-extrabold text-white">Agregar Plato a la Carta</h3>
+              <h3 id="add-item-title" className="text-base font-extrabold text-white">Agregar Plato a la Carta</h3>
               <button
                 type="button"
-                onClick={() => setShowAddItemModal(null)}
+                onClick={() => {
+                  setModalError(null);
+                  setShowAddItemModal(null);
+                }}
                 className="text-slate-400 hover:text-white font-bold"
+                aria-label="Cerrar modal"
               >
                 ✕
               </button>
             </div>
+
+            {modalError && (
+              <div role="alert" className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs font-semibold">
+                {modalError}
+              </div>
+            )}
 
             <div className="space-y-3 text-xs">
               <div>
@@ -1085,16 +1169,20 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
               <button
                 type="button"
-                onClick={() => setShowAddItemModal(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                onClick={() => {
+                  setModalError(null);
+                  setShowAddItemModal(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+                disabled={actionSubmitting}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-indigo-600/30"
               >
-                Guardar Plato
+                {actionSubmitting ? 'Guardando...' : 'Guardar Plato'}
               </button>
             </div>
           </form>
@@ -1105,7 +1193,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
           MODAL: PERSONALIZACIÓN DE MARCA
       ========================================== */}
       {showBrandingModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="branding-modal-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleSaveBranding}
             className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl"
@@ -1113,16 +1201,26 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <Palette className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base font-extrabold text-white">Marca & Estilo Visual</h3>
+                <h3 id="branding-modal-title" className="text-base font-extrabold text-white">Marca & Estilo Visual</h3>
               </div>
               <button
                 type="button"
-                onClick={() => setShowBrandingModal(false)}
+                onClick={() => {
+                  setModalError(null);
+                  setShowBrandingModal(false);
+                }}
                 className="text-slate-400 hover:text-white font-bold"
+                aria-label="Cerrar modal"
               >
                 ✕
               </button>
             </div>
+
+            {modalError && (
+              <div role="alert" className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs font-semibold">
+                {modalError}
+              </div>
+            )}
 
             <div className="space-y-3 text-xs">
               <div>
@@ -1158,16 +1256,20 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
               <button
                 type="button"
-                onClick={() => setShowBrandingModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                onClick={() => {
+                  setModalError(null);
+                  setShowBrandingModal(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs"
+                disabled={actionSubmitting}
+                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-extrabold text-xs transition-all shadow-md shadow-amber-500/30"
               >
-                Guardar Cambios
+                {actionSubmitting ? 'Guardando...' : 'Guardar Cambios'}
               </button>
             </div>
           </form>

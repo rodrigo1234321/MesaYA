@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AdminApi, TableItem, RestaurantItem } from './lib/api';
+import { AdminApi, TableItem, RestaurantItem, ShiftItem } from './lib/api';
 import { TablesManager } from './components/TablesManager';
 import { MenuManager } from './components/MenuManager';
 import { ShiftManager } from './components/ShiftManager';
@@ -9,6 +9,7 @@ import { ModuleConfigManager } from './components/ModuleConfigManager';
 import { FloorPlanManager } from './components/FloorPlan/FloorPlanManager';
 import { RTMSAnalyticsView } from './components/RTMSAnalyticsView';
 import { SalesManager } from './components/SalesManager';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Utensils, LayoutGrid, BookOpen, Users, BarChart3, RefreshCw, Plus, Store, ChevronDown, Sliders, Map, DollarSign } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -31,25 +32,25 @@ export const App: React.FC = () => {
     else if (e.key === 'End') nextIndex = activeTabOrder.length - 1;
     if (nextIndex !== null) {
       e.preventDefault();
-      const next = activeTabOrder[nextIndex];
-      setActiveTab(next);
-      document.getElementById(`admin-tab-${next}`)?.focus();
+      const targetTab = activeTabOrder[nextIndex];
+      setActiveTab(targetTab);
+      document.getElementById(`admin-tab-${targetTab}`)?.focus();
     }
   };
+  const [floorPlanRefreshKey, setFloorPlanRefreshKey] = useState(0);
   const [tables, setTables] = useState<TableItem[]>([]);
-  const [currentShift, setCurrentShift] = useState<any>(null);
+  const [currentShift, setCurrentShift] = useState<ShiftItem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [authRequired, setAuthRequired] = useState(!AdminApi.getAuthToken());
+  const [authRequired, setAuthRequired] = useState(false);
   const [loginPin, setLoginPin] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
-  const [floorPlanRefreshKey, setFloorPlanRefreshKey] = useState(0);
 
-  // New Restaurant Onboarding Modal State
+  // SaaS Register states
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [regName, setRegName] = useState('');
   const [regSlug, setRegSlug] = useState('');
-  const [regPin, setRegPin] = useState('1234');
+  const [regPin, setRegPin] = useState('');
   const [regTablesCount, setRegTablesCount] = useState(6);
   const [regTemplate, setRegTemplate] = useState('GOURMET_OBSIDIAN');
   const [regError, setRegError] = useState<string | null>(null);
@@ -368,58 +369,101 @@ export const App: React.FC = () => {
       <main className="pb-12">
         {activeTab === 'floorplan' && (
           <div role="tabpanel" id="admin-panel-floorplan" aria-labelledby="admin-tab-floorplan">
-          <FloorPlanManager restaurantSlug={selectedSlug} refreshKey={floorPlanRefreshKey} />
+            <ErrorBoundary
+              isolate
+              fallbackTitle="Error en Plano de Salón"
+              fallbackMessage="Ocurrió un problema al cargar el editor de plano interactivo. Puedes reintentar."
+            >
+              <FloorPlanManager restaurantSlug={selectedSlug} refreshKey={floorPlanRefreshKey} />
+            </ErrorBoundary>
           </div>
         )}
         {activeTab === 'tables' && (
           <div role="tabpanel" id="admin-panel-tables" aria-labelledby="admin-tab-tables">
-          <TablesManager
-            tables={tables}
-            restaurantId={activeRestaurant.id}
-            restaurantSlug={activeRestaurant.slug}
-            onRefresh={loadData}
-          />
+            <ErrorBoundary
+              isolate
+              fallbackTitle="Error en Gestión de Mesas"
+              fallbackMessage="Ocurrió un problema al cargar el listado de mesas y códigos QR. Puedes reintentar."
+              onReset={loadData}
+            >
+              <TablesManager
+                tables={tables}
+                restaurantId={activeRestaurant.id}
+                restaurantSlug={activeRestaurant.slug}
+                onRefresh={loadData}
+              />
+            </ErrorBoundary>
           </div>
         )}
         {activeTab === 'menu' && (
           <div role="tabpanel" id="admin-panel-menu" aria-labelledby="admin-tab-menu">
-          <MenuManager
-            restaurantId={selectedSlug}
-          />
+            <ErrorBoundary
+              isolate
+              fallbackTitle="Error en Carta Digital"
+              fallbackMessage="Ocurrió un problema al cargar el catálogo de platos y precios. Puedes reintentar."
+            >
+              <MenuManager
+                restaurantId={selectedSlug}
+              />
+            </ErrorBoundary>
           </div>
         )}
         {activeTab === 'modules' && (
           <div role="tabpanel" id="admin-panel-modules" aria-labelledby="admin-tab-modules">
-          <ModuleConfigManager
-            restaurantId={activeRestaurant.id}
-          />
+            <ErrorBoundary
+              isolate
+              fallbackTitle="Error en Configuración de Módulos"
+              fallbackMessage="Ocurrió un problema al cargar la configuración de módulos. Puedes reintentar."
+            >
+              <ModuleConfigManager
+                restaurantId={activeRestaurant.id}
+              />
+            </ErrorBoundary>
           </div>
         )}
         {activeTab === 'staff' && (
           <div role="tabpanel" id="admin-panel-staff" aria-labelledby="admin-tab-staff">
-          <StaffManager
-            restaurantId={activeRestaurant.id}
-          />
+            <ErrorBoundary
+              isolate
+              fallbackTitle="Error en Gestión de Personal"
+              fallbackMessage="Ocurrió un problema al cargar el personal y mozos. Puedes reintentar."
+            >
+              <StaffManager
+                restaurantId={activeRestaurant.id}
+              />
+            </ErrorBoundary>
           </div>
         )}
         {activeTab === 'metrics' && (
           <div role="tabpanel" id="admin-panel-metrics" aria-labelledby="admin-tab-metrics">
-          <div className="space-y-8">
-            {/* E18: el backend resuelve id o slug; se pasa el slug canónico
-                porque el prop se llama restaurantSlug y el plano se resuelve por local. */}
-            <RTMSAnalyticsView restaurantSlug={activeRestaurant.slug || activeRestaurant.id} />
-            <div className="pt-6 border-t border-slate-800">
-              <h3 className="text-sm font-bold text-slate-400 mb-4 uppercase tracking-wider">
-                Métricas Clásicas de Servicio & Mozo
-              </h3>
-              <MetricsView restaurantId={activeRestaurant.id} />
-            </div>
-          </div>
+            <ErrorBoundary
+              isolate
+              fallbackTitle="Error en Métricas y Analíticas"
+              fallbackMessage="Ocurrió un problema al cargar las analíticas del restaurante. Puedes reintentar."
+            >
+              <div className="space-y-8">
+                {/* E18: el backend resuelve id o slug; se pasa el slug canónico
+                    porque el prop se llama restaurantSlug y el plano se resuelve por local. */}
+                <RTMSAnalyticsView restaurantSlug={activeRestaurant.slug || activeRestaurant.id} />
+                <div className="pt-6 border-t border-slate-800">
+                  <h3 className="text-sm font-bold text-slate-400 mb-4 uppercase tracking-wider">
+                    Métricas Clásicas de Servicio & Mozo
+                  </h3>
+                  <MetricsView restaurantId={activeRestaurant.id} />
+                </div>
+              </div>
+            </ErrorBoundary>
           </div>
         )}
         {activeTab === 'sales' && (
           <div role="tabpanel" id="admin-panel-sales" aria-labelledby="admin-tab-sales">
-          <SalesManager restaurantId={activeRestaurant.id} />
+            <ErrorBoundary
+              isolate
+              fallbackTitle="Error en Módulo de Ventas"
+              fallbackMessage="Ocurrió un problema al cargar los cierres de caja y ventas. Puedes reintentar."
+            >
+              <SalesManager restaurantId={activeRestaurant.id} />
+            </ErrorBoundary>
           </div>
         )}
       </main>

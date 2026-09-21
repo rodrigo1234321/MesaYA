@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { StaffApi } from '../lib/api';
+import { StaffApi, type StaffTableItemDTO } from '../lib/api';
+import type { RestaurantMenuResponse, MenuCategoryDTO, MenuItemDTO } from '@mesaya/shared';
 import {
   UtensilsCrossed,
   Clock,
@@ -62,8 +63,8 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
 
   // Modal para que el mozo cargue una comanda a mano
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [tables, setTables] = useState<any[]>([]);
-  const [menu, setMenu] = useState<any>(null);
+  const [tables, setTables] = useState<StaffTableItemDTO[]>([]);
+  const [menu, setMenu] = useState<RestaurantMenuResponse | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string>('');
   const [selectedItems, setSelectedItems] = useState<{ menuItemId: string; name: string; quantity: number; notes: string }[]>([]);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -132,8 +133,11 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
     };
   }, [restaurantId]);
 
+  const [modalError, setModalError] = useState<string | null>(null);
+
   const openNewOrderModal = async () => {
     setIsModalOpen(true);
+    setModalError(null);
     setSelectedItems([]);
     try {
       const [tablesData, menuData] = await Promise.all([
@@ -146,11 +150,11 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
       }
       setMenu(menuData || null);
     } catch (err) {
-      console.error('Error al cargar datos para comanda:', err);
+      setModalError(err instanceof Error ? err.message : 'No se pudieron cargar las mesas o la carta para crear la comanda.');
     }
   };
 
-  const handleAddItemToForm = (item: any) => {
+  const handleAddItemToForm = (item: MenuItemDTO) => {
     setSelectedItems(prev => {
       const existing = prev.find(i => i.menuItemId === item.id);
       if (existing) {
@@ -167,6 +171,7 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
   const handleSubmitOrder = async () => {
     if (!selectedTableId || selectedItems.length === 0) return;
     setSubmitting(true);
+    setModalError(null);
     try {
       // Una comanda presencial es una tanda única y atómica. El endpoint
       // legado por ítem queda disponible para compatibilidad, pero no debe
@@ -181,7 +186,7 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
       setSelectedItems([]);
       await fetchOrders();
     } catch (err: any) {
-      alert(err.message || 'Error al enviar pedido a cocina');
+      setModalError(err?.message || 'Error al enviar pedido a cocina. Por favor reintenta.');
     } finally {
       setSubmitting(false);
     }
@@ -630,22 +635,33 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
 
       {/* MODAL: CARGAR COMANDA MANUAL A MESA */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="kitchen-order-modal-title" className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
           <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-lg p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
-                <h3 className="font-extrabold text-base text-white flex items-center gap-2">
+                <h3 id="kitchen-order-modal-title" className="font-extrabold text-base text-white flex items-center gap-2">
                   <span>🍳 Cargar Comanda a Mesa</span>
                 </h3>
                 <p className="text-xs text-slate-400">Toma de pedido presencial por el mozo</p>
               </div>
               <button
-                onClick={() => setIsModalOpen(false)}
+                type="button"
+                onClick={() => {
+                  setModalError(null);
+                  setIsModalOpen(false);
+                }}
                 className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center hover:text-white"
+                aria-label="Cerrar modal"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {modalError && (
+              <div role="alert" className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs font-semibold">
+                {modalError}
+              </div>
+            )}
 
             {/* Select Table */}
             <div className="space-y-1">
@@ -666,11 +682,11 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
             {/* Dishes Selection */}
             <div className="flex-1 overflow-y-auto space-y-3 pr-1">
               <span className="text-xs font-bold text-slate-300 block">Elegir Platos de la Carta:</span>
-              {menu?.categories?.map((cat: any) => (
+              {menu?.categories?.map((cat: MenuCategoryDTO) => (
                 <div key={cat.id} className="space-y-1.5">
                   <h4 className="text-[11px] font-extrabold text-amber-400 uppercase tracking-wider">{cat.name}</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {cat.items?.map((item: any) => (
+                    {cat.items?.map((item: MenuItemDTO) => (
                       <button
                         key={item.id}
                         type="button"
@@ -713,6 +729,7 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
                     <button
                       type="button"
                       onClick={() => handleRemoveItemFromForm(it.menuItemId)}
+                      aria-label={`Eliminar ${it.name} de la comanda`}
                       className="text-red-400 hover:text-red-300 p-1"
                     >
                       ✕

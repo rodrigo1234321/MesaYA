@@ -102,13 +102,6 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
       const result = await floorPlanService.updateFloorPlan(restaurant.id, parsed.data);
       return reply.send(result);
     } catch (err: any) {
-      if (err.statusCode === 400 || err.statusCode === 404 || err.statusCode === 409) {
-        return reply.status(err.statusCode).send({
-          error: err.code || 'FLOOR_PLAN_ERROR',
-          message: err.message,
-          ...(err.details !== undefined && { details: err.details })
-        });
-      }
       return sendSanitizedError(reply, err);
     }
   });
@@ -163,13 +156,6 @@ export async function floorPlanRoutes(fastify: FastifyInstance) {
       const result = await floorPlanService.updateTablePosition(tableId, parsed.data);
       return reply.send(result);
     } catch (err: any) {
-      if (err.statusCode === 400 || err.statusCode === 404 || err.statusCode === 409) {
-        return reply.status(err.statusCode).send({
-          error: err.code || 'TABLE_POSITION_ERROR',
-          message: err.message,
-          ...(err.details !== undefined && { details: err.details })
-        });
-      }
       return sendSanitizedError(reply, err);
     }
   });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FloorTableDTO,
   TableFSMState,
@@ -30,6 +30,10 @@ import {
   TreePine
 } from 'lucide-react';
 
+const isBrightHexColor = (hex: string): boolean => {
+  return ['#eab308', '#22c55e', '#f97316'].some(c => hex.toLowerCase() === c.toLowerCase());
+};
+
 interface TableActionModalProps {
   table: FloorTableDTO | null;
   onClose: () => void;
@@ -57,6 +61,17 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
   const [newLabel, setNewLabel] = useState(table?.label || '');
   const [targetMergeId, setTargetMergeId] = useState('');
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    if (!table) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isEditingLabel) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [table, isEditingLabel, onClose]);
 
   if (!table) return null;
 
@@ -193,7 +208,12 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="table-action-modal-title"
+        className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+      >
         {/* Header with Table Label and Current State Banner */}
         <div
           className="p-5 flex items-center justify-between border-b border-slate-800 shrink-0"
@@ -217,12 +237,14 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
                   />
                   <button
                     onClick={handleSaveLabel}
+                    aria-label="Guardar nombre"
                     className="p-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950"
                   >
                     <Check className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => setIsEditingLabel(false)}
+                    aria-label="Cancelar renombrado"
                     className="p-1 rounded-lg bg-slate-800 text-slate-400"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -230,7 +252,7 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
                 </div>
               ) : (
                 <div className="flex items-center gap-2 group">
-                  <h2 className="text-xl font-bold text-white tracking-wide">{table.label}</h2>
+                  <h2 id="table-action-modal-title" className="text-xl font-bold text-white tracking-wide">{table.label}</h2>
                   <button
                     onClick={() => {
                       setNewLabel(table.label);
@@ -238,6 +260,7 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
                     }}
                     className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800"
                     title="Renombrar Mesa"
+                    aria-label="Renombrar Mesa"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
@@ -257,6 +280,7 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
 
           <button
             onClick={onClose}
+            aria-label="Cerrar modal de mesa"
             className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/80 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -310,14 +334,18 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
               </div>
               <div className="flex items-center gap-1.5">
                 <button
+                  type="button"
                   onClick={() => handleCapacityChange(-1)}
+                  aria-label="Disminuir capacidad de mesa"
                   className="w-5 h-5 rounded bg-slate-750 hover:bg-slate-700 text-white text-xs font-bold flex items-center justify-center"
                 >
                   -
                 </button>
                 <span className="text-xs font-black text-white px-1">{table.capacity || 4}</span>
                 <button
+                  type="button"
                   onClick={() => handleCapacityChange(1)}
+                  aria-label="Aumentar capacidad de mesa"
                   className="w-5 h-5 rounded bg-slate-750 hover:bg-slate-700 text-white text-xs font-bold flex items-center justify-center"
                 >
                   +
@@ -406,7 +434,7 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
 
           {/* Error Message */}
           {error && (
-            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 flex items-center gap-2 text-rose-300 text-sm">
+            <div role="alert" className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 flex items-center gap-2 text-rose-300 text-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -417,14 +445,22 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
             <button
               onClick={handleNextAction}
               disabled={loading}
-              className="w-full py-3.5 px-6 rounded-xl font-bold text-white text-base shadow-lg flex items-center justify-center gap-3 transition-transform active:scale-[0.98] disabled:opacity-50"
+              className={`w-full py-3.5 px-6 rounded-xl text-base shadow-lg flex items-center justify-center gap-3 transition-transform active:scale-[0.98] disabled:opacity-50 ${
+                isBrightHexColor(nextVisual.hex) ? 'font-black text-slate-950' : 'font-bold text-white'
+              }`}
               style={{
                 backgroundColor: nextVisual.hex,
                 boxShadow: `0 4px 20px ${nextVisual.hex}40`
               }}
             >
               {loading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div
+                  className={`w-5 h-5 border-2 rounded-full animate-spin ${
+                    isBrightHexColor(nextVisual.hex)
+                      ? 'border-slate-950/30 border-t-slate-950'
+                      : 'border-white/30 border-t-white'
+                  }`}
+                />
               ) : (
                 <>
                   <span>{STATE_EMOJIS[nextState]}</span>

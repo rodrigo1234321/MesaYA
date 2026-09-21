@@ -1,4 +1,13 @@
-import { Sector, MetricsDTO, RestaurantMenuResponse, MenuCategoryDTO, MenuItemDTO, BatchMenuImportDTO } from '@mesaya/shared';
+import {
+  Sector,
+  MetricsDTO,
+  RestaurantMenuResponse,
+  MenuCategoryDTO,
+  MenuItemDTO,
+  BatchMenuImportDTO,
+  RestaurantModuleConfigDTO,
+  UpdateModuleConfigDTO
+} from '@mesaya/shared';
 
 export const API_BASE = (
   (import.meta.env.VITE_API_URL as string) ||
@@ -11,6 +20,15 @@ export const API_BASE = (
       })()
     : 'http://localhost:3000/v1')
 ).replace(/\/$/, '');
+
+export interface ShiftItem {
+  id: string;
+  restaurantId: string;
+  openedAt: string;
+  closedAt: string | null;
+  shiftNumber?: number;
+  label?: string | null;
+}
 
 export interface TableItem {
   id: string;
@@ -147,7 +165,7 @@ export class AdminApi {
     return res.json();
   }
 
-  static async getCurrentShift(restaurantId: string) {
+  static async getCurrentShift(restaurantId: string): Promise<ShiftItem | null> {
     const res = await fetch(`${API_BASE}/shifts/current?restaurantId=${restaurantId}`, {
       headers: this.getAuthHeaders({ isJson: false })
     });
@@ -229,7 +247,19 @@ export class AdminApi {
     return res.json();
   }
 
-  static async createMenuItem(slugOrId: string, data: any): Promise<MenuItemDTO> {
+  static async createMenuItem(
+    slugOrId: string,
+    data: {
+      categoryId: string;
+      name: string;
+      description?: string;
+      price: number;
+      imageUrl?: string;
+      tags?: string[];
+      isFeatured?: boolean;
+      isAvailable?: boolean;
+    }
+  ): Promise<MenuItemDTO> {
     const res = await fetch(`${API_BASE}/restaurants/${slugOrId}/menu/items`, {
       method: 'POST',
       headers: this.getAuthHeaders(),
@@ -239,7 +269,7 @@ export class AdminApi {
     return res.json();
   }
 
-  static async updateMenuItem(slugOrId: string, itemId: string, data: any): Promise<MenuItemDTO> {
+  static async updateMenuItem(slugOrId: string, itemId: string, data: Partial<MenuItemDTO>): Promise<MenuItemDTO> {
     const res = await fetch(`${API_BASE}/restaurants/${slugOrId}/menu/items/${itemId}`, {
       method: 'PATCH',
       headers: this.getAuthHeaders(),
@@ -305,7 +335,7 @@ export class AdminApi {
   }
 
   // --- CONFIGURACIÓN MODULAR & FEATURE FLAGS ---
-  static async getModuleConfig(restaurantId: string) {
+  static async getModuleConfig(restaurantId: string): Promise<RestaurantModuleConfigDTO> {
     const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/config`, {
       headers: this.getAuthHeaders({ isJson: false })
     });
@@ -313,7 +343,7 @@ export class AdminApi {
     return res.json();
   }
 
-  static async updateModuleConfig(restaurantId: string, data: any) {
+  static async updateModuleConfig(restaurantId: string, data: UpdateModuleConfigDTO): Promise<RestaurantModuleConfigDTO> {
     const res = await fetch(`${API_BASE}/admin/restaurants/${restaurantId}/config`, {
       method: 'PATCH',
       headers: this.getAuthHeaders(),

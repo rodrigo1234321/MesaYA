@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { PollingCoordinator } from '@mesaya/shared';
+import { PollingCoordinator, type FloorPlanResponseDTO } from '@mesaya/shared';
 import { useFloorPlanStore } from '../stores/useFloorPlanStore';
 import { AdminApi } from '../lib/api';
 
@@ -18,9 +18,9 @@ export function useFloorPlanSSE(restaurantSlug: string, refreshKey = 0) {
   setIsConnectedRef.current = setIsConnected;
 
   // Crear el coordinador una sola vez (estable durante la vida del hook)
-  const coordinatorRef = useRef<PollingCoordinator<any> | null>(null);
+  const coordinatorRef = useRef<PollingCoordinator<FloorPlanResponseDTO> | null>(null);
   if (!coordinatorRef.current) {
-    coordinatorRef.current = new PollingCoordinator<any>({
+    coordinatorRef.current = new PollingCoordinator<FloorPlanResponseDTO>({
       fetchFn: (slug, signal) => AdminApi.getFloorPlan(slug, signal),
       onData: () => {},       // se sobrescribe abajo en cada render
       onConnectionChange: () => {},
@@ -28,7 +28,7 @@ export function useFloorPlanSSE(restaurantSlug: string, refreshKey = 0) {
       maxBackoffMs: 15000,
       isHidden: () => typeof document !== 'undefined' && document.hidden,
       isAuthError: (err: unknown) => {
-        const e = err as any;
+        const e = err as { statusCode?: number; code?: string } | null;
         return e?.statusCode === 401 || e?.code === 'ADMIN_UNAUTHORIZED';
       }
     });
@@ -37,7 +37,7 @@ export function useFloorPlanSSE(restaurantSlug: string, refreshKey = 0) {
   // Actualizar callbacks del coordinador en cada render
   const coordinator = coordinatorRef.current;
 
-  coordinator.onData = (data: any) => {
+  coordinator.onData = (data: FloorPlanResponseDTO) => {
     if (data && Array.isArray(data.tables)) {
       handleSnapshotRef.current(data.tables);
     }
@@ -80,3 +80,8 @@ export function useFloorPlanSSE(restaurantSlug: string, refreshKey = 0) {
     };
   }, [restaurantSlug, coordinator, refreshKey]);
 }
+
+/**
+ * Nombre canónico alineado con el comportamiento real del hook (PollingCoordinator).
+ */
+export const useFloorPlanPolling = useFloorPlanSSE;

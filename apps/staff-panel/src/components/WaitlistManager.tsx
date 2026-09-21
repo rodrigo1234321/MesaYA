@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { StaffApi } from '../lib/api';
-import { WaitlistEntryDTO, WaitlistStatus, TableFSMState } from '@mesaya/shared';
+import { StaffApi, type StaffTableItemDTO } from '../lib/api';
+import { WaitlistEntryDTO, WaitlistStatus, TableFSMState, type FloorTableDTO } from '@mesaya/shared';
 import { Users, Phone, Clock, BellRing, Check, RefreshCw, ShoppingBag, AlertCircle } from 'lucide-react';
 
 interface Props {
@@ -34,8 +34,8 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
 
       if (floorPlanData && floorPlanData.tables) {
         const free = floorPlanData.tables
-          .filter((t: any) => t.currentState === TableFSMState.AVAILABLE)
-          .map((t: any) => ({
+          .filter((t: FloorTableDTO) => t.currentState === TableFSMState.AVAILABLE)
+          .map((t: FloorTableDTO) => ({
             id: t.id,
             label: t.label,
             capacity: t.capacity,
@@ -45,8 +45,8 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
       } else {
         const tables = await StaffApi.getTables(restaurantId).catch(() => []);
         const free = (tables || [])
-          .filter((t: any) => !t.currentState || t.currentState === TableFSMState.AVAILABLE)
-          .map((t: any) => ({
+          .filter((t: StaffTableItemDTO) => !t.currentState || t.currentState === TableFSMState.AVAILABLE)
+          .map((t: StaffTableItemDTO) => ({
             id: t.id,
             label: t.label,
             capacity: t.capacity,
@@ -54,9 +54,9 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
           }));
         setAvailableTables(free);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error al cargar fila y mesas:', err);
-      setErrorMessage(err.message || 'Error al actualizar información');
+      setErrorMessage(err instanceof Error ? err.message : 'Error al actualizar información');
     } finally {
       setLoading(false);
     }
@@ -64,7 +64,7 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 5000);
+    const interval = setInterval(loadData, 10000);
     return () => clearInterval(interval);
   }, [restaurantId]);
 
@@ -73,9 +73,9 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
     try {
       await StaffApi.callWaitlistGuest(id);
       await loadData();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error al llamar:', err);
-      setErrorMessage(err.message || 'Error al llamar comensal');
+      setErrorMessage(err instanceof Error ? err.message : 'Error al llamar comensal');
     }
   };
 
@@ -94,9 +94,9 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
         return copy;
       });
       await loadData();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error al sentar:', err);
-      setErrorMessage(err.message || 'Error al sentar comensal en la mesa elegida');
+      setErrorMessage(err instanceof Error ? err.message : 'Error al sentar comensal en la mesa elegida');
     } finally {
       setSeatingId(null);
     }

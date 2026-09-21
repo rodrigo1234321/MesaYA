@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { getEnvironmentConfig, STAFF_JWT_EXPIRES_IN } from '../lib/environment';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
 import { sendSanitizedError } from '../lib/errorHandler';
+import { isValidPinFormat } from '@mesaya/shared';
 
 export async function authRoutes(fastify: FastifyInstance) {
   // 1. List all restaurants for admin selector / platform directory
@@ -47,16 +48,16 @@ export async function authRoutes(fastify: FastifyInstance) {
         name,
         slug,
         managerName = 'Administrador',
-        pin = '1234',
+        pin,
         templateId = 'GOURMET_OBSIDIAN',
         themeColor = '#f59e0b',
         tablesCount = 5,
         coverImageUrl
-      } = request.body as {
-        name: string;
-        slug: string;
+      } = (request.body || {}) as {
+        name?: string;
+        slug?: string;
         managerName?: string;
-        pin: string;
+        pin?: string;
         templateId?: string;
         themeColor?: string;
         tablesCount?: number;
@@ -65,6 +66,14 @@ export async function authRoutes(fastify: FastifyInstance) {
 
       if (!name || !name.trim() || !slug || !slug.trim()) {
         return reply.status(400).send({ error: 'El nombre y el slug del restaurante son requeridos' });
+      }
+
+      if (!pin || !isValidPinFormat(pin.trim())) {
+        return reply.status(400).send({
+          code: 'INVALID_PIN',
+          error: 'INVALID_PIN',
+          message: 'El PIN de administrador es obligatorio y debe contener entre 4 y 6 dígitos numéricos.'
+        });
       }
 
       const cleanSlug = slug

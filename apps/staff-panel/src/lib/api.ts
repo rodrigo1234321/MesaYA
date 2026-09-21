@@ -1,4 +1,26 @@
-import { CallEventData, CallStatus, StaffLoginDTO, StaffUserDTO, ServiceTaskClaimDTO, ServiceTaskKind, ServiceWorkspaceDTO } from '@mesaya/shared';
+import {
+  CallEventData,
+  CallStatus,
+  StaffLoginDTO,
+  StaffUserDTO,
+  ServiceTaskClaimDTO,
+  ServiceTaskKind,
+  ServiceWorkspaceDTO,
+  RestaurantMenuResponse,
+  TableFSMState,
+  Sector
+} from '@mesaya/shared';
+
+export interface StaffTableItemDTO {
+  id: string;
+  label: string;
+  sector: Sector | string;
+  isOutdoor?: boolean;
+  capacity?: number;
+  currentState?: TableFSMState;
+  activeToken?: string | null;
+  expiresAt?: string | null;
+}
 
 export const API_BASE = (
   (import.meta.env.VITE_API_URL as string) ||
@@ -518,13 +540,13 @@ export class StaffApi {
     return data;
   }
 
-  static async getMenu(restaurantSlugOrId: string) {
+  static async getMenu(restaurantSlugOrId: string): Promise<RestaurantMenuResponse> {
     const res = await fetch(`${API_BASE}/restaurants/${restaurantSlugOrId}/menu`);
     if (!res.ok) throw new Error('Error al cargar carta');
     return res.json();
   }
 
-  static async getTables(restaurantId: string) {
+  static async getTables(restaurantId: string): Promise<StaffTableItemDTO[]> {
     const res = await fetch(`${API_BASE}/restaurants/${restaurantId}/tables`, {
       headers: this.getAuthHeaders()
     });

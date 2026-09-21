@@ -15,6 +15,8 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ restaurantId }) => {
   const [role, setRole] = useState('WAITER');
   const [sector, setSector] = useState<Sector>(Sector.SALON_PRINCIPAL);
   const [error, setError] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const loadStaff = async () => {
     try {
@@ -33,15 +35,18 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ restaurantId }) => {
     e.preventDefault();
     if (!name || !pin) return;
 
+    setSubmitting(true);
+    setModalError(null);
     try {
-      setError(null);
       await AdminApi.createStaff(restaurantId, name, pin, role, role === 'WAITER' ? sector : undefined);
       setShowAddModal(false);
       setName('');
       setPin('');
       loadStaff();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo registrar el personal.');
+      setModalError(err instanceof Error ? err.message : 'No se pudo registrar el personal.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -54,7 +59,10 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ restaurantId }) => {
         </div>
         <button
           type="button"
-          onClick={() => setShowAddModal(true)}
+          onClick={() => {
+            setModalError(null);
+            setShowAddModal(true);
+          }}
           className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-600/30 active:scale-95 transition-all"
         >
           <Plus className="w-4 h-4" />
@@ -94,9 +102,15 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ restaurantId }) => {
       </div>
 
       {showAddModal && (
-        <div role="dialog" aria-modal="true" aria-label="Alta de personal" className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-label="Alta de personal" aria-labelledby="staff-modal-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleCreate} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
-            <h3 className="text-base font-bold text-white">Alta de Personal</h3>
+            <h3 id="staff-modal-title" className="text-base font-bold text-white">Alta de Personal</h3>
+
+            {modalError && (
+              <div role="alert" className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs font-semibold">
+                {modalError}
+              </div>
+            )}
 
             <div className="space-y-3 text-xs">
               <div>
@@ -157,16 +171,20 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ restaurantId }) => {
             <div className="flex items-center space-x-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowAddModal(false)}
-                className="w-1/2 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs"
+                onClick={() => {
+                  setModalError(null);
+                  setShowAddModal(false);
+                }}
+                className="w-1/2 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs hover:bg-slate-700 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="w-1/2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs"
+                disabled={submitting}
+                className="w-1/2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-indigo-600/30 transition-all"
               >
-                Guardar
+                {submitting ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
           </form>

@@ -1,3 +1,4 @@
+import type { Restaurant } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import {
   GenerateMenuAiDTO,
@@ -354,7 +355,7 @@ export class AIService {
   }
 
   private static deterministicDietaryAnswer(
-    restaurant: any,
+    restaurant: Restaurant | { name: string },
     items: MenuItemDTO[],
     intent: 'allergy' | 'gluten' | 'vegan' | 'vegetarian',
     budgetMax: number | null = null
@@ -474,7 +475,7 @@ Moneda / Precios: Pesos Argentinos (ARS) en escala realista actual de restaurant
 
   // --- LLAMADA A GEMINI PARA SOMMELIER (con timeout y modelos reales) ---
   private static async callGeminiForSommelier(
-    restaurant: any,
+    restaurant: Restaurant | { name: string },
     activeItems: MenuItemDTO[],
     query: string,
     apiKey: string

@@ -1,10 +1,11 @@
 import { randomUUID } from 'crypto';
+import type { Shift } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { eventBus } from '../lib/eventBus';
 
 export class ShiftService {
   static async openShift(restaurantId: string) {
-    let committed: { shift: any; sessionsCount: number; tablesCount: number } | null = null;
+    let committed: { shift: Shift; sessionsCount: number; tablesCount: number } | null = null;
     for (let attempt = 0; attempt < 2 && !committed; attempt += 1) {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 3 * 60 * 60 * 1000); // 3 hours TTL

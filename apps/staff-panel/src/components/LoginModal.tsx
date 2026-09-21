@@ -112,12 +112,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
 
   return (
     <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 my-auto">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="login-modal-title"
+        className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 my-auto"
+      >
         <div className="text-center space-y-2">
           <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center mx-auto shadow-inner shadow-indigo-500/20">
             <Lock className="w-7 h-7" />
           </div>
-          <h2 className="text-xl font-black text-white tracking-tight">Panel Mozo / Staff</h2>
+          <h2 id="login-modal-title" className="text-xl font-black text-white tracking-tight">Panel Mozo / Staff</h2>
           <p className="text-xs text-slate-400">
             Terminal compartido · ingresá tu PIN de 4 a 6 dígitos
           </p>
@@ -126,8 +131,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
         {/* Restaurant selector for multi-tenancy */}
         {restaurantsList.length > 0 && (
           <div className="space-y-1">
-            <label className="block text-[11px] font-semibold text-slate-400">Restaurante / Local</label>
+            <label htmlFor="restaurant-select" className="block text-[11px] font-semibold text-slate-400">Restaurante / Local</label>
             <select
+              id="restaurant-select"
               value={slug}
               onChange={(e) => setSlug(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
@@ -178,6 +184,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
             type="button"
             disabled={loading}
             onClick={handleBackspace}
+            aria-label="Borrar dígito"
             className="py-3 rounded-2xl bg-slate-800/50 hover:bg-slate-800 text-sm font-bold text-slate-400 active:scale-95 transition-all border border-slate-800"
           >
             ⌫
@@ -194,6 +201,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
             type="button"
             disabled={loading || pin.length < 4 || pin.length > 6}
             onClick={() => doLogin(pin)}
+            aria-label="Ingresar al sistema"
             className="py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold flex items-center justify-center shadow-lg shadow-indigo-600/40 active:scale-95 transition-all"
           >
             {loading ? (

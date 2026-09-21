@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { AdminApi } from '../lib/api';
+import { AdminApi, type ShiftItem } from '../lib/api';
 import { Play, Square, RefreshCw, ShieldCheck, Clock } from 'lucide-react';
 
 interface ShiftManagerProps {
-  currentShift: any;
+  currentShift: ShiftItem | null;
   restaurantId: string;
   onRefresh: () => void;
 }
@@ -23,15 +23,16 @@ export const ShiftManager: React.FC<ShiftManagerProps> = ({ currentShift, restau
     try {
       await AdminApi.openShift(restaurantId);
       onRefresh();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setError(err.message || 'No se pudo abrir el turno');
+      setError(err instanceof Error ? err.message : 'No se pudo abrir el turno');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCloseShift = async () => {
+    if (!currentShift) return;
     if (!window.confirm('¿Cerrar el turno actual? Se invalidarán todas las sesiones activas en el salón.')) {
       return;
     }
@@ -40,9 +41,9 @@ export const ShiftManager: React.FC<ShiftManagerProps> = ({ currentShift, restau
     try {
       await AdminApi.closeShift(currentShift.id, restaurantId);
       onRefresh();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setError(err.message || 'No se pudo cerrar el turno');
+      setError(err instanceof Error ? err.message : 'No se pudo cerrar el turno');
     } finally {
       setLoading(false);
     }
@@ -71,7 +72,7 @@ export const ShiftManager: React.FC<ShiftManagerProps> = ({ currentShift, restau
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              {isShiftActive
+              {isShiftActive && currentShift
                 ? `Iniciado: ${new Date(currentShift.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Tokens rotativos vigentes`
                 : 'No hay turno activo. Abre el turno para habilitar los llamados de mesas.'}
             </p>
@@ -113,7 +114,7 @@ export const ShiftManager: React.FC<ShiftManagerProps> = ({ currentShift, restau
       </div>
 
       {error && (
-        <div className="rounded-xl bg-rose-500/15 border border-rose-500/30 px-3 py-2 text-xs font-semibold text-rose-200">
+        <div role="alert" className="rounded-xl bg-rose-500/15 border border-rose-500/30 px-3 py-2 text-xs font-semibold text-rose-200">
           {error}
         </div>
       )}

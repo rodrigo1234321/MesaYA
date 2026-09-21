@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import type { StaffUser } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { StaffLoginDTO, StaffUserDTO, Sector, isValidPinFormat } from '@mesaya/shared';
 
@@ -19,7 +20,7 @@ export class StaffService {
     return crypto.createHmac('sha256', pepper).update(`${restaurantId}:${pin}`).digest('hex');
   }
 
-  static async login(dto: StaffLoginDTO): Promise<{ staffUser: StaffUserDTO; rawUser: any }> {
+  static async login(dto: StaffLoginDTO): Promise<{ staffUser: StaffUserDTO; rawUser: StaffUser }> {
     const restaurant = await prisma.restaurant.findUnique({
       where: { slug: dto.restaurantSlug }
     });

@@ -1,4 +1,3 @@
-import Fastify from 'fastify';
 import path from 'path';
 import Module from 'module';
 

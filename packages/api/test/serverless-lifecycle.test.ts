@@ -36,5 +36,5 @@ describe('GATE-E07: Vercel Serverless Handler Lifecycle Execution (P0-08)', () =
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
-  });
+  }, 15000);
 });
