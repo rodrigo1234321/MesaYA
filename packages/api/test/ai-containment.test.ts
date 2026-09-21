@@ -89,14 +89,15 @@ function fakeRestaurant(rows: ReturnType<typeof itemRow>[]) {
 }
 
 function geminiJsonResponse(payload: unknown) {
-  return {
-    ok: true,
-    status: 200,
-    text: async () => '',
-    json: async () => ({
+  return new Response(
+    JSON.stringify({
       candidates: [{ content: { parts: [{ text: JSON.stringify(payload) }] } }]
-    })
-  };
+    }),
+    {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    }
+  );
 }
 
 beforeEach(() => {
@@ -152,14 +153,12 @@ describe('Etapa 04 — Contención IA', () => {
   it('respuesta inválida del proveedor: degradado explícito sin categorías inventadas', async () => {
     process.env.ENABLE_AI_FEATURES = 'true';
     process.env.GEMINI_API_KEY = 'g-ficticia';
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () => '',
-      json: async () => ({
+    fetchMock.mockResolvedValue(new Response(
+      JSON.stringify({
         candidates: [{ content: { parts: [{ text: 'esto no es un json válido ###' }] } }]
-      })
-    });
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } }
+    ));
 
     const res = await AIService.generateMenu({ prompt: 'concepto ficticio' });
 
@@ -429,11 +428,10 @@ describe('Etapa 04 — Contención IA', () => {
       process.env.GEMINI_MODEL = 'gemini-1.5-flash';
       process.env.GEMINI_FALLBACK_MODEL = 'gemini-1.5-pro';
 
-      fetchMock.mockResolvedValue({
-        ok: false,
+      fetchMock.mockResolvedValue(new Response('Service Unavailable', {
         status: 503,
-        text: async () => 'Service Unavailable'
-      });
+        headers: { 'content-type': 'text/plain' }
+      }));
 
       const res = await AIService.generateMenu({ prompt: 'concepto hamburguesas smash' });
 

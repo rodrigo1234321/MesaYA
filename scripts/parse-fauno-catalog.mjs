@@ -86,6 +86,15 @@ function blockForPrice(priceIndex) {
   return lines.slice(start, priceIndex).map((line) => line.trim()).filter(Boolean);
 }
 
+function slugify(value) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 for (const priceIndex of priceIndexes) {
   const categoryIndex = lastIndexBefore([...categoryIndexes.keys()].sort((a, b) => a - b), priceIndex);
   if (categoryIndex < 0) continue;
@@ -104,7 +113,9 @@ for (const priceIndex of priceIndexes) {
   const price = parsePrice(priceLine.exec(lines[priceIndex].trim())[1]);
   const tags = tagsFor(categoryName, name, description);
   const isAvailable = !tags.includes('COMING_SOON');
+  const externalId = `${slugify(categoryName)}__${slugify(name)}`;
   categories.get(categoryName).items.push({
+    externalId,
     name,
     description: description || null,
     price,

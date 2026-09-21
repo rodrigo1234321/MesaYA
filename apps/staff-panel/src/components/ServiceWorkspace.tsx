@@ -8,6 +8,7 @@ import {
   ServiceAccountDTO,
   ServiceTaskDTO,
   ServiceWorkspaceDTO,
+  SplitOperation,
   StaffUserDTO,
   TableFSMState,
   STATE_LABELS
@@ -226,6 +227,13 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
   const [reauthAccount, setReauthAccount] = useState<ServiceAccountDTO | null>(null);
   const [reauthPin, setReauthPin] = useState('');
   const [reauthSubmitting, setReauthSubmitting] = useState(false);
+  // E05 split-bill draft per session and pending reauth split
+  const [splitModeBySession, setSplitModeBySession] = useState<Record<string, SplitOperation['mode'] | ''>>({});
+  const [splitValueBySession, setSplitValueBySession] = useState<Record<string, string>>({});
+  const [splitPartIndexBySession, setSplitPartIndexBySession] = useState<Record<string, string>>({});
+  const [reauthSplit, setReauthSplit] = useState<SplitOperation | null>(null);
+  const [phoneBySession, setPhoneBySession] = useState<Record<string, string>>({});
+  const [rewardsConsentBySession, setRewardsConsentBySession] = useState<Record<string, boolean>>({});
   const settlementKeys = useRef(new Map<string, string>());
   const queueRef = useRef<HTMLElement | null>(null);
   const tableContextRef = useRef<HTMLDivElement | null>(null);
@@ -265,6 +273,7 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
           if (!reauthSubmitting) {
             setReauthAccount(null);
             setReauthPin('');
+            setReauthSplit(null);
           }
           return;
         }
@@ -398,6 +407,7 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
   const accounts = snapshot?.accounts || [];
   const tasks = snapshot?.tasks || [];
   const allowWaitersToCollectCash = Boolean(snapshot?.allowWaitersToCollectCash);
+  const allowSplitBill = Boolean(snapshot?.allowSplitBill);
   const availableSectors = useMemo(() => {
     const sectors = new Set(tasks.map((task) => task.sector).filter(Boolean));
     return ['ALL', ...[...sectors].sort((a, b) => sectorLabel(a).localeCompare(sectorLabel(b), 'es'))];
@@ -673,6 +683,9 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
     if (code === 'IDEMPOTENCY_KEY_REUSED') {
       return 'Ese reintento cambió algún dato (monto, método o propina). Repetilo con exactamente los mismos valores o actualizá la mesa.';
     }
+    if (code === 'SPLIT_PART_ALREADY_SETTLED') {
+      return 'Esa parte ya fue cobrada. Elegí otra parte pendiente o actualizá la mesa.';
+    }
     if (code === 'BALANCE_REMAINING' || code === 'PENDING_ITEMS' || code === 'DRAFT_UNRESOLVED' || code === 'PENDING_VALIDATION_UNRESOLVED') {
       return `${err?.message || 'Quedan pedidos o tandas pendientes antes de cerrar.'} Registrá el pago parcial con "Registrar pago y mantener mesa" o resolvé los pendientes.`;
     }
@@ -694,7 +707,7 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
   // E10: cobro directo por comandos canónicos, sin cadena claim -> settle -> resolve.
   // Clave idempotente determinista por sesión+versión+modo: el reintento con los
   // mismos valores no duplica; cambiar monto/método/propina crea otra intención.
-  const runSettlement = async (account: ServiceAccountDTO, mode: SettleMode, authToken?: string): Promise<boolean> => {
+  const runSettlement = async (account: ServiceAccountDTO, mode: SettleMode, authToken?: string, split?: SplitOperation | null): Promise<boolean> => {
     if (account.account.saldoMinor <= 0) {
       setActionError('La cuenta ya no tiene saldo pendiente; actualizando la mesa.');
       await refresh();
@@ -715,31 +728,93 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
         ? tipBySession[account.tableSessionId]
         : (Number(account.requestedTipMinor || 0) / 100).toFixed(2);
       const tipMinor = Math.max(0, Math.round(Number(tipInput || 0) * 100));
-      const amountMinor = Math.max(0, Math.round(Number(account.account.saldoMinor) || 0));
+      // E05: si hay split, el amountMinor debe coincidir con la operación
+      let amountMinor = Math.max(0, Math.round(Number(account.account.saldoMinor) || 0));
+      let splitForPayload: SplitOperation | undefined;
+      if (split) {
+        splitForPayload = split;
+        if (split.mode === 'FIXED') {
+          amountMinor = Math.max(0, Math.round(Number(split.amountMinor) || 0));
+        } else if (split.mode === 'PERCENTAGE') {
+          const pct = Number(split.percentage);
+          if (!Number.isInteger(pct) || pct < 1 || pct > 100) {
+            setActionError('Porcentaje inválido: debe ser entero entre 1 y 100.');
+            return false;
+          }
+          amountMinor = Math.max(0, Math.round(Number(account.account.saldoMinor) * pct / 100));
+        } else if (split.mode === 'EQUAL_PARTS') {
+          const parts = Math.max(1, Math.round(Number(split.parts) || 0));
+          const pIdx = split.partIndex !== undefined ? Math.round(Number(split.partIndex)) : NaN;
+          if (!Number.isFinite(parts) || parts < 2) {
+            setActionError('Cantidad de partes inválida: mínimo 2.');
+            return false;
+          }
+          if (!Number.isFinite(pIdx) || pIdx < 1 || pIdx > parts) {
+            setActionError('Elegí la parte actual 1..N.');
+            return false;
+          }
+          const consumo = Number(account.account.consumoMinor) || 0;
+          const base = Math.floor(consumo / parts);
+          const rem = consumo % parts;
+          amountMinor = base + (pIdx <= rem ? 1 : 0);
+        }
+        if (amountMinor <= 0 || amountMinor > Number(account.account.saldoMinor)) {
+          setActionError('El monto de la parte supera el saldo pendiente o es cero.');
+          return false;
+        }
+      }
       const normMethod = String(paymentMethod).toUpperCase();
-      const keyId = [mode, account.tableSessionId, account.account.version, normMethod, amountMinor, tipMinor].join(':');
+      const splitKey = splitForPayload ? `${splitForPayload.mode}:${splitForPayload.amountMinor ?? ''}:${splitForPayload.percentage ?? ''}:${splitForPayload.parts ?? ''}:${splitForPayload.partIndex ?? ''}` : 'nosplit';
+      const customerPhone = phoneBySession[account.tableSessionId]?.trim() || undefined;
+      const rewardsConsent = Boolean(rewardsConsentBySession[account.tableSessionId]);
+      const rewardsKey = customerPhone && rewardsConsent ? customerPhone : 'norewards';
+      const keyId = [mode, account.tableSessionId, account.account.version, normMethod, amountMinor, tipMinor, splitKey, rewardsKey].join(':');
       let idempotencyKey = settlementKeys.current.get(keyId);
       if (!idempotencyKey) {
-        idempotencyKey = `service-${mode}-${account.tableSessionId}-${account.account.version}-${normMethod}-${amountMinor}-${tipMinor}`;
+        idempotencyKey = `service-${mode}-${account.tableSessionId}-${account.account.version}-${normMethod}-${amountMinor}-${tipMinor}-${splitKey}-${rewardsKey}`;
         settlementKeys.current.set(keyId, idempotencyKey);
       }
       const responsibleStaffUserId = responsibleBySession[account.tableSessionId]
         || account.responsibleStaffUserId
         || currentUser.id;
-      const payload = {
+      const payload: {
+        idempotencyKey: string;
+        expectedAccountVersion: string;
+        method: string;
+        amountMinor: number;
+        tipMinor: number;
+        responsibleStaffUserId: string;
+        split?: SplitOperation;
+        customerPhone?: string;
+        rewardsConsent?: boolean;
+      } = {
         idempotencyKey,
         expectedAccountVersion: account.account.version,
         method: paymentMethod,
-        amountMinor: account.account.saldoMinor,
+        amountMinor,
         tipMinor,
-        responsibleStaffUserId
+        responsibleStaffUserId,
+        customerPhone: customerPhone || undefined,
+        rewardsConsent: rewardsConsent || undefined
       };
+      if (splitForPayload) payload.split = splitForPayload;
+      let settleRes: any;
       if (mode === 'close') {
-        await StaffApi.settleAndCloseSessionAccount(account.tableSessionId, payload, authToken);
+        settleRes = await StaffApi.settleAndCloseSessionAccount(account.tableSessionId, payload, authToken);
       } else {
-        await StaffApi.settleSessionAccount(account.tableSessionId, payload, authToken);
+        settleRes = await StaffApi.settleSessionAccount(account.tableSessionId, payload, authToken);
+      }
+      if (settleRes?.rewards?.warning) {
+        setActionError(`Cobro registrado. Rewards requiere revisión: ${settleRes.rewards.warning}`);
       }
       setTipBySession((prev) => ({ ...prev, [account.tableSessionId]: '' }));
+      setPhoneBySession((prev) => ({ ...prev, [account.tableSessionId]: '' }));
+      setRewardsConsentBySession((prev) => ({ ...prev, [account.tableSessionId]: false }));
+      if (splitForPayload) {
+        setSplitValueBySession((prev) => ({ ...prev, [account.tableSessionId]: '' }));
+        setSplitModeBySession((prev) => ({ ...prev, [account.tableSessionId]: '' }));
+        setSplitPartIndexBySession((prev) => ({ ...prev, [account.tableSessionId]: '' }));
+      }
       requestTableContext(account.tableId);
       await refresh();
       return true;
@@ -761,7 +836,8 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
   // E12 (S12/S13/H05): permiso específico de cobro en efectivo.
   // Si allowWaitersToCollectCash está activo y el método es efectivo, el mozo puede liquidar directamente.
   // Para métodos digitales/tarjeta o si el permiso está inactivo, se solicita PIN temporal de encargado.
-  const handleCollect = async (account: ServiceAccountDTO, mode: SettleMode) => {
+  // E05: si se solicita cobro parcial, se arrastra la operación de split por la rama de reauth.
+  const handleCollect = async (account: ServiceAccountDTO, mode: SettleMode, split?: SplitOperation | null) => {
     const selectedMethod = paymentMethodBySession[account.tableSessionId] || waiterPaymentForRequested(account.requestedPaymentMethod);
     const isCash = selectedMethod === 'WAITER_CASH';
     const canCollectDirectly = currentUser.role === 'MANAGER' || (allowWaitersToCollectCash && isCash);
@@ -769,11 +845,12 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
     if (!canCollectDirectly) {
       setReauthAccount(account);
       setReauthMode(mode);
+      setReauthSplit(split ?? null);
       setReauthPin('');
       setActionError(null);
       return;
     }
-    await runSettlement(account, mode);
+    await runSettlement(account, mode, undefined, split);
   };
 
   const handleReauthSubmit = async () => {
@@ -792,10 +869,11 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
       if (credentials.staffUser.role !== 'MANAGER' || credentials.staffUser.restaurantId !== currentUser.restaurantId) {
         throw new Error('El PIN no corresponde a un Encargado de este restaurante.');
       }
-      const collected = await runSettlement(reauthAccount, reauthMode, credentials.token);
+      const collected = await runSettlement(reauthAccount, reauthMode, credentials.token, reauthSplit);
       if (collected) {
         setReauthAccount(null);
         setReauthPin('');
+        setReauthSplit(null);
       }
     } catch (err: any) {
       setActionError(err?.message || 'No se pudo reautorizar el cobro. La cuenta permanece sin cambios.');
@@ -1134,9 +1212,20 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
                 responsibleStaffUserId={selectedAccount ? (responsibleBySession[selectedAccount.tableSessionId] || selectedAccount.responsibleStaffUserId || currentUser.id) : currentUser.id}
                 setResponsibleStaffUserId={(value) => selectedAccount && setResponsibleBySession((prev) => ({ ...prev, [selectedAccount.tableSessionId]: value }))}
                 hasManualDraft={Boolean(manualDraftsByTableId[selectedTable.id]?.length)}
+                allowSplitBill={allowSplitBill}
+                splitMode={(selectedAccount ? (splitModeBySession[selectedAccount.tableSessionId] || '') : '') as SplitOperation['mode'] | ''}
+                splitValue={selectedAccount ? (splitValueBySession[selectedAccount.tableSessionId] || '') : ''}
+                splitPartIndex={selectedAccount ? (splitPartIndexBySession[selectedAccount.tableSessionId] || '') : ''}
+                setSplitMode={(value) => selectedAccount && setSplitModeBySession((prev) => ({ ...prev, [selectedAccount.tableSessionId]: value }))}
+                setSplitValue={(value) => selectedAccount && setSplitValueBySession((prev) => ({ ...prev, [selectedAccount.tableSessionId]: value }))}
+                setSplitPartIndex={(value) => selectedAccount && setSplitPartIndexBySession((prev) => ({ ...prev, [selectedAccount.tableSessionId]: value }))}
+                rewardsPhone={selectedAccount ? (phoneBySession[selectedAccount.tableSessionId] || '') : ''}
+                setRewardsPhone={(value) => selectedAccount && setPhoneBySession((prev) => ({ ...prev, [selectedAccount.tableSessionId]: value }))}
+                rewardsConsent={selectedAccount ? Boolean(rewardsConsentBySession[selectedAccount.tableSessionId]) : false}
+                setRewardsConsent={(value) => selectedAccount && setRewardsConsentBySession((prev) => ({ ...prev, [selectedAccount.tableSessionId]: value }))}
                 onAction={(task) => void handleTask(task)}
                 onReject={(task) => void handleRejectTask(task)}
-                onSettle={(account, mode) => void handleCollect(account, mode)}
+                onSettle={(account, mode, split) => void handleCollect(account, mode, split)}
                 onMarkClean={(tableId, label) => void handleMarkClean(tableId, label)}
                 onAddOrder={() => void openManualOrder()}
                 onCloseTable={() => void handleCloseTable()}
@@ -1247,7 +1336,7 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
           submitting={reauthSubmitting}
           onPinChange={setReauthPin}
           onSubmit={() => void handleReauthSubmit()}
-          onClose={() => { if (!reauthSubmitting) { setReauthAccount(null); setReauthPin(''); } }}
+          onClose={() => { if (!reauthSubmitting) { setReauthAccount(null); setReauthPin(''); setReauthSplit(null); } }}
         />
       )}
     </section>
@@ -1450,19 +1539,66 @@ const TableContextPanel: React.FC<{
   responsibleStaffUserId?: string;
   setResponsibleStaffUserId?: (value: string) => void;
   hasManualDraft?: boolean;
+  allowSplitBill?: boolean;
+  splitMode: SplitOperation['mode'] | '';
+  splitValue: string;
+  splitPartIndex: string;
+  setSplitMode: (value: SplitOperation['mode'] | '') => void;
+  setSplitValue: (value: string) => void;
+  setSplitPartIndex: (value: string) => void;
+  rewardsPhone?: string;
+  setRewardsPhone?: (value: string) => void;
+  rewardsConsent?: boolean;
+  setRewardsConsent?: (value: boolean) => void;
   onAction: (task: ServiceTaskDTO) => void;
   onReject: (task: ServiceTaskDTO) => void;
-  onSettle: (account: ServiceAccountDTO, mode: 'keep' | 'close') => void;
+  onSettle: (account: ServiceAccountDTO, mode: 'keep' | 'close', split?: SplitOperation | null) => void;
   onMarkClean: (tableId: string, label: string) => void;
   onAddOrder: () => void;
   onCloseTable: () => void;
   onClose: () => void;
-}> = ({ table, tasks, account, currentUser, actionBusy, paymentMethod, setPaymentMethod, tip, setTip, responsibleStaffUserId, setResponsibleStaffUserId, hasManualDraft, onAction, onReject, onSettle, onMarkClean, onAddOrder, onCloseTable, onClose }) => {
+}> = ({ table, tasks, account, currentUser, actionBusy, paymentMethod, setPaymentMethod, tip, setTip, responsibleStaffUserId, setResponsibleStaffUserId, hasManualDraft, allowSplitBill, splitMode, splitValue, splitPartIndex, setSplitMode, setSplitValue, setSplitPartIndex, rewardsPhone, setRewardsPhone, rewardsConsent, setRewardsConsent, onAction, onReject, onSettle, onMarkClean, onAddOrder, onCloseTable, onClose }) => {
   const [collectOpen, setCollectOpen] = useState(false);
   const [showTipInput, setShowTipInput] = useState(false);
   const balance = account?.account.saldoMinor || 0;
+  const consumo = account?.account.consumoMinor || 0;
   const enteredTipMinor = Math.max(0, Math.round(Number(tip || 0) * 100));
   const totalToCollect = balance + enteredTipMinor;
+  // E05 split preview/validation (local derivation, no endpoint) — EQUAL_PARTS sobre consumoMinor
+  const splitValidation = (() => {
+    if (!allowSplitBill || !account || balance <= 0 || !splitMode) return { error: null as string | null, previewMinor: null as number | null, split: null as SplitOperation | null, aria: '' };
+    const raw = (splitValue || '').trim();
+    if (!raw) return { error: null, previewMinor: null, split: null, aria: 'Seleccioná un valor para la parte.' };
+    if (splitMode === 'FIXED') {
+      const n = Number(raw.replace(',', '.'));
+      if (!Number.isFinite(n) || n <= 0) return { error: 'Monto inválido.', previewMinor: null, split: null, aria: 'Monto inválido.' };
+      const minor = Math.round(n * 100);
+      if (minor <= 0 || minor > balance) return { error: `Debe ser mayor a 0 y no superar ${formatMinor(balance)}.`, previewMinor: null, split: null, aria: `Debe ser mayor a 0 y no superar ${formatMinor(balance)}.` };
+      return { error: null, previewMinor: minor, split: { mode: 'FIXED', amountMinor: minor } as SplitOperation, aria: `Parte fija de ${formatMinor(minor)} sobre saldo ${formatMinor(balance)}.` };
+    }
+    if (splitMode === 'PERCENTAGE') {
+      const n = Number(raw.replace(',', '.'));
+      if (!Number.isInteger(n) || n < 1 || n > 100) return { error: 'Porcentaje debe ser un entero entre 1 y 100.', previewMinor: null, split: null, aria: 'Porcentaje debe ser un entero entre 1 y 100.' };
+      const minor = Math.round(balance * n / 100);
+      if (minor <= 0 || minor > balance) return { error: 'Porcentaje genera monto fuera de rango.', previewMinor: null, split: null, aria: 'Porcentaje genera monto fuera de rango.' };
+      return { error: null, previewMinor: minor, split: { mode: 'PERCENTAGE', percentage: n } as SplitOperation, aria: `${n}% de ${formatMinor(balance)} = ${formatMinor(minor)}.` };
+    }
+    if (splitMode === 'EQUAL_PARTS') {
+      const parts = Number(raw);
+      if (!Number.isInteger(parts) || parts < 2 || parts > 20) return { error: 'Partes: entero entre 2 y 20.', previewMinor: null, split: null, aria: 'Partes: entero entre 2 y 20.' };
+      const pIdxRaw = (splitPartIndex || '').trim();
+      if (!pIdxRaw) return { error: 'Elegí la parte actual 1..N.', previewMinor: null, split: null, aria: 'Elegí la parte actual 1..N.' };
+      const pIdx = Number(pIdxRaw);
+      if (!Number.isInteger(pIdx) || pIdx < 1 || pIdx > parts) return { error: `Parte debe ser entre 1 y ${parts}.`, previewMinor: null, split: null, aria: `Parte debe ser entre 1 y ${parts}.` };
+      const base = Math.floor(consumo / parts);
+      const rem = consumo % parts;
+      const minor = base + (pIdx <= rem ? 1 : 0);
+      if (minor <= 0) return { error: 'Parte genera monto fuera de rango.', previewMinor: null, split: null, aria: 'Parte genera monto fuera de rango.' };
+      if (minor > balance) return { error: `La parte ${pIdx} (${formatMinor(minor)}) supera el saldo pendiente ${formatMinor(balance)}.`, previewMinor: null, split: null, aria: `La parte ${pIdx} supera el saldo.` };
+      return { error: null, previewMinor: minor, split: { mode: 'EQUAL_PARTS', parts, partIndex: pIdx } as SplitOperation, aria: `${parts} partes sobre ${formatMinor(consumo)}: parte ${pIdx}=${formatMinor(minor)} · saldo ${formatMinor(balance)}.` };
+    }
+    return { error: null, previewMinor: null, split: null, aria: '' };
+  })();
   const isToClean = table.currentState === TableFSMState.TO_CLEAN;
   const hasOpenOccupancy = [
     TableFSMState.OCCUPIED_NO_ORDER,
@@ -1702,6 +1838,109 @@ const TableContextPanel: React.FC<{
                         </button>
                       </div>
                     )}
+                  </div>
+                  {allowSplitBill && account && balance > 0 && (
+                    <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-2.5 space-y-2">
+                      <p className="text-xs font-black text-slate-200">Dividir cuenta</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="sr-only" htmlFor={`split-mode-${account.tableSessionId}`}>Modo de división</label>
+                        <select
+                          id={`split-mode-${account.tableSessionId}`}
+                          value={splitMode}
+                          onChange={(e) => setSplitMode(e.target.value as SplitOperation['mode'] | '')}
+                          className="min-h-[44px] rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-xs font-semibold text-white focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+                          aria-label="Modo de división"
+                        >
+                          <option value="">Sin división</option>
+                          <option value="FIXED">Monto fijo</option>
+                          <option value="PERCENTAGE">Porcentaje</option>
+                          <option value="EQUAL_PARTS">Partes iguales</option>
+                        </select>
+                        <label className="sr-only" htmlFor={`split-value-${account.tableSessionId}`}>Valor de división</label>
+                        <input
+                          id={`split-value-${account.tableSessionId}`}
+                          value={splitValue}
+                          onChange={(e) => setSplitValue(e.target.value)}
+                          placeholder={splitMode === 'FIXED' ? 'Ej: 1500.00' : splitMode === 'PERCENTAGE' ? 'Ej: 50' : splitMode === 'EQUAL_PARTS' ? 'Ej: 3' : 'Valor'}
+                          inputMode={splitMode === 'EQUAL_PARTS' ? 'numeric' : 'decimal'}
+                          type="text"
+                          disabled={!splitMode}
+                          aria-label={splitMode === 'FIXED' ? 'Monto fijo en pesos' : splitMode === 'PERCENTAGE' ? 'Porcentaje 1 a 100' : splitMode === 'EQUAL_PARTS' ? 'Cantidad de partes' : 'Valor de división'}
+                          aria-invalid={Boolean(splitValidation.error)}
+                          aria-describedby={`split-preview-${account.tableSessionId} split-error-${account.tableSessionId}`}
+                          className="min-h-[44px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white placeholder:text-slate-500 focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none disabled:opacity-50"
+                        />
+                      </div>
+                      {splitMode === 'EQUAL_PARTS' && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="text-xs font-bold text-slate-300 flex items-center" htmlFor={`split-part-${account.tableSessionId}`}>Parte actual 1..N</label>
+                          <select
+                            id={`split-part-${account.tableSessionId}`}
+                            value={splitPartIndex}
+                            onChange={(e) => setSplitPartIndex(e.target.value)}
+                            disabled={!splitValue || Number.isNaN(Number(splitValue)) || Number(splitValue) < 2}
+                            aria-label="Parte actual"
+                            className="min-h-[44px] rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-xs font-semibold text-white focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none disabled:opacity-50"
+                          >
+                            <option value="">Elegir parte…</option>
+                            {(() => {
+                              const n = Number(splitValue);
+                              if (!Number.isInteger(n) || n < 2 || n > 20) return null;
+                              return Array.from({ length: n }, (_, i) => i + 1).map((idx) => (
+                                <option key={idx} value={String(idx)}>Parte {idx} de {n}</option>
+                              ));
+                            })()}
+                          </select>
+                        </div>
+                      )}
+                      {splitMode && (
+                        <>
+                          <p id={`split-preview-${account.tableSessionId}`} className="text-xs font-mono text-emerald-200" aria-live="polite">
+                            {splitValidation.error ? '' : splitValidation.previewMinor !== null ? `Vista previa: ${formatMinor(splitValidation.previewMinor)} ${splitMode === 'EQUAL_PARTS' ? `parte ${splitPartIndex} de ${splitValue}` : 'a cobrar'} · Consumo ${formatMinor(consumo)} · Saldo ${formatMinor(balance)}` : 'Ingresá un valor.'}
+                          </p>
+                          <p id={`split-error-${account.tableSessionId}`} className="text-xs text-rose-300" role={splitValidation.error ? 'alert' : undefined} aria-live="polite">
+                            {splitValidation.error || ''}
+                          </p>
+                          <span className="sr-only" aria-live="polite">{splitValidation.aria}</span>
+                          <button
+                            type="button"
+                            onClick={() => splitValidation.split && onSettle(account, 'keep', splitValidation.split)}
+                            disabled={Boolean(actionBusy) || !paymentMethod || !splitValidation.split || Boolean(splitValidation.error)}
+                            className="w-full min-h-[48px] rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-500 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none flex items-center justify-center gap-2"
+                          >
+                            Registrar parte
+                          </button>
+                          <p className="text-[11px] text-slate-400">Registra una parte con el mismo medio seleccionado y actualiza el saldo. EQUAL_PARTS divide {formatMinor(consumo)} total.</p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-2.5 space-y-2">
+                    <label className="block text-[11px] font-bold text-slate-300" htmlFor={`rewards-phone-${account.tableSessionId}`}>
+                      Teléfono Rewards (opcional)
+                    </label>
+                    <input
+                      id={`rewards-phone-${account.tableSessionId}`}
+                      value={rewardsPhone || ''}
+                      onChange={(e) => setRewardsPhone?.(e.target.value)}
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="Ej: 223 555 1234"
+                      className="w-full min-h-[44px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-white placeholder:text-slate-500 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
+                    />
+                    <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(rewardsConsent)}
+                        onChange={(e) => setRewardsConsent?.(e.target.checked)}
+                        className="accent-emerald-500 w-4 h-4 rounded"
+                      />
+                      Cliente acepta recibir puntos Rewards
+                    </label>
+                    <p className="text-[10px] text-slate-500">
+                      Rewards se consulta con el personal y la propina no genera puntos.
+                    </p>
                   </div>
                   <button
                     type="button"

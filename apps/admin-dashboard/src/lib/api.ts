@@ -1,4 +1,4 @@
-import { Sector, MetricsDTO, RestaurantMenuResponse, MenuCategoryDTO, MenuItemDTO, BatchMenuImportDTO } from '@mesaya/shared';
+import { Sector, MetricsDTO, RestaurantMenuResponse, MenuCategoryDTO, MenuItemDTO, BatchMenuImportDTO, AiDiagnosticsDTO } from '@mesaya/shared';
 
 export const API_BASE = (
   (import.meta.env.VITE_API_URL as string) ||
@@ -301,6 +301,15 @@ export class AdminApi {
       const err = await res.json().catch(() => ({ error: 'Error al generar con IA' }));
       throw new Error(err.error || 'Error al generar carta con IA');
     }
+    return res.json();
+  }
+
+  static async getAiDiagnostics(slugOrId: string, probe: boolean = false): Promise<AiDiagnosticsDTO> {
+    const query = probe ? '?probe=true' : '';
+    const res = await fetch(`${API_BASE}/restaurants/${encodeURIComponent(slugOrId)}/ai/diagnostics${query}`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    await this.requireAuthorized(res, 'Error al consultar diagnóstico de IA');
     return res.json();
   }
 

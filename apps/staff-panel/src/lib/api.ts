@@ -1,4 +1,4 @@
-import { CallEventData, CallStatus, StaffLoginDTO, StaffUserDTO, ServiceTaskClaimDTO, ServiceTaskKind, ServiceWorkspaceDTO } from '@mesaya/shared';
+import { CallEventData, CallStatus, StaffLoginDTO, StaffUserDTO, ServiceTaskClaimDTO, ServiceTaskKind, ServiceWorkspaceDTO, SplitOperation } from '@mesaya/shared';
 
 export const API_BASE = (
   (import.meta.env.VITE_API_URL as string) ||
@@ -280,15 +280,43 @@ export class StaffApi {
     return res.json();
   }
 
-  static async seatWaitlistGuest(id: string, tableId: string) {
+  static async seatWaitlistGuest(id: string, tableId: string, skipPreOrder?: boolean, skipReason?: string) {
     const res = await fetch(`${API_BASE}/staff/waitlist/${id}/seat`, {
       method: 'PATCH',
       headers: this.getAuthHeaders(),
-      body: JSON.stringify({ tableId })
+      body: JSON.stringify({ tableId, skipPreOrder: Boolean(skipPreOrder), ...(skipPreOrder && skipReason ? { skipReason } : {}) })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || err.error || 'Error al sentar comensal');
+      const error: any = new Error(err.message || err.error || 'Error al sentar comensal');
+      error.code = err.code;
+      throw error;
+    }
+    return res.json();
+  }
+
+  static async cancelWaitlistGuest(id: string, reason?: string) {
+    const res = await fetch(`${API_BASE}/staff/waitlist/${id}/cancel`, {
+      method: 'PATCH',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ reason })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Error al cancelar turno de espera');
+    }
+    return res.json();
+  }
+
+  static async markWaitlistNoShow(id: string, reason?: string) {
+    const res = await fetch(`${API_BASE}/staff/waitlist/${id}/no-show`, {
+      method: 'PATCH',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ reason })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Error al marcar no-show');
     }
     return res.json();
   }
@@ -407,6 +435,9 @@ export class StaffApi {
     tipMinor?: number;
     responsibleStaffUserId?: string;
     allocations?: Array<{ orderId: string; amountMinor: number }>;
+    split?: SplitOperation;
+    customerPhone?: string;
+    rewardsConsent?: boolean;
   }, authToken?: string) {
     const res = await fetch(`${API_BASE}/staff/sessions/${encodeURIComponent(sessionId)}/settle`, {
       method: 'POST',
@@ -439,6 +470,9 @@ export class StaffApi {
     tipMinor?: number;
     responsibleStaffUserId?: string;
     allocations?: Array<{ orderId: string; amountMinor: number }>;
+    split?: SplitOperation;
+    customerPhone?: string;
+    rewardsConsent?: boolean;
   }, authToken?: string) {
     const res = await fetch(`${API_BASE}/staff/sessions/${encodeURIComponent(sessionId)}/settle-and-close`, {
       method: 'POST',
@@ -462,13 +496,13 @@ export class StaffApi {
    * Reintento idempotente: conservar exactamente el mismo body/version;
    * cualquier reintento debe repetir el mismo payload sin cambios.
    */
-  static async payOrder(orderId: string, paymentMethod?: string, tipAmount?: number, idempotencyKey?: string, customerPhone?: string) {
+  static async payOrder(orderId: string, paymentMethod?: string, tipAmount?: number, idempotencyKey?: string, customerPhone?: string, rewardsConsent?: boolean) {
     // eslint-disable-next-line no-console
     console.warn('E01: StaffApi.payOrder deprecado; usar cuenta por sesión (settle / settle-and-close).');
     const res = await fetch(`${API_BASE}/staff/orders/${orderId}/pay`, {
       method: 'POST',
       headers: this.getAuthHeaders(),
-      body: JSON.stringify({ paymentMethod, tipAmount, idempotencyKey, customerPhone })
+      body: JSON.stringify({ paymentMethod, tipAmount, idempotencyKey, customerPhone, rewardsConsent })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -515,6 +549,50 @@ export class StaffApi {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || data.error || 'No se pudo canjear el premio');
+    return data;
+  }
+
+  static async registerRewardsCustomer(restaurantId: string, phone: string, consent: boolean) {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/rewards/customer`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ phone, consent })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || 'No se pudo registrar el cliente en Rewards');
+    return data;
+  }
+
+  static async reverseRewardLedger(restaurantId: string, ledgerId: string, reason?: string) {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/rewards/ledger/${encodeURIComponent(ledgerId)}/reverse`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ reason })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || 'No se pudo revertir el movimiento Rewards');
+    return data;
+  }
+
+  static async reconcilePaymentRewards(restaurantId: string, paymentTransactionId: string, phone?: string, consent?: boolean) {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/rewards/reconcile-payment`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ paymentTransactionId, phone, consent })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || 'No se pudo reconciliar Rewards del pago');
+    return data;
+  }
+
+  static async reconcileSettlementRewards(restaurantId: string, settlementId: string, phone?: string, consent?: boolean) {
+    const res = await fetch(`${API_BASE}/staff/restaurants/${restaurantId}/rewards/reconcile-settlement`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ settlementId, phone, consent })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || 'No se pudo reconciliar Rewards de la cuenta');
     return data;
   }
 

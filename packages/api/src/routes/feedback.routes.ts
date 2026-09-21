@@ -8,11 +8,17 @@ export async function feedbackRoutes(fastify: FastifyInstance) {
     try {
       const body = request.body as FeedbackDTO;
       if (!body || typeof body !== 'object') {
-        return reply.status(400).send({ error: 'Cuerpo de petición requerido' });
+        const error: any = new Error('Cuerpo de petición requerido');
+        error.statusCode = 400;
+        error.code = 'BAD_REQUEST';
+        throw error;
       }
 
       if (!body.sessionToken || typeof body.sessionToken !== 'string') {
-        return reply.status(400).send({ error: 'sessionToken y rating (1-5) son requeridos' });
+        const error: any = new Error('sessionToken y rating (1-5) son requeridos');
+        error.statusCode = 400;
+        error.code = 'SESSION_TOKEN_REQUIRED';
+        throw error;
       }
 
       const result = await FeedbackService.submitFeedback(body);

@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma';
+import { RewardsService } from './rewards.service';
 import {
   SalesSummaryDTO,
   SalesOperationDTO,
@@ -852,6 +853,25 @@ export class SalesReportsService {
       }
     });
 
+    let rewards: any = null;
+    let rewardsWarning: string | null = null;
+    try {
+      rewards = await RewardsService.reverseSettlementAdjustment({
+        restaurantId,
+        settlementId,
+        adjustmentId: created.id,
+        amountMinor,
+        reason: `Devolución de consumo: ${reason}`,
+        approvedBy: data.adjustedBy
+      });
+    } catch (err: any) {
+      // La devolución financiera ya quedó append-only y confirmada. No se
+      // revierte por una condición de Rewards; se deja una acción explícita
+      // para reconciliar el ledger sin ocultar la incidencia al manager.
+      rewardsWarning = 'Devolución registrada; la reversión de puntos Rewards quedó pendiente de revisión.';
+      console.warn('Rewards reversal pending after payment adjustment:', err?.code || err?.message || 'unknown');
+    }
+
     return {
       id: created.id,
       settlementId: created.settlementId,
@@ -861,7 +881,9 @@ export class SalesReportsService {
       totalAdjustedMinor: created.amountMinor + created.tipMinor,
       reason: created.reason,
       adjustedBy: created.adjustedBy,
-      createdAt: created.createdAt.toISOString()
+      createdAt: created.createdAt.toISOString(),
+      rewards,
+      ...(rewardsWarning ? { rewardsWarning } : {})
     };
   }
 }

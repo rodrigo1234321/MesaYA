@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { StaffApi } from '../lib/api';
 import { WaitlistEntryDTO, WaitlistStatus, TableFSMState } from '@mesaya/shared';
-import { Users, Phone, Clock, BellRing, Check, RefreshCw, ShoppingBag, AlertCircle } from 'lucide-react';
+import { Users, Phone, Clock, BellRing, Check, RefreshCw, ShoppingBag, AlertCircle, XCircle, UserX } from 'lucide-react';
 
 interface Props {
   restaurantId: string;
@@ -21,6 +21,7 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
   const [loading, setLoading] = useState(true);
   const [seatingId, setSeatingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [failedPreOrderId, setFailedPreOrderId] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -79,15 +80,53 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
     }
   };
 
-  const handleSeat = async (id: string) => {
+  const handleCancel = async (id: string) => {
+    setErrorMessage(null);
+    try {
+      await StaffApi.cancelWaitlistGuest(id);
+      await loadData();
+    } catch (err: any) {
+      console.error('Error al cancelar turno:', err);
+      setErrorMessage(err.message || 'Error al cancelar turno');
+    }
+  };
+
+  const handleNoShow = async (id: string) => {
+    setErrorMessage(null);
+    try {
+      await StaffApi.markWaitlistNoShow(id);
+      await loadData();
+    } catch (err: any) {
+      console.error('Error al marcar no-show:', err);
+      setErrorMessage(err.message || 'Error al marcar no-show');
+    }
+  };
+
+  const handleSeat = async (id: string, skipPreOrder = false) => {
     const tableId = selectedTables[id];
     if (!tableId || !tableId.trim()) {
       return;
     }
+    // E07: recovery explícito con razón auditada; WAITER sin razón es PENDING_HUMAN.
+    let skipReason: string | undefined;
+    if (skipPreOrder) {
+      skipReason = window.prompt('Motivo para omitir el pre-pedido (5..240 caracteres, quedará auditado):', 'Pre-pedido no disponible, se toma pedido manual en mesa') || undefined;
+      if (skipReason && (skipReason.trim().length < 5 || skipReason.trim().length > 240)) {
+        setErrorMessage('El motivo debe tener entre 5 y 240 caracteres');
+        return;
+      }
+      if (!skipReason) {
+        // Permitir MANAGER bypass sin razón corta, pero WAITER debe justificar.
+        // El backend exigirá razón para WAITER; mostramos aviso.
+        setErrorMessage('Para omitir el pre-pedido se requiere un motivo (o rol MANAGER).');
+        return;
+      }
+    }
     setSeatingId(id);
     setErrorMessage(null);
+    setFailedPreOrderId(null);
     try {
-      await StaffApi.seatWaitlistGuest(id, tableId.trim());
+      await StaffApi.seatWaitlistGuest(id, tableId.trim(), skipPreOrder, skipReason);
       setSelectedTables(prev => {
         const copy = { ...prev };
         delete copy[id];
@@ -97,6 +136,9 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
     } catch (err: any) {
       console.error('Error al sentar:', err);
       setErrorMessage(err.message || 'Error al sentar comensal en la mesa elegida');
+      if (err.code === 'PREORDER_PROMOTION_FAILED' || (err.message && err.message.includes('pre-pedido'))) {
+        setFailedPreOrderId(id);
+      }
     } finally {
       setSeatingId(null);
     }
@@ -178,7 +220,7 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                     {item.status === WaitlistStatus.WAITING ? (
                       <button
                         onClick={() => handleCall(item.id)}
@@ -188,11 +230,30 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
                         <span>Llamar</span>
                       </button>
                     ) : (
-                      <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold text-[11px] flex items-center gap-1 animate-pulse">
-                        <Clock className="w-3 h-3" />
-                        <span>Llamado</span>
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold text-[11px] flex items-center gap-1 animate-pulse">
+                          <Clock className="w-3 h-3" />
+                          <span>Llamado</span>
+                        </span>
+                        <button
+                          onClick={() => handleNoShow(item.id)}
+                          className="px-2 py-1 rounded-lg border border-red-500/30 bg-red-950/30 hover:bg-red-950/60 text-red-300 text-[11px] font-bold flex items-center gap-1 transition-all"
+                          title="Marcar como no-show"
+                        >
+                          <UserX className="w-3 h-3" />
+                          <span>No-show</span>
+                        </button>
+                      </div>
                     )}
+
+                    {/* Botón de cancelación de turno */}
+                    <button
+                      onClick={() => handleCancel(item.id)}
+                      className="p-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-red-950/40 hover:border-red-500/40 text-slate-400 hover:text-red-300 text-xs font-semibold transition-all"
+                      title="Cancelar turno de fila"
+                    >
+                      <XCircle className="w-4 h-4" />
+                    </button>
 
                     {/* Selector explícito de mesa destino libre antes de permitir sentar */}
                     <div className="flex items-center gap-1.5">
@@ -226,13 +287,29 @@ export const WaitlistManager: React.FC<Props> = ({ restaurantId }) => {
                   </div>
                 </div>
 
-                {/* Pre-Order preview */}
+                {/* Pre-Order preview y opción de recuperación */}
                 {item.preOrderData && item.preOrderData.length > 0 && (
-                  <div className="mt-2.5 pt-2.5 border-t border-slate-800/80 flex items-center gap-1.5 text-[11px] text-amber-300">
-                    <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
-                    <span className="font-semibold">
-                      Pre-orden lista ({item.preOrderData.reduce((s, it) => s + it.quantity, 0)} platos listos para marchar)
-                    </span>
+                  <div className="mt-2.5 pt-2.5 border-t border-slate-800/80 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-amber-300">
+                      <span className="flex items-center gap-1.5 font-semibold">
+                        <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
+                        Pre-orden lista ({item.preOrderData.reduce((s, it) => s + it.quantity, 0)} platos)
+                      </span>
+                      {failedPreOrderId === item.id && chosenTableId && (
+                        <button
+                          onClick={() => handleSeat(item.id, true)}
+                          className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[10px] shadow-sm transition-all"
+                          title="Recovery explícito auditado: exige motivo"
+                        >
+                          Sentar sin pre-orden (con motivo)
+                        </button>
+                      )}
+                    </div>
+                    {failedPreOrderId === item.id && (
+                      <p className="text-[10px] text-red-300">
+                        La comanda del pre-pedido falló. Podés sentar al grupo sin el pedido automático y tomarles la orden en la mesa.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

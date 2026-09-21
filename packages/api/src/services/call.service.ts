@@ -167,6 +167,19 @@ export class CallService {
       throw error;
     }
 
+    if (dto.type === CallType.BILL && tipMinor > 0) {
+      const moduleConfig = await prisma.restaurantModuleConfig.findUnique({
+        where: { restaurantId: session.table.restaurantId },
+        select: { enableSmartTips: true }
+      });
+      if (moduleConfig && moduleConfig.enableSmartTips === false) {
+        const error: any = new Error('El módulo de propinas no está habilitado para este local.');
+        error.statusCode = 403;
+        error.code = 'SMART_TIPS_DISABLED';
+        throw error;
+      }
+    }
+
     // Cobrar la cuenta no cierra la ocupación: el contrato permite otra ronda
     // mientras el grupo siga sentado. Solo una mesa marcada PAID (cierre
     // operativo explícito/legado) debe rechazar nuevas necesidades.

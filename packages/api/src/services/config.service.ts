@@ -10,7 +10,8 @@ import {
   CapabilityKey,
   CapabilityEntry,
   RestaurantCapabilitiesDTO,
-  DEFAULT_REVIEW_QUANTITY_THRESHOLD
+  DEFAULT_REVIEW_QUANTITY_THRESHOLD,
+  sanitizeGooglePlaceId
 } from '@mesaya/shared';
 
 /** Error de dominio para evitar activar capacidades sin recorrido operativo completo. */
@@ -28,11 +29,28 @@ export class CapabilityConfigurationError extends Error {
   }
 }
 
+/** Normaliza la configuración modular asegurando que el carrito compartido esté siempre activo. */
+export function normalizeSharedCartConfig(config: RestaurantModuleConfigDTO): RestaurantModuleConfigDTO {
+  return {
+    ...config,
+    syncSocialCart: true
+  };
+}
+
 /** Valida sólo activaciones nuevas; apagar o conservar un flag legado sigue permitido. */
 export function validateCapabilityUpdate(
   current: RestaurantModuleConfigDTO,
   dto: UpdateModuleConfigDTO
 ): void {
+  if (dto.syncSocialCart === false) {
+    const error: any = new Error(
+      'El carrito compartido es canónico a través de TableSession; no existe un modo de carrito individual ni se permite desactivar syncSocialCart.'
+    );
+    error.statusCode = 400;
+    error.code = 'SYNC_SOCIAL_CART_LEGACY';
+    throw error;
+  }
+
   if (dto.reviewQuantityThreshold !== undefined && (
     !Number.isInteger(dto.reviewQuantityThreshold) ||
     dto.reviewQuantityThreshold < 2 ||
@@ -52,13 +70,51 @@ export function validateCapabilityUpdate(
     );
   }
 
+  if (dto.suggestedTipPercentages !== undefined) {
+    if (!Array.isArray(dto.suggestedTipPercentages)) {
+      const error: any = new Error('Los porcentajes de propina deben ser una lista de números enteros.');
+      error.statusCode = 400;
+      error.code = 'INVALID_TIP_PERCENTAGES';
+      throw error;
+    }
+    if (dto.suggestedTipPercentages.length > 5) {
+      const error: any = new Error('No se pueden configurar más de 5 porcentajes de propina.');
+      error.statusCode = 400;
+      error.code = 'INVALID_TIP_PERCENTAGES';
+      throw error;
+    }
+    for (const pct of dto.suggestedTipPercentages) {
+      if (!Number.isInteger(pct) || pct < 0 || pct > 100) {
+        const error: any = new Error('Cada porcentaje de propina debe ser un entero entre 0 y 100.');
+        error.statusCode = 400;
+        error.code = 'INVALID_TIP_PERCENTAGES';
+        throw error;
+      }
+    }
+  }
+
+  if (dto.googlePlaceId !== undefined && dto.googlePlaceId !== null) {
+    if (typeof dto.googlePlaceId !== 'string') {
+      const error: any = new Error('El Google Place ID debe ser una cadena de texto.');
+      error.statusCode = 400;
+      error.code = 'INVALID_GOOGLE_PLACE_ID';
+      throw error;
+    }
+    const trimmed = dto.googlePlaceId.trim();
+    if (trimmed.length > 0 && sanitizeGooglePlaceId(trimmed) === null) {
+      const error: any = new Error('El Google Place ID contiene caracteres inválidos o supera los 128 caracteres.');
+      error.statusCode = 400;
+      error.code = 'INVALID_GOOGLE_PLACE_ID';
+      throw error;
+    }
+  }
+
   const blockedTransitions: Array<{
     field: keyof UpdateModuleConfigDTO;
     capability: CapabilityKey;
     label: string;
   }> = [
-    { field: 'allowSplitBill', capability: 'split_bill', label: 'la división de cuenta' },
-    // Las propinas presenciales ya tienen selector de sugerencia y registro en caja.
+    // allowSplitBill operativo en E05 (AVAILABLE)
   ];
 
   for (const transition of blockedTransitions) {
@@ -160,19 +216,19 @@ export class ConfigService {
         }
       });
 
-      const parsed: RestaurantModuleConfigDTO = {
+      const parsed: RestaurantModuleConfigDTO = normalizeSharedCartConfig({
         ...created,
         paymentMode: created.paymentMode as PaymentMode,
         suggestedTipPercentages: JSON.parse(created.suggestedTipPercentages)
-      };
+      });
       return { ...parsed, capabilities: this.buildCapabilities(parsed).capabilities };
     }
 
-    const parsed: RestaurantModuleConfigDTO = {
+    const parsed: RestaurantModuleConfigDTO = normalizeSharedCartConfig({
       ...restaurant.moduleConfig,
       paymentMode: restaurant.moduleConfig.paymentMode as PaymentMode,
       suggestedTipPercentages: JSON.parse(restaurant.moduleConfig.suggestedTipPercentages)
-    };
+    });
     return { ...parsed, capabilities: this.buildCapabilities(parsed).capabilities };
   }
 
@@ -260,11 +316,11 @@ export class ConfigService {
       });
     }
 
-    const parsed: RestaurantModuleConfigDTO = {
+    const parsed: RestaurantModuleConfigDTO = normalizeSharedCartConfig({
       ...config,
       paymentMode: config.paymentMode as PaymentMode,
       suggestedTipPercentages: JSON.parse(config.suggestedTipPercentages)
-    };
+    });
     return { ...parsed, capabilities: this.buildCapabilities(parsed).capabilities };
   }
 
@@ -298,7 +354,6 @@ export class ConfigService {
       'allowSplitBill',
       'allowWaitersToCollectCash',
       'allowOrdering',
-      'syncSocialCart',
       'requireWaiterValidation',
       'reviewQuantityThreshold',
       'enableUpsell',
@@ -334,7 +389,6 @@ export class ConfigService {
       if (dto.allowSplitBill !== undefined) updateData.allowSplitBill = dto.allowSplitBill;
       if (dto.allowWaitersToCollectCash !== undefined) updateData.allowWaitersToCollectCash = dto.allowWaitersToCollectCash;
       if (dto.allowOrdering !== undefined) updateData.allowOrdering = dto.allowOrdering;
-      if (dto.syncSocialCart !== undefined) updateData.syncSocialCart = dto.syncSocialCart;
       if (dto.requireWaiterValidation !== undefined) updateData.requireWaiterValidation = dto.requireWaiterValidation;
       if (dto.reviewQuantityThreshold !== undefined) updateData.reviewQuantityThreshold = dto.reviewQuantityThreshold;
       if (dto.enableUpsell !== undefined) updateData.enableUpsell = dto.enableUpsell;
@@ -343,7 +397,9 @@ export class ConfigService {
         updateData.suggestedTipPercentages = JSON.stringify(dto.suggestedTipPercentages);
       }
       if (dto.enableReviews !== undefined) updateData.enableReviews = dto.enableReviews;
-      if (dto.googlePlaceId !== undefined) updateData.googlePlaceId = dto.googlePlaceId;
+      if (dto.googlePlaceId !== undefined) {
+        updateData.googlePlaceId = dto.googlePlaceId ? dto.googlePlaceId.trim() : null;
+      }
       if (dto.enableWaitlist !== undefined) updateData.enableWaitlist = dto.enableWaitlist;
       if (dto.enableWaitlistPreOrder !== undefined) updateData.enableWaitlistPreOrder = dto.enableWaitlistPreOrder;
       if (dto.enableRewards !== undefined) updateData.enableRewards = dto.enableRewards;
@@ -390,11 +446,11 @@ export class ConfigService {
       return res;
     });
 
-    const parsedDTO: RestaurantModuleConfigDTO = {
+    const parsedDTO: RestaurantModuleConfigDTO = normalizeSharedCartConfig({
       ...updated,
       paymentMode: updated.paymentMode as PaymentMode,
       suggestedTipPercentages: JSON.parse(updated.suggestedTipPercentages)
-    };
+    });
 
     // Emitir evento via eventBus (SSE deshabilitado; eventBus es no-op)
     const response = {
@@ -474,11 +530,13 @@ export class ConfigService {
       split_bill: {
         key: 'split_bill',
         label: 'División de cuenta',
-        state: CapabilityState.COMING_SOON,
-        configuredEnabled: config.allowSplitBill,
-        effectiveEnabled: false,
-        reasonCode: 'SPLIT_BILL_UNAVAILABLE',
-        message: 'La división de cuenta entre comensales aún no está disponible.'
+        state: CapabilityState.AVAILABLE,
+        configuredEnabled: Boolean(config.allowSplitBill),
+        effectiveEnabled: Boolean(config.allowSplitBill),
+        reasonCode: config.allowSplitBill ? 'SPLIT_BILL_ENABLED' : 'SPLIT_BILL_DISABLED',
+        message: config.allowSplitBill
+          ? 'La división de cuenta entre comensales por partes, porcentaje o importe fijo está activa en salón y caja.'
+          : 'La división de cuenta está deshabilitada en la configuración del local.'
       },
       waitlist: {
         key: 'waitlist',
@@ -525,7 +583,7 @@ export class ConfigService {
         effectiveEnabled: config.enableUpsell,
         reasonCode: config.enableUpsell ? 'UPSELL_CLIENT_CONSUMED' : 'UPSELL_DISABLED',
         message: config.enableUpsell
-          ? 'Sugerencias disponibles en carrito/carta; impresión, aceptación y descarte quedan medidos por sesión.'
+          ? 'Módulo base disponible en API; sugerencias invasivas sobre platos desactivadas en carta web.'
           : 'El módulo de upsell está deshabilitado.'
       },
       smart_tips: {
@@ -542,14 +600,14 @@ export class ConfigService {
       reviews: {
         key: 'reviews',
         label: 'Feedback y reseñas',
-        state: config.enableReviews ? CapabilityState.AVAILABLE : CapabilityState.COMING_SOON,
+        state: CapabilityState.AVAILABLE,
         configuredEnabled: config.enableReviews,
         effectiveEnabled: config.enableReviews,
         reasonCode: config.enableReviews
-          ? (config.googlePlaceId ? 'REVIEWS_INTERNAL_AND_GOOGLE_ACTIVE' : 'REVIEWS_INTERNAL_ACTIVE_GOOGLE_UNCONFIGURED')
+          ? (sanitizeGooglePlaceId(config.googlePlaceId) ? 'REVIEWS_INTERNAL_AND_GOOGLE_ACTIVE' : 'REVIEWS_INTERNAL_ACTIVE_GOOGLE_UNCONFIGURED')
           : 'REVIEWS_DISABLED',
         message: config.enableReviews
-          ? (config.googlePlaceId
+          ? (sanitizeGooglePlaceId(config.googlePlaceId)
             ? 'Rating privado activo y enlace de Google disponible.'
             : 'Rating privado y comentario interno activos; Google requiere Place ID válido.')
           : 'El módulo de feedback no está habilitado.'

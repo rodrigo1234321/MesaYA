@@ -17,12 +17,13 @@ let currentSession = null;
 let currentToken = null;
 let publicMenuOnly = false;
 let staticMenuOnly = false;
-const STATIC_CATALOG_BY_RESTAURANT = Object.freeze({
-  // La sesión, llamados y estado siguen siendo los de MesaYA Piloto. Sólo la
-  // carta visual se sustituye por el catálogo Fauno hasta importar sus ítems
-  // con IDs propios en la base operativa del local.
-  'mesaya-piloto': '/demo/fauno-olavarria/catalog.json'
-});
+// E01: La base de datos es la única fuente de la carta para sesiones activas.
+// El catálogo estático de demo sólo se utiliza en el modo de carta pública
+// explícito sin sesión (initPublicMenuOnly).
+function isSyntheticItemId(id) {
+  if (!id || typeof id !== 'string') return true;
+  return id.startsWith('fauno-item-') || id.startsWith('demo-') || id.startsWith('synthetic-');
+}
 let activeCall = null;
 let activeCalls = [];
 let pollTimer = null;
@@ -407,6 +408,7 @@ const el = {
   waitlistTicketWait: document.getElementById('waitlistTicketWait'),
   waitlistTicketStatus: document.getElementById('waitlistTicketStatus'),
   waitlistTicketMeta: document.getElementById('waitlistTicketMeta'),
+  waitlistCancelButton: document.getElementById('waitlistCancelButton'),
   waitlistNewTicketButton: document.getElementById('waitlistNewTicketButton'),
   waitlistUnavailableText: document.getElementById('waitlistUnavailableText')
 };
@@ -855,6 +857,8 @@ function renderPublicWaitlistTicket(ticket) {
   if (el.waitlistTicketWait) el.waitlistTicketWait.textContent = ticket.estimatedWaitMinutes ? `${ticket.estimatedWaitMinutes} min` : 'Ahora';
   if (el.waitlistTicketStatus) el.waitlistTicketStatus.textContent = formatWaitlistStatus(ticket.status);
   if (el.waitlistTicketMeta) el.waitlistTicketMeta.textContent = `Estado: ${ticket.status === 'CALLED' ? 'LLAMADO' : ticket.status === 'SEATED' ? 'SENTADO' : ticket.status === 'WAITING' ? 'EN ESPERA' : ticket.status}`;
+  const canCancel = ticket.status === 'WAITING' || ticket.status === 'CALLED';
+  el.waitlistCancelButton?.classList.toggle('hidden', !canCancel);
 }
 
 async function refreshPublicWaitlistTicket() {
@@ -956,6 +960,30 @@ async function initWaitlistPublic(slug) {
       if (el.waitlistJoinError) { el.waitlistJoinError.textContent = err.message || 'No se pudo registrar el turno.'; el.waitlistJoinError.classList.remove('hidden'); }
     } finally {
       if (el.waitlistJoinButton) { el.waitlistJoinButton.disabled = false; el.waitlistJoinButton.textContent = 'Sumarme a la fila'; }
+    }
+  });
+
+  el.waitlistCancelButton?.addEventListener('click', async () => {
+    if (!publicWaitlistSlug || !publicWaitlistTicket?.id || !publicWaitlistTicket.phone) return;
+    if (el.waitlistCancelButton) { el.waitlistCancelButton.disabled = true; el.waitlistCancelButton.textContent = 'Cancelando…'; }
+    try {
+      const res = await fetchWithRetry(`${API_BASE}/waitlist/${encodeURIComponent(publicWaitlistTicket.id)}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: publicWaitlistTicket.phone })
+      }, 2, 5000);
+      if (res.ok) {
+        const updated = await res.json();
+        updated.phone = publicWaitlistTicket.phone;
+        window.sessionStorage.setItem(`mesaya_waitlist_${publicWaitlistSlug}`, JSON.stringify(updated));
+        renderPublicWaitlistTicket(updated);
+        if (publicWaitlistTimer) window.clearInterval(publicWaitlistTimer);
+        publicWaitlistTimer = null;
+      }
+    } catch (_) {
+      // Reintenta en el próximo ciclo
+    } finally {
+      if (el.waitlistCancelButton) { el.waitlistCancelButton.disabled = false; el.waitlistCancelButton.textContent = 'Cancelar mi lugar en la fila'; }
     }
   });
 
@@ -1461,13 +1489,14 @@ function openDishDetailSheet(item, categoryId) {
     }
   }
   if (orderSpecificBtn) {
-    const canOrder = dishAvailable && !publicMenuOnly && !staticMenuOnly;
+    const isSynthetic = isSyntheticItemId(item?.id);
+    const canOrder = dishAvailable && !publicMenuOnly && !staticMenuOnly && !isSynthetic;
     orderSpecificBtn.disabled = !canOrder;
     orderSpecificBtn.setAttribute('aria-disabled', String(!canOrder));
     orderSpecificBtn.classList.toggle('opacity-50', !canOrder);
     orderSpecificBtn.classList.toggle('cursor-not-allowed', !canOrder);
     const orderLabel = orderSpecificBtn.querySelector('span');
-    if (orderLabel) orderLabel.textContent = publicMenuOnly || staticMenuOnly
+    if (orderLabel) orderLabel.textContent = (publicMenuOnly || staticMenuOnly || isSynthetic)
       ? '📖 Sólo consulta en esta demo'
       : (dishAvailable ? '🛒 Agregar al carrito — no se cobra aún' : '⛔ No disponible');
   }
@@ -1500,23 +1529,6 @@ function closeDishDetailSheet() {
 let lastMenuResponse = null;
 
 async function loadDynamicMenu(slug) {
-  const staticCatalogUrl = STATIC_CATALOG_BY_RESTAURANT[slug];
-  staticMenuOnly = Boolean(staticCatalogUrl);
-  if (staticCatalogUrl) {
-    try {
-      const staticResponse = await fetch(staticCatalogUrl, { cache: 'no-store' });
-      if (!staticResponse.ok) throw new Error(`Catálogo estático ${staticResponse.status}`);
-      const catalog = await staticResponse.json();
-      const restaurantMeta = currentSession?.restaurant || null;
-      const menuResponse = buildStaticCatalogMenuResponse(catalog, restaurantMeta);
-      lastMenuResponse = menuResponse;
-      renderDynamicMenu(menuResponse);
-      return;
-    } catch (err) {
-      console.warn('No se pudo cargar el catálogo Fauno integrado; se intenta la carta del API:', err);
-      staticMenuOnly = false;
-    }
-  }
   try {
     const res = await fetchWithRetry(`${API_BASE}/restaurants/${encodeURIComponent(slug)}/menu`);
     if (!res.ok) return;
@@ -1524,7 +1536,7 @@ async function loadDynamicMenu(slug) {
     lastMenuResponse = data;
     renderDynamicMenu(data);
   } catch (err) {
-    console.warn('Usando carta local estática como respaldo:', err);
+    console.warn('No se pudo cargar la carta dinámica del restaurante desde el API:', err);
   }
 }
 
@@ -1784,6 +1796,22 @@ function renderCart() {
   renderOrderHistory();
 }
 
+function adaptUiToOrderingPolicy(allowOrdering) {
+  const isOrderingAllowed = Boolean(!staticMenuOnly && allowOrdering !== false);
+  if (el.btnOrderFromMenu) {
+    el.btnOrderFromMenu.innerHTML = isOrderingAllowed
+      ? '<span>🛒 Ver carrito colaborativo</span>'
+      : '<span>📖 Modo Carta • Llamar al Mozo</span>';
+  }
+  const orderSpecificBtn = document.getElementById('btnOrderSpecificDish');
+  if (orderSpecificBtn) {
+    orderSpecificBtn.innerHTML = isOrderingAllowed
+      ? '<span>🛒 Agregar al carrito</span>'
+      : '<span>🛎️ Solicitar plato al Mozo (Modo Carta)</span>';
+  }
+  renderCart();
+}
+
 async function loadActiveOrder(options = {}) {
   if (!currentToken) {
     activeOrder = null;
@@ -1799,9 +1827,14 @@ async function loadActiveOrder(options = {}) {
       if (res.status === 410) {
         const message = data.error || 'Sesión finalizada o expirada.';
         showExpiredState(message);
+        setCartError(message);
+        showToast(message, 'error');
+        return;
       }
+      setCartError(data.error || 'No se pudo cargar el pedido.');
       return;
     }
+    setCartError('');
     activeOrder = data.order || null;
     orderHistory = Array.isArray(data.history)
       ? data.history
@@ -1810,7 +1843,7 @@ async function loadActiveOrder(options = {}) {
       allowOrdering: !staticMenuOnly && data.allowOrdering !== false,
       requireWaiterValidation: data.requireWaiterValidation === true
     };
-    renderCart();
+    adaptUiToOrderingPolicy(activeOrderPolicy.allowOrdering);
   } catch (err) {
     if (!options.silent) showToast('No se pudo actualizar el carrito.', 'error');
   }
@@ -1844,6 +1877,11 @@ async function addDishToCart(item, quantity, notes) {
   if (dishAddInFlight) return;
   if (!currentToken) {
     showToast('La mesa todavía no tiene una sesión activa.', 'warning');
+    return;
+  }
+  if (isSyntheticItemId(item?.id)) {
+    closeDishDetailSheet();
+    showToast('Este plato es demostrativo y no puede agregarse a una comanda real.', 'warning');
     return;
   }
   if (activeOrderPolicy.allowOrdering === false || activeRestaurantConfig?.allowOrdering === false) {
@@ -1901,6 +1939,14 @@ async function addDishToCart(item, quantity, notes) {
         showExpiredState(message);
         setDishSheetError(message);
         showToast(message, 'error');
+        return;
+      }
+      if (res.status === 403 && (data.code === 'ORDERING_DISABLED' || /carta informativa|desactivadas/i.test(data.error || ''))) {
+        activeOrderPolicy.allowOrdering = false;
+        if (activeRestaurantConfig) activeRestaurantConfig.allowOrdering = false;
+        adaptUiToOrderingPolicy(false);
+        closeDishDetailSheet();
+        showToast('El restaurante ha pasado a Modo Carta Informativa. Llamá al mozo para pedir.', 'info', 5000);
         return;
       }
       setDishSheetError(data.error || 'No se pudo agregar el plato.');
@@ -2052,6 +2098,14 @@ async function submitCart() {
         return;
       }
       if (res.status === 403) {
+        if (data.code === 'ORDERING_DISABLED' || /carta informativa|desactivadas/i.test(data.error || '')) {
+          activeOrderPolicy.allowOrdering = false;
+          if (activeRestaurantConfig) activeRestaurantConfig.allowOrdering = false;
+          adaptUiToOrderingPolicy(false);
+          setCartError('El restaurante ha pasado a Modo Carta Informativa. Las comandas digitales están desactivadas.');
+          showToast('El restaurante ha pasado a Modo Carta Informativa. Llamá al mozo para pedir.', 'info', 5000);
+          return;
+        }
         setCartError(data.error || 'No se pudo enviar.');
         showToast(data.error || 'No se pudo enviar la comanda.', 'error');
         return;
@@ -3405,6 +3459,21 @@ async function handleSommelierQuery(queryText) {
     const contentDiv = document.createElement('div');
     contentDiv.className = 'p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-xs text-slate-200 leading-relaxed shadow-md max-w-[88%] space-y-1';
 
+    // Indicador seguro de fuente de IA / catálogo
+    const sourceDiv = document.createElement('div');
+    sourceDiv.className = 'flex items-center gap-1.5 text-[10px] text-slate-400 font-medium pb-1.5 mb-1.5 border-b border-slate-800/80';
+    const sourceDot = document.createElement('span');
+    sourceDot.className = data.poweredBy === 'gemini'
+      ? 'w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0'
+      : 'w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0';
+    const sourceText = document.createElement('span');
+    sourceText.textContent = data.poweredBy === 'gemini'
+      ? 'Gemini con carta actual'
+      : 'Reglas locales con carta actual';
+    sourceDiv.appendChild(sourceDot);
+    sourceDiv.appendChild(sourceText);
+    contentDiv.appendChild(sourceDiv);
+
     // Texto de respuesta de IA seguro con textContent
     const answerP = document.createElement('p');
     answerP.textContent = data.answer || '';
@@ -3495,14 +3564,17 @@ async function handleSommelierQuery(queryText) {
     loadingBubble.remove();
     const errorBubble = document.createElement('div');
     errorBubble.className = 'flex items-start gap-2.5';
-    errorBubble.innerHTML = `
-      <div class="w-7 h-7 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-xs shrink-0 text-rose-300">
-        ⚠️
-      </div>
-      <div class="p-3 rounded-2xl bg-slate-900 border border-rose-500/30 text-xs text-rose-300 leading-relaxed shadow-md">
-        No se pudo conectar con el Sommelier en este momento. Por favor reintenta en unos instantes.
-      </div>
-    `;
+
+    const errorIconDiv = document.createElement('div');
+    errorIconDiv.className = 'w-7 h-7 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-xs shrink-0 text-rose-300';
+    errorIconDiv.textContent = '⚠️';
+
+    const errorTextDiv = document.createElement('div');
+    errorTextDiv.className = 'p-3 rounded-2xl bg-slate-900 border border-rose-500/30 text-xs text-rose-300 leading-relaxed shadow-md';
+    errorTextDiv.textContent = 'No se pudo conectar con el Sommelier en este momento. Por favor reintenta en unos instantes.';
+
+    errorBubble.appendChild(errorIconDiv);
+    errorBubble.appendChild(errorTextDiv);
     messagesContainer.appendChild(errorBubble);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
@@ -3517,6 +3589,7 @@ let currentBillBalanceMinor = 0;
 let ratingSubmittedForSession = false;
 
 function getSelectedTipMinor() {
+  if (activeRestaurantConfig?.enableSmartTips === false) return 0;
   if (selectedTipAmount > 0) return Math.max(0, Math.round(Number(selectedTipAmount) * 100));
   if (selectedTipPercentage > 0) return Math.max(0, Math.round(currentBillConsumptionMinor * selectedTipPercentage / 100));
   return 0;
@@ -3553,6 +3626,13 @@ function updateBillTipSummary() {
       reviewModal && !reviewModal.classList.contains('hidden') ? 'true' : 'false'
     );
   }
+
+  // Ocultar Mercado Pago cuando el local opera en WAITER_ONLY
+  const isMercadoPagoAllowed = activeRestaurantConfig?.paymentMode !== 'WAITER_ONLY';
+  const btnMp = document.getElementById('btnPayMethodMercadoPago');
+  if (btnMp) {
+    btnMp.classList.toggle('hidden', !isMercadoPagoAllowed);
+  }
 }
 
 async function loadRestaurantModuleConfig(slug) {
@@ -3565,35 +3645,20 @@ async function loadRestaurantModuleConfig(slug) {
       allowOrdering: !staticMenuOnly && config.allowOrdering !== false,
       requireWaiterValidation: config.requireWaiterValidation === true
     };
-    // QR es una preferencia de cobro que se informa al mozo. No representa
-    // una integración digital ni debe desaparecer cuando el local cobra de
-    // forma presencial (el cobro real se registra luego en el panel del staff).
-    renderCart();
+    adaptUiToOrderingPolicy(activeOrderPolicy.allowOrdering);
 
-    // Adaptar textos y acciones según allowOrdering (Comandas Digitales vs Modo Carta Informativa)
-    if (staticMenuOnly || config.allowOrdering === false) {
-      if (el.btnOrderFromMenu) {
-        el.btnOrderFromMenu.innerHTML = '<span>📖 Modo Carta • Llamar al Mozo</span>';
-      }
-      const orderSpecificBtn = document.getElementById('btnOrderSpecificDish');
-      if (orderSpecificBtn) {
-        orderSpecificBtn.innerHTML = '<span>🛎️ Solicitar plato al Mozo (Modo Carta)</span>';
-      }
-    } else {
-      if (el.btnOrderFromMenu) {
-        el.btnOrderFromMenu.innerHTML = '<span>🛒 Ver carrito colaborativo</span>';
-      }
-      const orderSpecificBtn = document.getElementById('btnOrderSpecificDish');
-      if (orderSpecificBtn) {
-        orderSpecificBtn.innerHTML = '<span>🛒 Agregar al carrito</span>';
-      }
+    // Ocultar botón Mercado Pago si paymentMode es WAITER_ONLY; mostrar como preferencia informativa si DIGITAL_MP o HYBRID
+    const isMercadoPagoAllowed = config.paymentMode !== 'WAITER_ONLY';
+    const btnMp = document.getElementById('btnPayMethodMercadoPago');
+    if (btnMp) {
+      btnMp.classList.toggle('hidden', !isMercadoPagoAllowed);
     }
 
-    // Apply Google Review Deep Link only when the instance supplied a valid Place ID.
+    // Apply Google Review Deep Link only when the instance supplied a valid Place ID and reviews are enabled.
     const reviewBtn = document.getElementById('btnGoogleReviewDeepLink');
     if (reviewBtn) {
       const safePlaceId = sanitizeGooglePlaceId(config.googlePlaceId);
-      if (safePlaceId) {
+      if (safePlaceId && config.enableReviews !== false) {
         reviewBtn.href = `https://search.google.com/local/writereview?placeid=${encodeURIComponent(safePlaceId)}`;
         reviewBtn.classList.remove('hidden', 'pointer-events-none', 'opacity-50');
       } else {
@@ -3616,6 +3681,8 @@ async function loadRestaurantModuleConfig(slug) {
     const tipSection = document.getElementById('smartTipSection');
     if (tipSection) {
       if (config.enableSmartTips === false) {
+        selectedTipPercentage = 0;
+        selectedTipAmount = 0;
         tipSection.classList.add('hidden');
       } else {
         tipSection.classList.remove('hidden');

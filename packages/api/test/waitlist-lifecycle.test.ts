@@ -731,6 +731,27 @@ describe('Etapa 16 — Cerrar lista de espera y módulos incompletos', () => {
         include: { items: true }
       });
       expect(partialOrder).toBeNull();
+
+      // Invariante E07: Si falla la promoción, la mesa no queda ocupada ni el ticket SEATED sin camino de recuperación
+      const revertedTable = await prisma.table.findUnique({ where: { id: atomicTable.id } });
+      expect(revertedTable?.currentState).toBe(TableFSMState.AVAILABLE);
+
+      const revertedEntry = await prisma.waitlistEntry.findUnique({ where: { id: join.json().id } });
+      expect(revertedEntry?.status).toBe(WaitlistStatus.WAITING);
+      expect(revertedEntry?.seatedAt).toBeNull();
+
+      // Camino de recuperación: el personal puede sentar al grupo con skipPreOrder: true, skipReason: 'Motivo auditado recovery manual en mesa'
+      const recoverySeat = await app.inject({
+        method: 'PATCH',
+        url: `/v1/staff/waitlist/${join.json().id}/seat`,
+        headers: { authorization: `Bearer ${tokenWaiterB}` },
+        payload: { tableId: atomicTable.id, skipPreOrder: true, skipReason: 'Motivo auditado recovery manual en mesa' }
+      });
+      expect(recoverySeat.statusCode).toBe(200);
+      expect(recoverySeat.json().status).toBe(WaitlistStatus.SEATED);
+
+      const seatedTable = await prisma.table.findUnique({ where: { id: atomicTable.id } });
+      expect(seatedTable?.currentState).toBe(TableFSMState.OCCUPIED_NO_ORDER);
     });
 
     it('resuelve dos intentos simultáneos sobre el mismo turno con una sola asignación', async () => {

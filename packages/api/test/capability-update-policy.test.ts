@@ -32,8 +32,9 @@ describe('Etapa 01 — capability update policy', () => {
       .not.toThrow();
   });
 
-  it('rejects split but allows ledger-backed Rewards and waitlist/pre-order activation', () => {
-    expect(() => validateCapabilityUpdate(currentConfig(), { allowSplitBill: true })).toThrow(/división de cuenta/);
+  it('allows split_bill activation/deactivation and ledger-backed Rewards and waitlist/pre-order', () => {
+    expect(() => validateCapabilityUpdate(currentConfig(), { allowSplitBill: true })).not.toThrow();
+    expect(() => validateCapabilityUpdate(currentConfig({ allowSplitBill: true }), { allowSplitBill: false })).not.toThrow();
     expect(() => validateCapabilityUpdate(currentConfig(), { enableRewards: true })).not.toThrow();
     expect(() => validateCapabilityUpdate(currentConfig(), {
       enableWaitlist: true,
@@ -61,5 +62,12 @@ describe('Etapa 01 — capability update policy', () => {
       enableWaitlist: false,
       enableWaitlistPreOrder: true
     })).toThrow(/fila virtual/);
+  });
+
+  it('allows enabling and disabling enableReviews independently of googlePlaceId', () => {
+    expect(() => validateCapabilityUpdate(currentConfig({ enableReviews: false }), { enableReviews: true }))
+      .not.toThrow();
+    expect(() => validateCapabilityUpdate(currentConfig({ enableReviews: true }), { enableReviews: false }))
+      .not.toThrow();
   });
 });
