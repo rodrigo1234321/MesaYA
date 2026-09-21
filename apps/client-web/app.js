@@ -16,6 +16,13 @@ const API_BASE = (() => {
 let currentSession = null;
 let currentToken = null;
 let publicMenuOnly = false;
+let staticMenuOnly = false;
+const STATIC_CATALOG_BY_RESTAURANT = Object.freeze({
+  // La sesión, llamados y estado siguen siendo los de MesaYA Piloto. Sólo la
+  // carta visual se sustituye por el catálogo Fauno hasta importar sus ítems
+  // con IDs propios en la base operativa del local.
+  'mesaya-piloto': '/demo/fauno-olavarria/catalog.json'
+});
 let activeCall = null;
 let activeCalls = [];
 let pollTimer = null;
@@ -976,6 +983,7 @@ async function init(overrideToken) {
     return;
   }
   publicMenuOnly = false;
+  staticMenuOnly = false;
   const token = overrideToken || tableParams.token;
   const restaurantSlug = tableParams.restaurantSlug;
   const tableParam = tableParams.tableLabel;
@@ -1090,8 +1098,35 @@ async function init(overrideToken) {
   }
 }
 
+function buildStaticCatalogMenuResponse(catalog, restaurantMeta = null) {
+  const catalogRestaurant = catalog.restaurant || {};
+  const restaurant = {
+    ...catalogRestaurant,
+    id: restaurantMeta?.id || catalogRestaurant.id || `${catalogRestaurant.slug || 'menu'}-demo`,
+    slug: restaurantMeta?.slug || catalogRestaurant.slug,
+    customFont: 'outfit'
+  };
+  return {
+    restaurant,
+    categories: (catalog.categories || []).map((category, categoryIndex) => ({
+      id: `fauno-category-${categoryIndex + 1}`,
+      restaurantId: restaurant.id,
+      name: category.name,
+      icon: category.icon,
+      orderIndex: category.orderIndex,
+      items: (category.items || []).map((item, itemIndex) => ({
+        id: `fauno-item-${categoryIndex + 1}-${itemIndex + 1}`,
+        categoryId: `fauno-category-${categoryIndex + 1}`,
+        ...item,
+        imageUrl: item.imageUrl || null
+      }))
+    }))
+  };
+}
+
 async function initPublicMenuOnly(slug) {
   publicMenuOnly = true;
+  staticMenuOnly = true;
   currentSession = null;
   currentToken = null;
   try { sessionStorage.removeItem('mesaya_token'); } catch (_) {}
@@ -1112,26 +1147,7 @@ async function initPublicMenuOnly(slug) {
     const response = await fetch('/demo/fauno-olavarria/catalog.json', { cache: 'no-store' });
     if (!response.ok) throw new Error(`Carta estática ${response.status}`);
     const catalog = await response.json();
-    const menuResponse = {
-      restaurant: {
-        id: 'fauno-olavarria-demo',
-        ...catalog.restaurant,
-        customFont: 'outfit'
-      },
-      categories: catalog.categories.map((category, categoryIndex) => ({
-        id: `fauno-category-${categoryIndex + 1}`,
-        restaurantId: 'fauno-olavarria-demo',
-        name: category.name,
-        icon: category.icon,
-        orderIndex: category.orderIndex,
-        items: category.items.map((item, itemIndex) => ({
-          id: `fauno-item-${categoryIndex + 1}-${itemIndex + 1}`,
-          categoryId: `fauno-category-${categoryIndex + 1}`,
-          ...item,
-          imageUrl: item.imageUrl || null
-        }))
-      }))
-    };
+    const menuResponse = buildStaticCatalogMenuResponse(catalog);
     if (el.stateLoading) el.stateLoading.classList.add('hidden');
     if (el.restaurantName) el.restaurantName.textContent = catalog.restaurant.name;
     if (el.tableBadge) el.tableBadge.textContent = 'Carta pública';
@@ -1445,13 +1461,13 @@ function openDishDetailSheet(item, categoryId) {
     }
   }
   if (orderSpecificBtn) {
-    const canOrder = dishAvailable && !publicMenuOnly;
+    const canOrder = dishAvailable && !publicMenuOnly && !staticMenuOnly;
     orderSpecificBtn.disabled = !canOrder;
     orderSpecificBtn.setAttribute('aria-disabled', String(!canOrder));
     orderSpecificBtn.classList.toggle('opacity-50', !canOrder);
     orderSpecificBtn.classList.toggle('cursor-not-allowed', !canOrder);
     const orderLabel = orderSpecificBtn.querySelector('span');
-    if (orderLabel) orderLabel.textContent = publicMenuOnly
+    if (orderLabel) orderLabel.textContent = publicMenuOnly || staticMenuOnly
       ? '📖 Sólo consulta en esta demo'
       : (dishAvailable ? '🛒 Agregar al carrito — no se cobra aún' : '⛔ No disponible');
   }
@@ -1484,6 +1500,23 @@ function closeDishDetailSheet() {
 let lastMenuResponse = null;
 
 async function loadDynamicMenu(slug) {
+  const staticCatalogUrl = STATIC_CATALOG_BY_RESTAURANT[slug];
+  staticMenuOnly = Boolean(staticCatalogUrl);
+  if (staticCatalogUrl) {
+    try {
+      const staticResponse = await fetch(staticCatalogUrl, { cache: 'no-store' });
+      if (!staticResponse.ok) throw new Error(`Catálogo estático ${staticResponse.status}`);
+      const catalog = await staticResponse.json();
+      const restaurantMeta = currentSession?.restaurant || null;
+      const menuResponse = buildStaticCatalogMenuResponse(catalog, restaurantMeta);
+      lastMenuResponse = menuResponse;
+      renderDynamicMenu(menuResponse);
+      return;
+    } catch (err) {
+      console.warn('No se pudo cargar el catálogo Fauno integrado; se intenta la carta del API:', err);
+      staticMenuOnly = false;
+    }
+  }
   try {
     const res = await fetchWithRetry(`${API_BASE}/restaurants/${encodeURIComponent(slug)}/menu`);
     if (!res.ok) return;
@@ -1774,7 +1807,7 @@ async function loadActiveOrder(options = {}) {
       ? data.history
       : (Array.isArray(data.account?.tandas) ? data.account.tandas : []);
     activeOrderPolicy = {
-      allowOrdering: data.allowOrdering !== false,
+      allowOrdering: !staticMenuOnly && data.allowOrdering !== false,
       requireWaiterValidation: data.requireWaiterValidation === true
     };
     renderCart();
@@ -3529,7 +3562,7 @@ async function loadRestaurantModuleConfig(slug) {
     const config = await res.json();
     activeRestaurantConfig = config;
     activeOrderPolicy = {
-      allowOrdering: config.allowOrdering !== false,
+      allowOrdering: !staticMenuOnly && config.allowOrdering !== false,
       requireWaiterValidation: config.requireWaiterValidation === true
     };
     // QR es una preferencia de cobro que se informa al mozo. No representa
@@ -3538,7 +3571,7 @@ async function loadRestaurantModuleConfig(slug) {
     renderCart();
 
     // Adaptar textos y acciones según allowOrdering (Comandas Digitales vs Modo Carta Informativa)
-    if (config.allowOrdering === false) {
+    if (staticMenuOnly || config.allowOrdering === false) {
       if (el.btnOrderFromMenu) {
         el.btnOrderFromMenu.innerHTML = '<span>📖 Modo Carta • Llamar al Mozo</span>';
       }
