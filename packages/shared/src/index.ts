@@ -413,7 +413,8 @@ export enum MenuTemplateId {
   GOURMET_OBSIDIAN = 'GOURMET_OBSIDIAN',
   NEON_BURGER = 'NEON_BURGER',
   COASTAL_BEACH = 'COASTAL_BEACH',
-  MINIMAL_BISTRO = 'MINIMAL_BISTRO'
+  MINIMAL_BISTRO = 'MINIMAL_BISTRO',
+  FAUNO_NIGHT = 'FAUNO_NIGHT'
 }
 
 export interface MenuTemplateConfig {
@@ -482,6 +483,19 @@ export const MENU_TEMPLATES: Record<MenuTemplateId, MenuTemplateConfig> = {
     fontFamily: 'Plus Jakarta Sans, sans-serif',
     borderClass: 'border-neutral-700/50',
     previewGradient: 'from-neutral-800/40 via-neutral-900 to-neutral-950'
+  },
+  [MenuTemplateId.FAUNO_NIGHT]: {
+    id: MenuTemplateId.FAUNO_NIGHT,
+    name: 'Fauno Night Craft',
+    tagline: 'Mitología cervecera, barra y platos abundantes',
+    recommendedFor: 'Cervecerías artesanales, bares nocturnos y cartas para compartir',
+    primaryColor: '#16c5df',
+    accentGlow: 'rgba(22, 197, 223, 0.28)',
+    bgClass: 'bg-[#071517] text-slate-100',
+    cardClass: 'bg-[#0d2224]/95 border-cyan-400/30 shadow-cyan-950/30',
+    fontFamily: 'Outfit, sans-serif',
+    borderClass: 'border-cyan-400/35',
+    previewGradient: 'from-cyan-950/70 via-[#10282a] to-[#071517]'
   }
 };
 

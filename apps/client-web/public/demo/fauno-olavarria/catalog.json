@@ -1,0 +1,1686 @@
+{
+  "schemaVersion": 1,
+  "restaurant": {
+    "name": "Fauno Olavarría",
+    "slug": "fauno-olavarria",
+    "address": "Olavarría 3232, Mar del Plata, Buenos Aires",
+    "phone": "+542234242548",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "currency": "ARS",
+    "templateId": "FAUNO_NIGHT",
+    "themeColor": "#16c5df",
+    "logoUrl": "/assets/branding/fauno-olavarria-logo.png",
+    "coverImageUrl": "/assets/branding/fauno-olavarria-logo.png"
+  },
+  "promotions": [
+    {
+      "name": "Noche de fútbol",
+      "description": "Happy en Fernet Branca durante todo el partido. Confirmar equipos y vigencia antes de publicar.",
+      "source": "fauno-user-catalog-2026-09-20"
+    },
+    {
+      "name": "Estudiantes 15% OFF",
+      "description": "Promoción para estudiantes, con condiciones de certificado, máximo de mesa y pago en efectivo por confirmar.",
+      "source": "fauno-user-catalog-2026-09-20"
+    },
+    {
+      "name": "Todos los días son de Fauno",
+      "description": "Promociones por día de la semana. Informativas hasta que el local confirme vigencia y reglas.",
+      "source": "fauno-user-catalog-2026-09-20"
+    }
+  ],
+  "categories": [
+    {
+      "name": "Cervezas",
+      "icon": "🍺",
+      "orderIndex": 0,
+      "items": [
+        {
+          "name": "Jammin IPA",
+          "description": "1 Pinta - Cerveza rubia amarga, para los amantes de las Ipa 6.5%alc 45ibu",
+          "price": 5200,
+          "priceMinor": 520000,
+          "tags": [
+            "CHEF_PICK"
+          ],
+          "isFeatured": true,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Session Ipa",
+          "description": "1 Pinta - Cerveza rubia , semi-amarga, fácil de tomar, veraniega, sabores frutados 4%alc 20ibu",
+          "price": 5200,
+          "priceMinor": 520000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Honey",
+          "description": "1 Pinta - Cerveza rubia a base de miel 5.5%alc 14ibu",
+          "price": 3900,
+          "priceMinor": 390000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Scottish",
+          "description": "1 Pinta - Cerveza Roja, ganadora medalla dorada 2019 copa américa en chile, maltas escocesas. 5.7%alc 18ibu",
+          "price": 3900,
+          "priceMinor": 390000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Dry Stout",
+          "description": "1 Pinta - Cerveza negra , de malta tostada, mucha cremosidad 6% alc 24ibu",
+          "price": 3900,
+          "priceMinor": 390000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pilsen",
+          "description": "1 Pinta- Cerveza Rubia 5% alc 13 ibu",
+          "price": 3900,
+          "priceMinor": 390000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Proximamente... Chernobyl IPA",
+          "description": "Color Dorado Profundo, en la cual predomina toda la expresión e intensidad de aromas de los lúpulos americanos, que le importan un sabor amargo y equilibrado por el dulzor de la malta. IBU : 60 - ALC : 6.5%",
+          "price": 5200,
+          "priceMinor": 520000,
+          "tags": [
+            "COMING_SOON"
+          ],
+          "isFeatured": false,
+          "isAvailable": false,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Proximamente... Barley Wine",
+          "description": "1 Pinta - Cerveza Rubia - Ibu 14 Alc 4",
+          "price": 5200,
+          "priceMinor": 520000,
+          "tags": [
+            "COMING_SOON"
+          ],
+          "isFeatured": false,
+          "isAvailable": false,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Recarga de cervezas",
+          "description": "Honey - Pilsen - Scottish - Dry Stout - Jammin IPA - Session IPA - Barley Wine - Chernobyl IPA Botella recargable $3000 (1lt) Botellón recargable $30.000 (2Lt + Recarga de regalo)",
+          "price": 11000,
+          "priceMinor": 1100000,
+          "tags": [
+            "CHEF_PICK"
+          ],
+          "isFeatured": true,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Botellón recargable 2Lt",
+          "description": "¡¡Llevate nuestro botellón con la primer recarga de regalo!! Las próximas recargas tenes un 10% de descuento!!",
+          "price": 30000,
+          "priceMinor": 3000000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Entradas",
+      "icon": "🥟",
+      "orderIndex": 1,
+      "items": [
+        {
+          "name": "Tequeños",
+          "description": "6 tequeños acompañados de guacamole y salsa de queso alimonado con tomate y verdeo",
+          "price": 12200,
+          "priceMinor": 1220000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Zucchinis empanados",
+          "description": "Bocaditos de zucchini fritos con crema Alioli y crema Alimonada (queso crema, tomate, verdeo y jugo de limón)",
+          "price": 9900,
+          "priceMinor": 990000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Torrejas de Espinaca",
+          "description": "5 torrejas vegetarianas acompañadas con dip de alioli",
+          "price": 10200,
+          "priceMinor": 1020000,
+          "tags": [
+            "VEGETARIAN"
+          ],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Nachos",
+          "description": "Nachos con salsa cheddar, guacamole y pico de gallo",
+          "price": 9400,
+          "priceMinor": 940000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Albondiguitas",
+          "description": "Ocho albóndigas en salsa acompañadas de pan casero",
+          "price": 13800,
+          "priceMinor": 1380000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Chicken Fingers",
+          "description": "Bastones de pollo rebozados, acompañados de queso alimonado y porción de papas McCain",
+          "price": 11400,
+          "priceMinor": 1140000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Adicionales",
+          "description": "Cheddar, Panceta, Crema, Quesos",
+          "price": 1500,
+          "priceMinor": 150000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "De Mar",
+      "icon": "🌊",
+      "orderIndex": 2,
+      "items": [
+        {
+          "name": "Mar Del Tabla",
+          "description": "Porción para 2/3 personas. Langostinos rebozados, rabas, zucchini empanado, bastones de merluza en tempura, brochettes de pescado y verduras. Acompañada de dip de alioli, dip de queso alimonado y tostadas",
+          "price": 32000,
+          "priceMinor": 3200000,
+          "tags": [
+            "CHEF_PICK"
+          ],
+          "isFeatured": true,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Rabas",
+          "description": "Porción de rabas con dip de alioli",
+          "price": 18500,
+          "priceMinor": 1850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Papas",
+      "icon": "🍟",
+      "orderIndex": 3,
+      "items": [
+        {
+          "name": "Papas Fauno",
+          "description": "Porción abundante. Bondiola braseada en cerveza honey, verduras, miel, barbacoa y salsa de verdeo por encima",
+          "price": 16000,
+          "priceMinor": 1600000,
+          "tags": [
+            "CHEF_PICK"
+          ],
+          "isFeatured": true,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Papas al verdeo",
+          "description": "Porción abundante. Crema verdeo y panceta",
+          "price": 14400,
+          "priceMinor": 1440000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Papas cheddar y panceta",
+          "description": "Porción abundante. Salsa cheddar, panceta y verdeo",
+          "price": 14400,
+          "priceMinor": 1440000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Papas simples",
+          "description": "Porción abundante. Papas fritas clásicas",
+          "price": 13000,
+          "priceMinor": 1300000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Papas a caballo",
+          "description": "Porción abundante. Papas fritas con 2 huevos fritos",
+          "price": 14400,
+          "priceMinor": 1440000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Sin Tacc",
+      "icon": "🌾",
+      "orderIndex": 4,
+      "items": [
+        {
+          "name": "Pizza Sin Tacc",
+          "description": "Pizza muzzarella, porción inidividual. Proveedor: Sol de Invierno",
+          "price": 9500,
+          "priceMinor": 950000,
+          "tags": [
+            "GLUTEN_FREE"
+          ],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Panchitos",
+      "icon": "🌭",
+      "orderIndex": 5,
+      "items": [
+        {
+          "name": "Hot Dog",
+          "description": "Hot dog SOLO + guarnición de papas fritas McCain",
+          "price": 9100,
+          "priceMinor": 910000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Hot Dog Mexicano",
+          "description": "Hot dog con guacamole, nachos y criolla + guarnición de papas fritas McCain",
+          "price": 10500,
+          "priceMinor": 1050000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Hot Dog Fauno",
+          "description": "Hot dog con cheddar, panceta y cebolla de verdeo + guarnición de papas fritas McCain",
+          "price": 10500,
+          "priceMinor": 1050000,
+          "tags": [
+            "CHEF_PICK"
+          ],
+          "isFeatured": true,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Tacos",
+      "icon": "🌮",
+      "orderIndex": 6,
+      "items": [
+        {
+          "name": "Tacos Veggie",
+          "description": "3 tacos de salteado de verduras con 2 salsas a elección (pico de gallo, guacamole o cheddar). Abundantes!",
+          "price": 14400,
+          "priceMinor": 1440000,
+          "tags": [
+            "VEGETARIAN"
+          ],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Tacos pollo/carne",
+          "description": "3 tacos de pollo o carne salteado de verduras con 2 salsas a elección (pico de gallo, guacamole o cheddar). Abundantes!",
+          "price": 15600,
+          "priceMinor": 1560000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Hamburguesas",
+      "icon": "🍔",
+      "orderIndex": 7,
+      "items": [
+        {
+          "name": "Super Fauno",
+          "description": "Doble medallón de carne con pan parmesano, doble cheddar, doble panceta, cebolla caramelizada, salsa barbacoa con guarnición de papas McCain",
+          "price": 18500,
+          "priceMinor": 1850000,
+          "tags": [
+            "CHEF_PICK"
+          ],
+          "isFeatured": true,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Hamburguesa Completa",
+          "description": "Medallón de carne, queso tybo, tomate, lechuga, jamón y queso con guarnición de papas McCain",
+          "price": 17300,
+          "priceMinor": 1730000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Hamburguesa Mítica",
+          "description": "Medallón de carne, queso tybo, huevo, jamón, morrón, champiñones, salsa barbacoa con guarnición de papas McCain",
+          "price": 17500,
+          "priceMinor": 1750000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Hamburguesa Bacon Huevo",
+          "description": "Medallón de carne, cebolla caramelizada, panceta, cheddar, huevo, salsa barbacoa con guarnición de papas McCain",
+          "price": 17500,
+          "priceMinor": 1750000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Hamburguesa RoqueChamp",
+          "description": "Medallón de carne, queso tybo, roquefort, champiñones, cebolla caramelizada y rúcula con guarnición de papas McCain,",
+          "price": 17500,
+          "priceMinor": 1750000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Hamburguesa simple",
+          "description": "Medallón de carne con queso cheddar en pan de batata, con guarnición de papas McCain",
+          "price": 16000,
+          "priceMinor": 1600000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Hamburguesa Veggie",
+          "description": "Medallón de mix de lentejas casero, rúcula, cebolla caramelizada, morrón y tomates confitados acompañado de guarnición de papas McCain. Opcional con huevo!",
+          "price": 16000,
+          "priceMinor": 1600000,
+          "tags": [
+            "VEGETARIAN"
+          ],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Medallón Adicional",
+          "description": "Medallón adicional para cualquier hamburguesa",
+          "price": 4000,
+          "priceMinor": 400000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Milanesas XXL",
+      "icon": "🍽️",
+      "orderIndex": 8,
+      "items": [
+        {
+          "name": "Milanesa Fauno",
+          "description": "Comen 3, pican 4. Milanesa de nalga con muzzarella, cheddar, panceta y huevo + guarnición de papas fritas",
+          "price": 40900,
+          "priceMinor": 4090000,
+          "tags": [
+            "CHEF_PICK"
+          ],
+          "isFeatured": true,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Milanesa Americana",
+          "description": "Comen 3, pican 4. Milanesa de nalga con muzzarella, panceta, huevo + guarnición de papas fritas",
+          "price": 38900,
+          "priceMinor": 3890000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Milanesa CheddarBacon",
+          "description": "Comen 3, pican 4. Milanesa de nalga con panceta y cheddar + guarnición de papas fritas",
+          "price": 38900,
+          "priceMinor": 3890000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Milanesa Napolitana",
+          "description": "Comen 3, pican 4. Milanesa de nalga con muzzarella, jamón, salsa de tomate + guarnición de papas fritas",
+          "price": 38900,
+          "priceMinor": 3890000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Milanesa Roquefort",
+          "description": "Comen 3, pican 4. Milanesa de nalga con roquefort y muzzarella + guarnición de papas fritas",
+          "price": 36900,
+          "priceMinor": 3690000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Milanesa Rúcula",
+          "description": "Comen 3, pican 4. Milanesa de nalga con muzzarella, rúcula y parmesano + guarnición de papas fritas",
+          "price": 36900,
+          "priceMinor": 3690000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Milanesa Capresse",
+          "description": "Comen 3, pican 4. Milanesa de nalga con muzzarella, tomate, albahaca + guarnición de papas fritas",
+          "price": 36900,
+          "priceMinor": 3690000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Milanesa clásica",
+          "description": "Comen 3, pican 4. Milanesa de nalga + guarnición de papas fritas",
+          "price": 35900,
+          "priceMinor": 3590000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Pizzas",
+      "icon": "🍕",
+      "orderIndex": 9,
+      "items": [
+        {
+          "name": "Pizza Fauno",
+          "description": "Salsa de tomate, muzzarella, bacon, cheddar, 4 huevos fritos",
+          "price": 22500,
+          "priceMinor": 2250000,
+          "tags": [
+            "CHEF_PICK"
+          ],
+          "isFeatured": true,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pizza Americana",
+          "description": "Salsa de tomate, muzzarella, bacon y huevo",
+          "price": 22100,
+          "priceMinor": 2210000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pizza Roquefort",
+          "description": "Salsa de tomate, queso roquefort y muzzarella",
+          "price": 21800,
+          "priceMinor": 2180000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pizza Pepperoni",
+          "description": "Salsa de tomate, muzarella y pepperoni",
+          "price": 21500,
+          "priceMinor": 2150000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pizza 4 Quesos",
+          "description": "Muzzarella, roquefort ahumado, sardo y parmesano",
+          "price": 21200,
+          "priceMinor": 2120000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pizza Napolitana",
+          "description": "Salsa de tomate, ajo, muzzarella, jamón, tomate natural",
+          "price": 20500,
+          "priceMinor": 2050000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pizza Especial",
+          "description": "Salsa de tomate, muzzarella, jamón, huevo y morrón",
+          "price": 20500,
+          "priceMinor": 2050000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pizza Capresse",
+          "description": "Salsa de tomate, muzzarella, tomate y albahaca",
+          "price": 19400,
+          "priceMinor": 1940000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pizza FugaZ",
+          "description": "Salsa de tomate, muzzarella y cebolla",
+          "price": 19400,
+          "priceMinor": 1940000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pizza Rucula",
+          "description": "Salsa de tomate, muzzarella, rúcula, jamón crudo y parmesano",
+          "price": 19400,
+          "priceMinor": 1940000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Muzzarella",
+          "description": "Salsa de tomate y muzzarella",
+          "price": 18000,
+          "priceMinor": 1800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Pollito",
+      "icon": "🍗",
+      "orderIndex": 10,
+      "items": [
+        {
+          "name": "Pechuga al verdeo + Guarnición",
+          "description": "Pechuga de pollo al verdeo con guarnición de papas fritas McCain o ensalada al plato",
+          "price": 12400,
+          "priceMinor": 1240000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Pechuga sola + Guarnición",
+          "description": "Pechuga de pollo a la plancha con guarnición de papas fritas McCain o ensalada",
+          "price": 11000,
+          "priceMinor": 1100000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Ensaladas",
+      "icon": "🥗",
+      "orderIndex": 11,
+      "items": [
+        {
+          "name": "Ensalada Cesar Pollo",
+          "description": "Plato abundante! Ensalada de lechuga romana y croûtons con jugo de limón, aderezo cesar, pollo salteado y queso en hebras",
+          "price": 9500,
+          "priceMinor": 950000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Sin alcohol",
+      "icon": "🧃",
+      "orderIndex": 12,
+      "items": [
+        {
+          "name": "Mojito Free",
+          "description": "Lima macerada con azúcar, limón y sprite",
+          "price": 5500,
+          "priceMinor": 550000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Naranjito Free",
+          "description": "Reversión de Naranjito sin alcohol",
+          "price": 5500,
+          "priceMinor": 550000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Granada",
+          "description": "Granadina con Sprite",
+          "price": 5500,
+          "priceMinor": 550000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "El Tropic",
+          "description": "Ananá, maracuyá y jugo de naranja",
+          "price": 5500,
+          "priceMinor": 550000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Atardecer",
+          "description": "Simplificación de \"Tequila Sunrise\". Jugo de naranja con granadina",
+          "price": 5500,
+          "priceMinor": 550000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Porron Heineken 0.0% alc",
+          "description": "Botellita de 330ml de cerveza Heineken SIN ALCOHOL",
+          "price": 7000,
+          "priceMinor": 700000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Frozzen Fruit",
+          "description": "Presentación de Daiquiri sin alcohol Sabores: Frutilla, Maracuyá, Ananá y Mango",
+          "price": 7500,
+          "priceMinor": 750000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Limonada Frozzen",
+          "description": "Licuado de menta, jugo de limón, y almíbar simple",
+          "price": 7500,
+          "priceMinor": 750000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Limonada con jengibre y menta",
+          "description": "Jarra para compartir! Agua, azúcar, limón, menta, jengibre y hielo",
+          "price": 11500,
+          "priceMinor": 1150000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Agua",
+          "description": "Agua mineral Villavicencio",
+          "price": 4500,
+          "priceMinor": 450000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Agua Saborizada",
+          "description": "Aquarius. Naranja, Manzana, Pomelo, Uva o Pera",
+          "price": 4800,
+          "priceMinor": 480000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Gaseosa",
+          "description": "Gaseosas linea Coca. Coca-cola, Fanta o Sprite",
+          "price": 4800,
+          "priceMinor": 480000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "SPEED",
+          "description": null,
+          "price": 6000,
+          "priceMinor": 600000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Lo de siempre",
+      "icon": "🥃",
+      "orderIndex": 13,
+      "items": [
+        {
+          "name": "Fernet Branca",
+          "description": "Fernet con coca cola y hielo .- Vaso 500cc",
+          "price": 7200,
+          "priceMinor": 720000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Gin Tonic Aconcagua",
+          "description": "Medida de Gin Aconcagua con agua Tónica (u otra gaseosa) Decorado con limón, lima, naranja, pomelo, pepino o menta",
+          "price": 7200,
+          "priceMinor": 720000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Gancia",
+          "description": "Gancia con sprite, limón y hielo. Vaso de 500cc",
+          "price": 7200,
+          "priceMinor": 720000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Campari Orange",
+          "description": "Campari con jugo de naranja. Vaso de 500cc",
+          "price": 7200,
+          "priceMinor": 720000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Aperol Orange",
+          "description": "Aperol , jugo de naranja, naranja y hielo. Vaso de 500cc",
+          "price": 7200,
+          "priceMinor": 720000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Cuba Libre",
+          "description": "Havana Club, coca cola, limón y hielo. Vaso de 500cc",
+          "price": 7200,
+          "priceMinor": 720000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Cynar con Pomelo",
+          "description": "Cynar, gaseosa de pomelo y hielo",
+          "price": 7200,
+          "priceMinor": 720000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Vermu con soda",
+          "description": "Vermú disponibles: Carpano Rosso - Martini (Dry-Bianco-Rosso) - Pun e Mes rosso",
+          "price": 7200,
+          "priceMinor": 720000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Ramazzotti Tonic",
+          "description": null,
+          "price": 7200,
+          "priceMinor": 720000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Mint Tonic",
+          "description": "Fernet Branca menta receta italiana con tónica",
+          "price": 7200,
+          "priceMinor": 720000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "De autor",
+      "icon": "✨",
+      "orderIndex": 14,
+      "items": [
+        {
+          "name": "Toxica",
+          "description": "Con un gran parecido a la realidad y lejos de la coincidencia, su fuerte color rojo y sus tonos anaranjados aparentan ser dulce y agradable, pero te deja rotísimo.💔 Jameson, Jägermeister, Aperol y almíbar simple, ahumado con canela. Coctel de Luca Iokich",
+          "price": 12000,
+          "priceMinor": 1200000,
+          "tags": [
+            "CHEF_PICK"
+          ],
+          "isFeatured": true,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Caipis y Mojitos",
+      "icon": "🍹",
+      "orderIndex": 15,
+      "items": [
+        {
+          "name": "Caipirinha",
+          "description": "Cachaça Velho Barreiro, lima, azúcar y hielo",
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Caiporoska Sernova",
+          "description": "Vodka, jugo de lima y azúcar. Elegí tu reversión eligiendo uno de las siguientes variedades de SERNOVA: Citrus - Apple Pears - Tropical Passion - Raspberry",
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Caipiroska Absolut",
+          "description": "Vodka, jugo de lima y azúcar. Elegí tu reversión eligiendo uno de las siguientes variedades de ABSOLUT: Vainilla - Cardamomo - Pomelo - Lima - Mango - Mandarina - Frutos rojos",
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Mojito Clásico",
+          "description": "Ron blanco Havana CLub, jugo de limón, lima macerada en almíbar y menta. Su version con Frutos rojos le da un dulzor y un toque de acidez que le entrega una personalidad unica",
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Mojito Malibu",
+          "description": "Licor de coco Malibú, jugo de limón. lima macerada en almibar y menta",
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Naranjito",
+          "description": "Mojito con jugo de naranja. Es y no es, usted me entiende. Con y sin alcohol",
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Adicionales",
+          "description": "Agrega a tu trago Frutos rojos, pulpa de Frutilla, pulpa de Mango, pulpa de Maracuyá o pulpa de Ananá",
+          "price": 2000,
+          "priceMinor": 200000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Spritz",
+      "icon": "🍊",
+      "orderIndex": 16,
+      "items": [
+        {
+          "name": "Aperol Spritz",
+          "description": "Aperol, espumante, dash de soda y rodaja de naranja",
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Campari Spritz",
+          "description": null,
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Gancia Spritz",
+          "description": null,
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Ramazzotti Spritz",
+          "description": null,
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Malibú Spritz",
+          "description": "Licor de coco Malibú, espumante, dash de soda y rodaja de pepino",
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Passions",
+      "icon": "🥭",
+      "orderIndex": 17,
+      "items": [
+        {
+          "name": "Maracuya Pasión",
+          "description": "Este cóctel combina una medida de vodka ABSOLUT APEACH, con una medida de pulpa de maracuyá, jugo natural de una lima, y almíbar. Batido y doble colado, es servido en copa de cóctel, y decorado con rodaja de lima",
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Anana passion",
+          "description": null,
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Frutilla Passion",
+          "description": null,
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Mango Pasión",
+          "description": "Este cóctel combina una medida de vodka ABSOLUT MANGO, una medida de pulpa de mango, jugo natural de una lima, y almíbar. Batido y doble colado, es servido en copa de cóctel, y decorado con rodaja de lima",
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Juleps",
+      "icon": "🌿",
+      "orderIndex": 18,
+      "items": [
+        {
+          "name": "Gancia Julep",
+          "description": null,
+          "price": 8600,
+          "priceMinor": 860000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Cynar Julep",
+          "description": "Cynar , jugo de pomelo , jugo de lima, azucar y menta",
+          "price": 8600,
+          "priceMinor": 860000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Jagger Julep",
+          "description": "jagger, lima, pomelo, azucar y menta",
+          "price": 8600,
+          "priceMinor": 860000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Whisky Julep",
+          "description": "60ml de whisky , hielo ,lima, azucar y menta",
+          "price": 8600,
+          "priceMinor": 860000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Malibu Julep",
+          "description": null,
+          "price": 8600,
+          "priceMinor": 860000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Negronis",
+      "icon": "🍸",
+      "orderIndex": 19,
+      "items": [
+        {
+          "name": "Milano Torino",
+          "description": null,
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Americano",
+          "description": "Campari , vermu rosso , agua con gas, rodaja de naranja",
+          "price": 8300,
+          "priceMinor": 830000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Negroni",
+          "description": "Campari, Vermu rosso, gin y rodaja de naranja",
+          "price": 8800,
+          "priceMinor": 880000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Sbagliatto",
+          "description": null,
+          "price": 9000,
+          "priceMinor": 900000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Boulevardier",
+          "description": null,
+          "price": 9200,
+          "priceMinor": 920000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Coctelería clasica",
+      "icon": "🍸",
+      "orderIndex": 20,
+      "items": [
+        {
+          "name": "Penicilin",
+          "description": "Whisky jameson, miel, jengibre y jugo de lima",
+          "price": 9500,
+          "priceMinor": 950000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Maldita Margarita",
+          "description": "Mejor conocido como Devil's Margarita. Otra sugerencia de la coctelería clásica. Con base de tequila, un dash de vino malbec, lima y almibar",
+          "price": 9400,
+          "priceMinor": 940000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "New York Sour",
+          "description": "Este cóctel clásico combina el whisky, el jugo de limón y el Malbec, que le confiere su toque diferenciador. Una variación del \"Whisky Sour\" de la época previa a la ley seca, también conocido como \"Southern whisky sour\" Info adicional: tiene un deje a Bubaloo de uva",
+          "price": 9200,
+          "priceMinor": 920000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Canchanchará",
+          "description": "Con el ron blanco predominante, y una base estilo sour que combina el dulzor de la miel, y la acidez del jugo de lima",
+          "price": 9000,
+          "priceMinor": 900000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Mimosa",
+          "description": "Absolut clasic, jugo de naranja exprimido, champagñe, hielo y rodaja de naranja",
+          "price": 8800,
+          "priceMinor": 880000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Dry Martini",
+          "description": null,
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Perfect Martini",
+          "description": null,
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Ferroviario",
+          "description": "Vermú rojo, fernet y soda",
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Frozzens",
+      "icon": "❄️",
+      "orderIndex": 21,
+      "items": [
+        {
+          "name": "Daikiri Frozen",
+          "description": "Con base de Ron Havana. Sabores: Frutilla, Maracuya, Anana o Mango",
+          "price": 9500,
+          "priceMinor": 950000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Margarita Frozen",
+          "description": "Partes iguales de Tequila, licor triplesec, combinados con jugo de limon y almibar simple",
+          "price": 9500,
+          "priceMinor": 950000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Premium Gin's",
+      "icon": "🍸",
+      "orderIndex": 22,
+      "items": [
+        {
+          "name": "Adicionales",
+          "description": "Frutos rojos y pulpas de frutilla, maracuyá, mango y ananá",
+          "price": 2000,
+          "priceMinor": 200000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Beefeater",
+          "description": "Gin Beeffeater , tonica, limon. (opcional, lima, pepino , pomelo o naranja,pimienta)",
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Beefeater PINK Frutilla",
+          "description": "Gin Beefeater Frutilla Pink , tonica , opcional, menta, jengibre, limón, pepino, pimienta",
+          "price": 8200,
+          "priceMinor": 820000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Bombay Shappire",
+          "description": "Gin Bombay Shappire , tonica, limon. (opcional, lima, pepino , pomelo o naranja,pimienta)",
+          "price": 8800,
+          "priceMinor": 880000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Bulldog",
+          "description": null,
+          "price": 9100,
+          "priceMinor": 910000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Medidas",
+      "icon": "🥃",
+      "orderIndex": 23,
+      "items": [
+        {
+          "name": "Vodka Sernova",
+          "description": "Medida de Vodka Sernova con gaseosa o jugo a elección",
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Malibú",
+          "description": "Medida de Malibu con gaseosa o jugo a elección",
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Tequila Jose Cuervo",
+          "description": "Medida de Tequila Jose Cuervo con gaseosa o jugo a elección, Tambien en chupitos con limon",
+          "price": 8500,
+          "priceMinor": 850000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Vodka Absolut",
+          "description": "Medida de Vodka Absolut con gaseosa o jugo a elección",
+          "price": 9500,
+          "priceMinor": 950000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Jameson - Irish Whiskey",
+          "description": "Medida Whisky Jameson",
+          "price": 8300,
+          "priceMinor": 830000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Red Label - Johnnie Walker",
+          "description": "Medida Jhonny Walker Red Label",
+          "price": 8800,
+          "priceMinor": 880000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Jack Daniel's - Old Nº7",
+          "description": "Medida Whisky Jack Daniels",
+          "price": 9300,
+          "priceMinor": 930000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Jack Daniel's - Jennessee Honey",
+          "description": "Medida JACK DANIELS HONEY , opcional coca cola",
+          "price": 9500,
+          "priceMinor": 950000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Black Label - Johnnie Walker",
+          "description": null,
+          "price": 11000,
+          "priceMinor": 1100000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Vinos y espumantes",
+      "icon": "🍷",
+      "orderIndex": 24,
+      "items": [
+        {
+          "name": "Cosecha Tardía",
+          "description": "Vino Blanco Dulce 2022 Su sabor suave, junto a las notas a miel que se perciben en el aroma, lo hacen un vino ideal para beberlo solo, o bien para acompañar postres, quesos, y frutos secos. Bodega Norton",
+          "price": 15000,
+          "priceMinor": 1500000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Cordero con piel de Lobo",
+          "description": "Malbec 2022 - Luján de Cuyo Cosecha manual. Elaborado tradicionalmente en vasijas de hormigón. Fermentado a 25ºC, con trabajos de extracción moderados logrando un vino fresco, frutado y de estructura media. El 50% del vino maduró 6 meses en barricas de roble usadas",
+          "price": 16500,
+          "priceMinor": 1650000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Latitud 33",
+          "description": "Botella de vino, Malbec, Cabernet Suavignon",
+          "price": 19000,
+          "priceMinor": 1900000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Saint Felicien",
+          "description": "Malbec 2020",
+          "price": 30000,
+          "priceMinor": 3000000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Rutini",
+          "description": "50% Cabernet Sauvignon - 50% Malbec Año 2019 Conservado durante 12 meses en barricas de roble francés nuevo y de 2º uso. Rojo rubí intenso con matices violáceos. En nariz presenta aroma a frutas rojas y especias, con notas de vainilla y chocolate que le da el roble. En boca es un vino muy complejo, de buen cuerpo y estructura",
+          "price": 32000,
+          "priceMinor": 3200000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Chandon Extra Brut",
+          "description": "champagne chandon extra brut con 4 speed",
+          "price": 52000,
+          "priceMinor": 5200000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Baron B",
+          "description": "Baron B extra Brutt + 4 speed",
+          "price": 80000,
+          "priceMinor": 8000000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    },
+    {
+      "name": "Botellas",
+      "icon": "🍾",
+      "orderIndex": 25,
+      "items": [
+        {
+          "name": "Fernet + 2 cocas",
+          "description": "Botella Fernet Branca + 2 coca cola 1.5lt",
+          "price": 65000,
+          "priceMinor": 6500000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Sernova (clasico, saborizado) + 6 speed",
+          "description": "citrus,passion,berries,clasico + 6 speed o 2 jarras jugo-",
+          "price": 52000,
+          "priceMinor": 5200000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        },
+        {
+          "name": "Gaseosa x1,5 Lt",
+          "description": "Disponible solo para servicio de botellas",
+          "price": 8000,
+          "priceMinor": 800000,
+          "tags": [],
+          "isFeatured": false,
+          "isAvailable": true,
+          "source": "fauno-user-catalog-2026-09-20"
+        }
+      ]
+    }
+  ]
+}
