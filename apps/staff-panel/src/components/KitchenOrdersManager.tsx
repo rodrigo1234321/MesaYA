@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { StaffApi, type StaffTableItemDTO } from '../lib/api';
 import type { RestaurantMenuResponse, MenuCategoryDTO, MenuItemDTO } from '@mesaya/shared';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   UtensilsCrossed,
   Clock,
@@ -134,6 +135,12 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
   }, [restaurantId]);
 
   const [modalError, setModalError] = useState<string | null>(null);
+
+  const manualOrderFocusTrapRef = useFocusTrap(isModalOpen, () => {
+    setModalError(null);
+    setIsModalOpen(false);
+  });
+  const printOrderFocusTrapRef = useFocusTrap(!!printOrderId, () => setPrintOrderId(null));
 
   const openNewOrderModal = async () => {
     setIsModalOpen(true);
@@ -635,7 +642,7 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
 
       {/* MODAL: CARGAR COMANDA MANUAL A MESA */}
       {isModalOpen && (
-        <div role="dialog" aria-modal="true" aria-labelledby="kitchen-order-modal-title" className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+        <div ref={manualOrderFocusTrapRef} role="dialog" aria-modal="true" aria-labelledby="kitchen-order-modal-title" className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
           <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-lg p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
@@ -763,7 +770,7 @@ export const KitchenOrdersManager: React.FC<KitchenOrdersManagerProps> = ({ rest
 
       {/* E20 — hoja de comanda de cocina imprimible/portable (una pantalla). */}
       {printOrder && (
-        <div className="e20-print-overlay fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center p-3 sm:p-6 overflow-y-auto">
+        <div ref={printOrderFocusTrapRef} className="e20-print-overlay fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center p-3 sm:p-6 overflow-y-auto">
           <div
             role="dialog"
             aria-modal="true"

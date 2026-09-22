@@ -12,6 +12,7 @@ import {
   TableFSMState,
   STATE_LABELS
 } from '@mesaya/shared';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   AlertCircle,
   Banknote,
@@ -1748,9 +1749,11 @@ const ManagerReauthModal: React.FC<{
   onPinChange: (value: string) => void;
   onSubmit: () => void;
   onClose: () => void;
-}> = ({ tableLabel, pin, submitting, onPinChange, onSubmit, onClose }) => (
-  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="service-manager-reauth-title">
-    <form onSubmit={(event) => { event.preventDefault(); onSubmit(); }} className="w-full max-w-sm rounded-3xl border border-emerald-400/30 bg-slate-900 p-6 shadow-2xl space-y-4">
+}> = ({ tableLabel, pin, submitting, onPinChange, onSubmit, onClose }) => {
+  const focusTrapRef = useFocusTrap(true, onClose);
+  return (
+    <div ref={focusTrapRef} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="service-manager-reauth-title">
+      <form onSubmit={(event) => { event.preventDefault(); onSubmit(); }} className="w-full max-w-sm rounded-3xl border border-emerald-400/30 bg-slate-900 p-6 shadow-2xl space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 id="service-manager-reauth-title" className="font-black text-white text-base">Autorizar cobro · {tableLabel}</h3>
@@ -1799,7 +1802,8 @@ const ManagerReauthModal: React.FC<{
       </div>
     </form>
   </div>
-);
+  );
+};
 
 const ManualOrderModal: React.FC<{
   tableLabel: string;
@@ -1810,9 +1814,11 @@ const ManualOrderModal: React.FC<{
   onRemove: (id: string) => void;
   onSubmit: () => void;
   onClose: () => void;
-}> = ({ tableLabel, menu, items, submitting, onAdd, onRemove, onSubmit, onClose }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="manual-service-order-title">
-    <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-3xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+}> = ({ tableLabel, menu, items, submitting, onAdd, onRemove, onSubmit, onClose }) => {
+  const focusTrapRef = useFocusTrap(true, onClose);
+  return (
+    <div ref={focusTrapRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="manual-service-order-title">
+      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-3xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
       <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
         <div>
           <h3 id="manual-service-order-title" className="font-black text-white text-base sm:text-lg">Agregar pedido · {tableLabel}</h3>
@@ -1897,4 +1903,5 @@ const ManualOrderModal: React.FC<{
       </div>
     </div>
   </div>
-);
+  );
+};

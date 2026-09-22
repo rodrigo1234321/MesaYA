@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TableItem, AdminApi } from '../lib/api';
 import { Sector, SECTOR_LABELS, buildCanonicalClientTableUrl } from '@mesaya/shared';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Plus, QrCode, Copy, Check, ExternalLink, Download } from 'lucide-react';
 import QRCode from 'qrcode';
 
@@ -55,6 +56,12 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
 
   const [activeQrTable, setActiveQrTable] = useState<{ label: string; url: string } | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  const qrFocusTrapRef = useFocusTrap(!!activeQrTable, () => setActiveQrTable(null));
+  const addTableFocusTrapRef = useFocusTrap(showAddModal, () => {
+    setCreateError(null);
+    setShowAddModal(false);
+  });
 
   useEffect(() => {
     if (!activeQrTable) {
@@ -199,7 +206,7 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
 
       {/* QR Code Modal */}
       {activeQrTable && (
-        <div role="dialog" aria-modal="true" aria-labelledby="admin-qr-title" className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div ref={qrFocusTrapRef} role="dialog" aria-modal="true" aria-labelledby="admin-qr-title" className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-xs bg-slate-900 border border-slate-800 rounded-3xl p-6 text-center space-y-4 shadow-2xl">
             <div>
               <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono">
@@ -252,7 +259,7 @@ export const TablesManager: React.FC<TablesManagerProps> = ({ tables, restaurant
 
       {/* Add Table Modal */}
       {showAddModal && (
-        <div role="dialog" aria-modal="true" aria-labelledby="add-table-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div ref={addTableFocusTrapRef} role="dialog" aria-modal="true" aria-labelledby="add-table-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleCreateTable} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
             <h3 id="add-table-title" className="text-base font-bold text-white">Agregar Nueva Mesa</h3>
 

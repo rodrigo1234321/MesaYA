@@ -245,5 +245,122 @@ describe('Global Error Sanitization (P0-05, R02)', () => {
     expect(response.body).not.toContain('SECRET_LEAK_TEST');
     expect(response.body).not.toContain('12345');
   });
+
+  it('bloquea direcciones IP internas y hostnames internos en details', async () => {
+    const app = await buildApp();
+
+    app.get('/test-internal-addr-leak', async (_req, reply) => {
+      const err: any = new Error('Servicio no disponible');
+      err.statusCode = 503;
+      err.code = 'SERVICE_UNAVAILABLE';
+      err.details = {
+        host: '192.168.1.100',
+        port: 5432,
+        fallback: 'db-replica.internal',
+        tableId: 'mesa-01'
+      };
+      return sendSanitizedError(reply, err);
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-internal-addr-leak'
+    });
+
+    const body = JSON.parse(response.body);
+    // 503 is 5xx, should be fully opaque
+    expect(response.statusCode).toBe(500);
+    expect(response.body).not.toContain('192.168');
+    expect(response.body).not.toContain('.internal');
+    expect(response.body).not.toContain('5432');
+  });
+
+  it('bloquea URLs con credenciales embebidas en details de 4xx', async () => {
+    const app = await buildApp();
+
+    app.get('/test-credential-url-leak', async (_req, reply) => {
+      const err: any = new Error('Fallo de conexión a servicio externo');
+      err.statusCode = 422;
+      err.code = 'EXTERNAL_SERVICE_ERROR';
+      err.details = {
+        url: 'http://admin:s3cr3t@db.internal:5432/production',
+        tableSessionId: 'ts-abc-123',
+        reason: 'timeout'
+      };
+      return sendSanitizedError(reply, err);
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-credential-url-leak'
+    });
+
+    expect(response.statusCode).toBe(422);
+    const body = JSON.parse(response.body);
+    // The entire details should be dropped since the JSON contains credential patterns
+    expect(response.body).not.toContain('admin');
+    expect(response.body).not.toContain('s3cr3t');
+    expect(response.body).not.toContain('db.internal');
+    expect(response.body).not.toContain('5432');
+    expect(response.body).not.toContain('production');
+  });
+
+  it('bloquea connection strings de cualquier DB engine en detail values', async () => {
+    const app = await buildApp();
+
+    app.get('/test-connstr-detail-leak', async (_req, reply) => {
+      const err: any = new Error('Mesa no disponible');
+      err.statusCode = 409;
+      err.code = 'TABLE_NOT_AVAILABLE';
+      err.details = {
+        debug: 'mysql://root:pass@10.0.0.5:3306/mesaya',
+        currentVersion: 7,
+        expectedVersion: 9
+      };
+      return sendSanitizedError(reply, err);
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-connstr-detail-leak'
+    });
+
+    expect(response.statusCode).toBe(409);
+    const body = JSON.parse(response.body);
+    expect(response.body).not.toContain('mysql://');
+    expect(response.body).not.toContain('root');
+    expect(response.body).not.toContain('10.0.0.5');
+    // Safe domain metadata should survive if the tainted entries are dropped
+    // but if the whole JSON serialized form triggers the fast-path block, it's also acceptable
+  });
+
+  it('preserva metadata segura de dominio cuando details no tiene taint', async () => {
+    const app = await buildApp();
+
+    app.get('/test-safe-details-pass', async (_req, reply) => {
+      const err: any = new Error('El plano cambió');
+      err.statusCode = 409;
+      err.code = 'LAYOUT_VERSION_CONFLICT';
+      err.details = {
+        expectedVersion: 7,
+        currentVersion: 9,
+        tableId: 'mesa-01'
+      };
+      return sendSanitizedError(reply, err);
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-safe-details-pass'
+    });
+
+    expect(response.statusCode).toBe(409);
+    const body = JSON.parse(response.body);
+    expect(body.code).toBe('LAYOUT_VERSION_CONFLICT');
+    expect(body.details).toBeDefined();
+    expect(body.details.expectedVersion).toBe(7);
+    expect(body.details.currentVersion).toBe(9);
+    expect(body.details.tableId).toBe('mesa-01');
+  });
 });
 

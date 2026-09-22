@@ -6,6 +6,7 @@ import {
   ReceiptSnapshotDTO
 } from '@mesaya/shared';
 import { AdminApi } from '../lib/api';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   DollarSign,
   Receipt,
@@ -68,6 +69,12 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
   const [adjustmentTip, setAdjustmentTip] = useState('');
   const [adjustmentReason, setAdjustmentReason] = useState('');
   const [adjustmentSubmitting, setAdjustmentSubmitting] = useState(false);
+
+  const fiscalFocusTrapRef = useFocusTrap(showFiscalModal, () => setShowFiscalModal(false));
+  const adjustmentFocusTrapRef = useFocusTrap(
+    showAdjustmentModal && !!selectedSettlementForAdjustment,
+    () => setShowAdjustmentModal(false)
+  );
 
   const loadData = useCallback(async () => {
     if (!restaurantId) return;
@@ -797,7 +804,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
 
       {/* Modal Carga Comprobante Fiscal */}
       {showFiscalModal && (
-        <div role="dialog" aria-modal="true" aria-label="Asociar comprobante fiscal externo" className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div ref={fiscalFocusTrapRef} role="dialog" aria-modal="true" aria-label="Asociar comprobante fiscal externo" className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleCreateFiscalDoc} className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
             <h3 className="text-base font-bold text-white">Asociar comprobante fiscal externo</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -911,7 +918,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ restaurantId }) => {
 
       {/* Modal Devolución / Ajuste de Cobro */}
       {showAdjustmentModal && selectedSettlementForAdjustment && (
-        <div role="dialog" aria-modal="true" aria-label="Devolución o ajuste de cobro" className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+        <div ref={adjustmentFocusTrapRef} role="dialog" aria-modal="true" aria-label="Devolución o ajuste de cobro" className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <form
             onSubmit={handleCreateAdjustment}
             className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full space-y-4"

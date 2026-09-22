@@ -3,6 +3,7 @@ import { AdminApi } from '../lib/api';
 import { MenuItemDTO, MENU_TAGS, BatchMenuImportItem, RestaurantMenuResponse } from '@mesaya/shared';
 import { TemplateSelector } from './TemplateSelector';
 import { AIChefAssistantModal } from './AIChefAssistantModal';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   Download,
   Upload,
@@ -69,6 +70,20 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
   const [feedback, setFeedback] = useState<{ message: string; isError?: boolean } | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
   const [actionSubmitting, setActionSubmitting] = useState(false);
+
+  const importFocusTrapRef = useFocusTrap(showImportModal, () => setShowImportModal(false));
+  const addCategoryFocusTrapRef = useFocusTrap(showAddCategoryModal, () => {
+    setModalError(null);
+    setShowAddCategoryModal(false);
+  });
+  const addItemFocusTrapRef = useFocusTrap(!!showAddItemModal, () => {
+    setModalError(null);
+    setShowAddItemModal(null);
+  });
+  const brandingFocusTrapRef = useFocusTrap(showBrandingModal, () => {
+    setModalError(null);
+    setShowBrandingModal(false);
+  });
 
   useEffect(() => {
     if (!feedback) return;
@@ -800,6 +815,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
       ========================================== */}
       {showImportModal && (
         <div
+          ref={importFocusTrapRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="modal-import-title"
@@ -953,7 +969,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
           MODAL: NUEVA CATEGORÍA
       ========================================== */}
       {showAddCategoryModal && (
-        <div role="dialog" aria-modal="true" aria-labelledby="add-category-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div ref={addCategoryFocusTrapRef} role="dialog" aria-modal="true" aria-labelledby="add-category-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleCreateCategory}
             className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl"
@@ -1041,7 +1057,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
           MODAL: NUEVO PLATO
       ========================================== */}
       {showAddItemModal && (
-        <div role="dialog" aria-modal="true" aria-labelledby="add-item-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div ref={addItemFocusTrapRef} role="dialog" aria-modal="true" aria-labelledby="add-item-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleCreateItem}
             className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
@@ -1189,7 +1205,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ restaurantId }) => {
           MODAL: PERSONALIZACIÓN DE MARCA
       ========================================== */}
       {showBrandingModal && (
-        <div role="dialog" aria-modal="true" aria-labelledby="branding-modal-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div ref={brandingFocusTrapRef} role="dialog" aria-modal="true" aria-labelledby="branding-modal-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleSaveBranding}
             className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl"

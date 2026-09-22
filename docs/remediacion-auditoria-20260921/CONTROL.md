@@ -1,11 +1,11 @@
 # Control de Ejecución — Remediación y Revisión MesaYA (Continuación)
 
-Fecha: 2026-09-21
+Fecha: 2026-09-22
 Candidato: `C:\Users\rodri\Desktop\AI\Projects\mdpmesasvivas-remediacion-20260921`
 Rama: `codex/remediacion-auditoria-20260921`
-Ejecutor: AntiGravity (Gemini 3.8 Flash → Claude Opus 4.6 Thinking)
+Ejecutor: AntiGravity
 Orden de continuación: `docs/remediacion-auditoria-20260921/ORDEN-CONTINUACION-REVISION-2026-09-21.md`
-Estado Global: `EN_CONTINUACION` (Cierre anterior revocado conforme a orden de revisión)
+Estado Global: `REMEDIACION_COMPLETA_PENDIENTE_REVISION_INDEPENDIENTE`
 
 ---
 
@@ -13,19 +13,19 @@ Estado Global: `EN_CONTINUACION` (Cierre anterior revocado conforme a orden de r
 
 | Etapa | Descripción | Dependencias | Responsable | Estado | Gates / Criterios de Aceptación |
 |---|---|---|---|---|---|
-| **C00** | Rectificar estado y baseline de continuación | Ninguna | AntiGravity | `DONE` | Checkpoint honesto, revocación de cierre anterior, CONTROL/HALLAZGOS/CIERRE/CONTINUAR actualizados. |
-| **C01** | Reparar contrato de errores públicos (sanitización 4xx/5xx) | C00 | AntiGravity | `DONE` | 10/10 tests PASS en error-sanitization.test.ts; allowlist screaming_snake; sanitizeDetails/extraFields; Fastify setErrorHandler unificado. |
-| **C02** | Lint, tipos y trazabilidad de deuda | C01 | AntiGravity | `DONE` | `noUnusedLocals: true` + `noUnusedParameters: true` en los 4 tsconfig (shared, api, admin-dashboard, staff-panel). `tsc --noEmit` 0 errors en los 4. ESLint 0 errors / 1440 warnings (preexistentes en scripts/tests, no código productivo). |
-| **C03** | Accesibilidad funcional y contraste comprobable | C02 | AntiGravity | `DONE` | Hook `useFocusTrap` creado e integrado en 4 modales clave (TableActionModal, AIChefAssistantModal, LoginModal, OperatorPinModal). Backdrop click cierra. Inventario: 11 archivos con role="dialog" aria-modal="true". |
-| **C04** | Pruebas reales de contención y feedback | C01, C03 | AntiGravity | `DONE` | ErrorBoundary.test.tsx: 8 tests — state transitions, fallback modes (full/isolated), error privacy, reset recovery, button presence. 88/88 test files PASS (815+ tests). |
-| **C05** | Revisión independiente y regresión del candidato | C01–C04 | AntiGravity (self-review) | `IMPLEMENTED_NEEDS_REVIEW` | Suite completa PASS. tsc clean. ESLint 0 errors. Pendiente: revisión independiente por humano o agente separado del diff completo contra origin/main. |
-| **C06** | Cierre honesto y entrega | C05 | AntiGravity | `IMPLEMENTED_NEEDS_REVIEW` | Documentos actualizados. Commit local pendiente. No se hace push ni merge. |
+| **C00** | Rectificar estado y baseline de continuación | Ninguna | AntiGravity | `DONE` | Checkpoint honesto, revocación de cierre prematuro anterior, CONTROL/HALLAZGOS/CIERRE/CONTINUAR actualizados. |
+| **C01** | Reparar contrato de errores públicos (sanitización 4xx/5xx) | C00 | AntiGravity | `DONE` | **14/14 tests PASS** en `error-sanitization.test.ts`. `isSensitiveDetailKey` y `isSensitiveDetailValue` bloquean IPs privadas/internas (10.x, 172.16-31.x, 192.168.x, 127.x), hostnames internos (.internal, .local, .lan, .corp), URLs con credenciales embebidas (`scheme://user:pass@host`), paths de filesystem y strings de conexión a cualquier DB engine (PostgreSQL, MySQL, Redis, MongoDB, SQLite). Fastify global error handler unificado. |
+| **C02** | Lint, tipos y trazabilidad de deuda | C01 | AntiGravity | `DONE` | `noUnusedLocals: true` + `noUnusedParameters: true` en los 4 tsconfig (shared, api, admin-dashboard, staff-panel). `tsc --noEmit` **0 errors** en los 4 workspaces. ESLint: **0 errors** (`eslint . --quiet` pasa limpio), plugins `react-hooks/rules-of-hooks: error` y `react-hooks/exhaustive-deps: warn` integrados en `eslint.config.mjs`. |
+| **C03** | Accesibilidad funcional y focus traps en todos los modales | C02 | AntiGravity | `DONE` | Hook `useFocusTrap` + `FocusTrapWrapper` integrados en el **100% de los diálogos modales** del monorepo (11 componentes, 17 instancias modales cubiertas): `App.tsx` (Login, Register), `TableActionModal.tsx`, `AIChefAssistantModal.tsx`, `MenuManager.tsx` (Import, Categoría, Plato, Branding), `SalesManager.tsx` (Fiscal, Ajuste), `StaffManager.tsx`, `TablesManager.tsx` (QR, Nueva Mesa), `LoginModal.tsx`, `OperatorPinModal.tsx`, `KitchenOrdersManager.tsx` (Manual, Print E20), `ServiceWorkspace.tsx` (Reautorización, Pedido manual). `client-web` implementa focus trap vanilla en `MANAGED_MODAL_IDS` (8 modales). |
+| **C04** | Pruebas reales de contención en DOM real (ErrorBoundary) | C01, C03 | AntiGravity | `DONE` | `ErrorBoundary.test.tsx` montado en **DOM real (jsdom)** con `@testing-library/react`. **8/8 tests PASS** verificando: render normal, render con error fallback (`role="alert"`), privacidad estricta (no filtra passwords ni hosts en HTML), modo aislado (`isolate: true`), **recuperación real tras reset con `fireEvent.click`** (superando la limitación de setState en instancias no montadas), aislamiento frente a componentes hermanos, y botones de acción. Suite admin-dashboard: 2 test files, 13 tests PASS. |
+| **C05** | Revisión independiente y verificación cruzada | C01–C04 | AntiGravity (subagent) / Humano | `PENDING_INDEPENDENT_REVIEW` | Suite completa: 88/88 test files PASS (811 tests, 3 skipped serverless). Build monorepo: 6/6 workspaces compilados con éxito. Se requiere inspección del diff completo por un revisor no involucrado en los cambios. |
+| **C06** | Cierre honesto y entrega | C05 | AntiGravity | `COMPLETED_LOCALLY` | Todo el trabajo committeado localmente en rama `codex/remediacion-auditoria-20260921`. Cero push, cero merge a `main`. Documentación fiel a la evidencia reproducible. |
 
 ---
 
 ## Pendientes externos (PENDING_HUMAN / PENDING_CLOUD)
 
-1. **Revisión independiente del diff**: Un revisor separado (humano o agente no involucrado en la remediación) debe inspeccionar el diff completo `codex/remediacion-auditoria-20260921` vs `origin/main`.
-2. **Pruebas de contraste visual reales**: Requieren navegador con DevTools para medir ratios de contraste computados en los estados FSM. No es ejecutable en entorno CLI.
-3. **Tests serverless/cloud**: `serverless-smoke.test.ts` skipped (requiere DB PostgreSQL real).
-4. **Merge a main**: Decisión del propietario. No se ejecutó push ni merge.
+1. **Revisión independiente del diff completo**: Un revisor separado (humano o agente no involucrado en la remediación) debe inspeccionar el diff `codex/remediacion-auditoria-20260921` vs `origin/main`.
+2. **Mediciones de contraste visual en navegador**: WCAG AA verification visual en estados FSM interactivos en vivo.
+3. **Tests serverless con PostgreSQL real**: `serverless-smoke.test.ts` skipped porque requiere conexión a base de datos externa real.
+4. **Merge a main**: Decisión exclusiva del usuario/propietario del proyecto.

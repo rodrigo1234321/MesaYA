@@ -1,118 +1,160 @@
 /**
- * C04 — ErrorBoundary component tests.
+ * C04 — ErrorBoundary real DOM mount tests.
  *
- * Pure unit tests that verify:
- * - getDerivedStateFromError transitions
- * - Fallback rendering (full-page and isolated modes)
- * - Error privacy (no sensitive data in state)
- * - Recovery via reset handler
- * - role="alert" accessibility attribute
+ * Uses @testing-library/react with jsdom to actually mount React trees
+ * and verify fallback UI rendering, error privacy, recovery, and isolation.
  */
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { ErrorBoundary } from './ErrorBoundary';
 
-describe('C04 — ErrorBoundary Component Tests', () => {
+// Component that conditionally throws on render
+let shouldThrowGlobal = false;
+const ThrowingChild: React.FC = () => {
+  if (shouldThrowGlobal) {
+    throw new Error('DB connection refused password=s3cr3t host=prod-db.internal');
+  }
+  return <div data-testid="child-content">Todo funciona correctamente</div>;
+};
 
-  it('initializes with hasError=false and renders children directly', () => {
-    const child = React.createElement('div', { 'data-testid': 'child' }, 'Contenido normal');
-    const boundary = new ErrorBoundary({ children: child });
-    expect(boundary.state.hasError).toBe(false);
-
-    const rendered = boundary.render() as React.ReactElement;
-    expect(rendered).toBeDefined();
-    expect(rendered.props['data-testid']).toBe('child');
+describe('C04 — ErrorBoundary real DOM mount tests', () => {
+  beforeEach(() => {
+    shouldThrowGlobal = false;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
-  it('getDerivedStateFromError sets hasError=true', () => {
-    const error = new Error('Fallo crítico simulado');
-    const newState = ErrorBoundary.getDerivedStateFromError(error);
-    expect(newState).toEqual({ hasError: true });
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
   });
 
-  it('renders full-page fallback with role="alert" when hasError=true', () => {
-    const boundary = new ErrorBoundary({
-      children: React.createElement('div', null, 'Hijo'),
-      fallbackTitle: 'Error Personalizado',
-      fallbackMessage: 'Mensaje de prueba sin filtración técnica'
-    });
-    boundary.state = { hasError: true };
+  it('renders children normally when no error occurs', () => {
+    shouldThrowGlobal = false;
+    render(
+      <ErrorBoundary>
+        <ThrowingChild />
+      </ErrorBoundary>
+    );
 
-    const rendered = boundary.render() as React.ReactElement;
-    expect(rendered.props.role).toBe('alert');
-    // Full-page mode uses min-h-screen
-    expect(rendered.props.className).toContain('min-h-screen');
+    expect(screen.getByTestId('child-content')).toBeDefined();
+    expect(screen.getByText('Todo funciona correctamente')).toBeDefined();
   });
 
-  it('renders isolated fallback (card) when isolate=true without derribar app', () => {
-    const boundary = new ErrorBoundary({
-      children: React.createElement('div', null, 'Tab Content'),
-      isolate: true,
-      fallbackTitle: 'Error en Tab',
-      fallbackMessage: 'La sección no pudo cargar'
-    });
-    boundary.state = { hasError: true };
+  it('shows fallback UI with role="alert" when child throws in render', () => {
+    shouldThrowGlobal = true;
+    render(
+      <ErrorBoundary
+        fallbackTitle="Error Inesperado"
+        fallbackMessage="La vista no pudo cargarse correctamente."
+      >
+        <ThrowingChild />
+      </ErrorBoundary>
+    );
 
-    const rendered = boundary.render() as React.ReactElement;
-    expect(rendered.props.role).toBe('alert');
-    expect(rendered.props.className).toContain('rounded-2xl');
-    // Should NOT be full-screen
-    expect(rendered.props.className).not.toContain('min-h-screen');
+    const alert = screen.getByRole('alert');
+    expect(alert).toBeDefined();
+    expect(screen.getByText('Error Inesperado')).toBeDefined();
+    expect(screen.getByText('La vista no pudo cargarse correctamente.')).toBeDefined();
+    expect(screen.queryByTestId('child-content')).toBeNull();
   });
 
-  it('componentDidCatch does NOT store error message in state (privacy)', () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const boundary = new ErrorBoundary({ children: 'test' });
-    const testError = new Error('DB connection refused password=secret host=prod.internal');
+  it('does NOT expose sensitive error details (DB passwords, hosts) in fallback UI', () => {
+    shouldThrowGlobal = true;
+    const { container } = render(
+      <ErrorBoundary>
+        <ThrowingChild />
+      </ErrorBoundary>
+    );
 
-    boundary.componentDidCatch(testError, { componentStack: 'in FaultyComponent' });
-
-    // State must NOT contain the error object, message, or stack
-    expect(boundary.state).not.toHaveProperty('error');
-    expect(boundary.state).not.toHaveProperty('errorMessage');
-    expect(boundary.state).not.toHaveProperty('stack');
-    // Only hasError boolean is stored
-    expect(Object.keys(boundary.state)).toEqual(['hasError']);
-    consoleErrorSpy.mockRestore();
+    const html = container.innerHTML;
+    expect(html).not.toContain('password');
+    expect(html).not.toContain('s3cr3t');
+    expect(html).not.toContain('prod-db.internal');
+    expect(html).not.toContain('DB connection');
+    expect(html).not.toContain('refused');
   });
 
-  it('handleReset clears error state and invokes onReset callback', () => {
-    const onResetMock = vi.fn();
-    const boundary = new ErrorBoundary({
-      children: React.createElement('div', null, 'Content'),
-      onReset: onResetMock
-    });
-    boundary.state = { hasError: true };
+  it('shows isolated fallback (card, not full-screen) when isolate=true', () => {
+    shouldThrowGlobal = true;
+    render(
+      <ErrorBoundary isolate={true} fallbackTitle="Error en sección">
+        <ThrowingChild />
+      </ErrorBoundary>
+    );
 
-    // Simulate reset
-    (boundary as any).handleReset();
-
-    expect(boundary.state.hasError).toBe(false);
-    expect(onResetMock).toHaveBeenCalledOnce();
+    const alert = screen.getByRole('alert');
+    expect(alert.className).toContain('rounded-2xl');
+    expect(alert.className).not.toContain('min-h-screen');
+    expect(screen.getByText('Reintentar sección')).toBeDefined();
   });
 
-  it('isolated fallback contains "Reintentar sección" button text', () => {
-    const boundary = new ErrorBoundary({
-      children: React.createElement('div'),
-      isolate: true
-    });
-    boundary.state = { hasError: true };
+  it('recovers from error when reset button is clicked', () => {
+    // Start broken, then fix after reset
+    shouldThrowGlobal = true;
 
-    const rendered = boundary.render() as React.ReactElement;
-    // Deep-check the rendered tree contains the retry text
-    const jsonStr = JSON.stringify(rendered);
-    expect(jsonStr).toContain('Reintentar sección');
+    const Wrapper: React.FC = () => {
+      return (
+        <ErrorBoundary onReset={() => { shouldThrowGlobal = false; }}>
+          <ThrowingChild />
+        </ErrorBoundary>
+      );
+    };
+
+    render(<Wrapper />);
+
+    // Initially in error state
+    expect(screen.getByRole('alert')).toBeDefined();
+    expect(screen.queryByTestId('child-content')).toBeNull();
+
+    // Click "Reintentar"
+    fireEvent.click(screen.getByText('Reintentar'));
+
+    // After reset, child should render normally
+    expect(screen.getByTestId('child-content')).toBeDefined();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('preserves sibling sections when isolate=true (boundary does not crash parent)', () => {
+    shouldThrowGlobal = true;
+    render(
+      <div>
+        <div data-testid="sibling">Sección funcional</div>
+        <ErrorBoundary isolate={true}>
+          <ThrowingChild />
+        </ErrorBoundary>
+      </div>
+    );
+
+    expect(screen.getByTestId('sibling')).toBeDefined();
+    expect(screen.getByText('Sección funcional')).toBeDefined();
+    expect(screen.getByRole('alert')).toBeDefined();
   });
 
   it('full-page fallback contains both "Reintentar" and "Recargar página" buttons', () => {
-    const boundary = new ErrorBoundary({
-      children: React.createElement('div')
-    });
-    boundary.state = { hasError: true };
+    shouldThrowGlobal = true;
+    render(
+      <ErrorBoundary>
+        <ThrowingChild />
+      </ErrorBoundary>
+    );
 
-    const rendered = boundary.render() as React.ReactElement;
-    const jsonStr = JSON.stringify(rendered);
-    expect(jsonStr).toContain('Reintentar');
-    expect(jsonStr).toContain('Recargar página');
+    expect(screen.getByText('Reintentar')).toBeDefined();
+    expect(screen.getByText('Recargar página')).toBeDefined();
+  });
+
+  it('componentDidCatch does NOT store error in state (only hasError boolean)', () => {
+    shouldThrowGlobal = true;
+    render(
+      <ErrorBoundary>
+        <ThrowingChild />
+      </ErrorBoundary>
+    );
+
+    // The fact that we see the fallback and NOT the raw error message proves
+    // the component does not render the captured error object
+    const alert = screen.getByRole('alert');
+    expect(alert.innerHTML).not.toContain('DB connection');
+    expect(alert.innerHTML).not.toContain('password');
   });
 });

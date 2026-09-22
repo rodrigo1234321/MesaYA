@@ -90,7 +90,7 @@ export function sanitizePublicCode(code: unknown, statusCode: number): string {
 }
 
 function isSensitiveDetailKey(key: string): boolean {
-  return /authorization|bearer|password|secret|token|api_key|cookie|session_token|hash|private/i.test(key);
+  return /authorization|bearer|password|secret|token|api_key|cookie|session_token|hash|private|host|hostname|addr|endpoint|connection|dsn|uri|database_url/i.test(key);
 }
 
 function isSensitiveDetailValue(val: unknown): boolean {
@@ -98,7 +98,17 @@ function isSensitiveDetailValue(val: unknown): boolean {
     if (val.length > 500) return true;
     if (/[=\\]/.test(val) && !val.includes('==')) return true;
     if (/bearer\s+[a-zA-Z0-9_\-.]+/i.test(val)) return true;
-    if (/password|secret|token|hash|api_key|database_url|postgres:\/\/|sqlite:/i.test(val)) return true;
+    if (/password|secret|token|hash|api_key|database_url/i.test(val)) return true;
+    // Connection URIs (postgres://, mysql://, mongodb://, redis://, sqlite:, amqp://, etc.)
+    if (/(?:postgres|mysql|mongodb|redis|sqlite|amqp|mariadb|mssql)(?:ql)?:\/?\//i.test(val)) return true;
+    // Any URL with embedded credentials (scheme://user:pass@host)
+    if (/[a-z]+:\/\/[^/]*:[^/]*@/i.test(val)) return true;
+    // Private/internal IP addresses (10.x, 172.16-31.x, 192.168.x, 127.x)
+    if (/\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/.test(val)) return true;
+    // Internal hostnames (.internal, .local, .lan, .private, .corp, .intranet)
+    if (/\b[\w.-]+\.(?:internal|local|lan|private|corp|intranet)\b/i.test(val)) return true;
+    // File system paths (Unix or Windows)
+    if (/(?:^|\s)[/\\](?:[\w.-]+[/\\]){2,}/i.test(val)) return true;
   }
   return false;
 }

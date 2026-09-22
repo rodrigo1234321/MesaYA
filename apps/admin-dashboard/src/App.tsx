@@ -10,6 +10,7 @@ import { FloorPlanManager } from './components/FloorPlan/FloorPlanManager';
 import { RTMSAnalyticsView } from './components/RTMSAnalyticsView';
 import { SalesManager } from './components/SalesManager';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useFocusTrap } from './hooks/useFocusTrap';
 import { Utensils, LayoutGrid, BookOpen, Users, BarChart3, RefreshCw, Plus, Store, ChevronDown, Sliders, Map, DollarSign } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -55,6 +56,9 @@ export const App: React.FC = () => {
   const [regTemplate, setRegTemplate] = useState('GOURMET_OBSIDIAN');
   const [regError, setRegError] = useState<string | null>(null);
   const [regSubmitting, setRegSubmitting] = useState(false);
+
+  const loginFocusTrapRef = useFocusTrap(authRequired && restaurants.length > 0);
+  const registerFocusTrapRef = useFocusTrap(publicOnboardingEnabled && showRegisterModal, () => setShowRegisterModal(false));
 
   const activeRestaurant = restaurants.find(r => r.slug === selectedSlug || r.id === selectedSlug) || {
     id: selectedSlug,
@@ -469,7 +473,7 @@ export const App: React.FC = () => {
       </main>
 
       {authRequired && restaurants.length > 0 && (
-        <div role="dialog" aria-modal="true" aria-labelledby="admin-login-title" className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div ref={loginFocusTrapRef} role="dialog" aria-modal="true" aria-labelledby="admin-login-title" className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleLogin} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl">
             <div>
               <h2 id="admin-login-title" className="text-lg font-extrabold text-white">Ingresar a Administración</h2>
@@ -509,7 +513,7 @@ export const App: React.FC = () => {
 
       {/* SaaS Register New Restaurant Modal */}
       {publicOnboardingEnabled && showRegisterModal && (
-        <div role="dialog" aria-modal="true" aria-labelledby="admin-register-title" className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div ref={registerFocusTrapRef} role="dialog" aria-modal="true" aria-labelledby="admin-register-title" className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleRegisterSubmit} className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
             <div className="flex items-center space-x-2.5">
               <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">

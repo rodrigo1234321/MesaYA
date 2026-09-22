@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AdminApi } from '../lib/api';
 import { Sector, SECTOR_LABELS } from '@mesaya/shared';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Plus, UserCheck, Shield } from 'lucide-react';
 
 interface StaffManagerProps {
@@ -17,6 +18,11 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ restaurantId }) => {
   const [error, setError] = useState<string | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const focusTrapRef = useFocusTrap(showAddModal, () => {
+    setModalError(null);
+    setShowAddModal(false);
+  });
 
   const loadStaff = async () => {
     try {
@@ -102,7 +108,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ restaurantId }) => {
       </div>
 
       {showAddModal && (
-        <div role="dialog" aria-modal="true" aria-label="Alta de personal" aria-labelledby="staff-modal-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div ref={focusTrapRef} role="dialog" aria-modal="true" aria-label="Alta de personal" aria-labelledby="staff-modal-title" className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleCreate} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
             <h3 id="staff-modal-title" className="text-base font-bold text-white">Alta de Personal</h3>
 
