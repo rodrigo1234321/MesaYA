@@ -12,13 +12,9 @@ import {
   Users,
   DollarSign,
   Flame,
-  Calendar,
   Layers,
-  ChevronRight,
-  AlertTriangle,
   RefreshCw,
-  Loader2,
-  HelpCircle
+  Loader2
 } from 'lucide-react';
 
 interface RTMSAnalyticsViewProps {

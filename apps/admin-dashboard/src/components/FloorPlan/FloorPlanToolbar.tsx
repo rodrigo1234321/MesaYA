@@ -1,11 +1,6 @@
 import React from 'react';
+import { TableFSMState } from '@mesaya/shared';
 import { useFloorPlanStore } from '../../stores/useFloorPlanStore';
-import {
-  TableFSMState,
-  STATE_COLORS,
-  STATE_LABELS,
-  STATE_EMOJIS
-} from '@mesaya/shared';
 import {
   ZoomIn,
   ZoomOut,
@@ -13,15 +8,8 @@ import {
   Edit3,
   Eye,
   Save,
-  Radio,
   Plus,
-  Layers,
-  Sparkles,
   Building2,
-  Sun,
-  Wine,
-  TreePine,
-  ArrowUpRight,
   LayoutGrid,
   Map
 } from 'lucide-react';

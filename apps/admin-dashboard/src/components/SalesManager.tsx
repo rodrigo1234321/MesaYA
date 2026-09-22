@@ -8,17 +8,12 @@ import {
 import { AdminApi } from '../lib/api';
 import {
   DollarSign,
-  TrendingUp,
   Receipt,
   FileText,
   Download,
   Calendar,
-  Filter,
   RefreshCw,
   AlertCircle,
-  Eye,
-  CheckCircle2,
-  Clock,
   Plus
 } from 'lucide-react';
 

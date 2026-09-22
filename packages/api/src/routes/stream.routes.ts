@@ -13,7 +13,7 @@ export async function streamRoutes(fastify: FastifyInstance) {
    * - Cualquier petición a /stream es rechazada de inmediato con 410 GONE, sin datos,
    *   cerrando la conexión HTTP de inmediato.
    */
-  fastify.all('/stream', async (request, reply) => {
+  fastify.all('/stream', async (_request, reply) => {
     reply.header('Cache-Control', 'no-store, no-cache, must-revalidate');
     return reply.status(410).send({
       statusCode: 410,

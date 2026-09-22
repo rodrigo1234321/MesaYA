@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AdminApi } from '../lib/api';
-import { MenuCategoryDTO, MenuItemDTO, MENU_TAGS, BatchMenuImportItem, RestaurantMenuResponse } from '@mesaya/shared';
+import { MenuItemDTO, MENU_TAGS, BatchMenuImportItem, RestaurantMenuResponse } from '@mesaya/shared';
 import { TemplateSelector } from './TemplateSelector';
 import { AIChefAssistantModal } from './AIChefAssistantModal';
 import {
@@ -15,15 +15,11 @@ import {
   FileSpreadsheet,
   RefreshCw,
   Search,
-  Tag,
   Palette,
-  ExternalLink,
   ChevronDown,
   ChevronUp,
-  Flame,
   Star,
-  Eye,
-  Sliders
+  Eye
 } from 'lucide-react';
 
 interface MenuManagerProps {

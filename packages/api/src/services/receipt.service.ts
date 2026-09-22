@@ -6,8 +6,7 @@ import {
   OrderStatus,
   SalesSummaryDTO,
   CallType,
-  calculateOrderItemTotalMinor,
-  calculateSessionBalance
+  calculateOrderItemTotalMinor
 } from '@mesaya/shared';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

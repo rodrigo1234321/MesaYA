@@ -245,7 +245,7 @@ export class CallService {
     callId: string,
     status: CallStatus,
     staffRestaurantId?: string,
-    staffUserId?: string
+    _staffUserId?: string
   ) {
     const existing = await prisma.callRequest.findUnique({
       where: { id: callId },

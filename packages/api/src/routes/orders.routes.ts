@@ -1,7 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { OrderService } from '../services/order.service';
-import { prisma } from '../lib/prisma';
-import { verifyStaffToken, verifyManagerRole, verifySettlementAuthorization } from '../middlewares/auth.middleware';
+import { verifyStaffToken, verifySettlementAuthorization } from '../middlewares/auth.middleware';
 import { AddOrderItemDTO, ClaimItemDTO, SplitMode, OrderStatus } from '@mesaya/shared';
 import { sendSanitizedError } from '../lib/errorHandler';
 

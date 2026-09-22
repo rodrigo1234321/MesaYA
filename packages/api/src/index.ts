@@ -39,6 +39,7 @@ import { serviceRoutes } from './routes/service.routes';
 import { salesRoutes } from './routes/sales.routes';
 import { prisma } from './lib/prisma';
 import { getEnvironmentConfig } from './lib/environment';
+import { sendSanitizedError } from './lib/errorHandler';
 
 const port = Number(process.env.PORT) || 3000;
 
@@ -126,51 +127,9 @@ export async function buildApp() {
     }
   });
 
-  // Global Error Handler for standardized JSON responses (P0-05)
-  app.setErrorHandler((error: any, request, reply) => {
-    const statusCode = Number(error?.statusCode || error?.status) || 500;
-    const isClientError = statusCode >= 400 && statusCode < 500;
-    const requestId = String(request.id || error?.requestId || '');
-
-    // Registrar error completo de servidor en logs estructurados con requestId, correlationId, staffUserId, restaurantId
-    if (!isClientError) {
-      const staffUser = (request as any).staffUser;
-      const correlationId = (request as any).correlationId || String(request.id || '');
-      request.log.error({
-        err: error,
-        requestId,
-        correlationId,
-        url: request.url,
-        method: request.method,
-        restaurantId: staffUser?.restaurantId,
-        staffUserId: staffUser?.sub,
-        terminalId: staffUser?.terminalId
-      }, 'Unhandled server exception');
-    }
-
-    // Respuesta pública hacia el cliente: 5xx SIEMPRE es opaco
-    if (!isClientError) {
-      return reply.status(500).send({
-        code: 'INTERNAL_SERVER_ERROR',
-        error: 'Ocurrió un error inesperado al procesar la solicitud',
-        message: 'Ocurrió un error inesperado al procesar la solicitud',
-        statusCode: 500,
-        requestId
-      });
-    }
-
-    // Errores 4xx de cliente
-    const publicCode = error?.code || (statusCode === 404 ? 'NOT_FOUND' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : 'BAD_REQUEST');
-    const publicMessage = error?.message || 'Error en la solicitud';
-
-    return reply.status(statusCode).send({
-      code: publicCode,
-      error: publicMessage,
-      message: publicMessage,
-      statusCode,
-      requestId,
-      ...(error?.details ? { details: error.details } : {})
-    });
+  // Global Error Handler for standardized JSON responses (P0-05, C01)
+  app.setErrorHandler((error: any, _request, reply) => {
+    return sendSanitizedError(reply, error);
   });
 
   // Standardized 404 handler (P0-05)

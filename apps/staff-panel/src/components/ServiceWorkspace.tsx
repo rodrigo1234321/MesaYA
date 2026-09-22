@@ -15,25 +15,19 @@ import {
 import {
   AlertCircle,
   Banknote,
-  Check,
   CheckCircle2,
   ChefHat,
   ChevronRight,
   CircleDollarSign,
   Clock3,
-  Coffee,
-  ExternalLink,
   Filter,
-  LayoutDashboard,
   LockKeyhole,
   MapPinned,
   Plus,
   RefreshCw,
-  RotateCcw,
   Search,
   Send,
   UserRound,
-  Users,
   X
 } from 'lucide-react';
 import { StaffApi } from '../lib/api';
@@ -180,11 +174,11 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
   restaurantId,
   currentUser,
   onOpenKitchen,
-  onRequireOperatorPin,
+  onRequireOperatorPin: _onRequireOperatorPin,
   syncSnapshot,
   syncLoading,
   syncError,
-  syncLastSuccessTimestamp,
+  syncLastSuccessTimestamp: _syncLastSuccessTimestamp,
   onRefresh
 }) => {
   const [snapshot, setSnapshot] = useState<ServiceWorkspaceDTO | null>(syncSnapshot ?? null);
@@ -918,8 +912,6 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
 
   const mapWidth = snapshot?.floorPlan.layout.canvasWidth || 1200;
   const mapHeight = snapshot?.floorPlan.layout.canvasHeight || 800;
-  const snapshotAgeSeconds = snapshot ? Math.max(0, Math.floor((now - new Date(snapshot.generatedAt).getTime()) / 1000)) : null;
-  const snapshotStale = snapshotAgeSeconds !== null && snapshotAgeSeconds > (snapshot?.staleAfterSeconds || 12);
   const selectedPaymentMethod = selectedAccount
     ? paymentMethodBySession[selectedAccount.tableSessionId]
       || waiterPaymentForRequested(selectedAccount.requestedPaymentMethod)
@@ -1252,17 +1244,6 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
       )}
     </section>
   );
-};
-
-const SummaryChip: React.FC<{ label: string; value: number; tone: 'indigo' | 'rose' | 'amber' | 'orange' | 'emerald' }> = ({ label, value, tone }) => {
-  const tones = {
-    indigo: 'border-indigo-400/30 bg-indigo-500/10 text-indigo-100',
-    rose: 'border-rose-400/30 bg-rose-500/10 text-rose-100',
-    amber: 'border-amber-400/30 bg-amber-500/10 text-amber-100',
-    orange: 'border-orange-400/30 bg-orange-500/10 text-orange-100',
-    emerald: 'border-emerald-400/30 bg-emerald-500/10 text-emerald-100'
-  };
-  return <div className={`rounded-xl border px-3 py-2 ${tones[tone]}`}><div className="text-lg font-black leading-none">{value}</div><div className="mt-1 text-[10px] font-bold opacity-80">{label}</div></div>;
 };
 
 const ServiceTaskCard: React.FC<{

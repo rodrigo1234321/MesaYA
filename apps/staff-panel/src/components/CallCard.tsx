@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CallEventData, CallStatus, CallType, PaymentMethod, PAYMENT_METHOD_LABELS, SECTOR_LABELS } from '@mesaya/shared';
+import { CallEventData, CallStatus, CallType, PAYMENT_METHOD_LABELS, SECTOR_LABELS } from '@mesaya/shared';
 import { Clock, CheckCircle2, Navigation, MessageCircle, UserX } from 'lucide-react';
 
 interface CallCardProps {

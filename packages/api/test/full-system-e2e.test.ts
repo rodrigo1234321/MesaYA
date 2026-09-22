@@ -47,30 +47,46 @@ describe('MesaYA (RTMS) Full System End-to-End Test Suite', () => {
     table1 = restaurant.tables.find((t: any) => t.label === 'Mesa 1') || restaurant.tables[0];
     expect(table1).toBeDefined();
 
-    // Ensure pristine idempotent state for table1
+    // Ensure active shift exists for the restaurant
+    const activeShift = await prisma.shift.findFirst({
+      where: { restaurantId: restaurant.id, closedAt: null }
+    }) || await prisma.shift.create({
+      data: { restaurantId: restaurant.id, openedAt: new Date() }
+    });
+
+    // Ensure pristine idempotent state for table1 linked to active shift
     await prisma.feedback.deleteMany({ where: { tableSession: { tableId: table1.id } } });
     await prisma.callRequest.deleteMany({ where: { tableSession: { tableId: table1.id } } });
     await prisma.orderItem.deleteMany({ where: { order: { tableSession: { tableId: table1.id } } } });
     await prisma.order.deleteMany({ where: { tableSession: { tableId: table1.id } } });
-    await prisma.tableSession.updateMany({
-      where: { tableId: table1.id },
-      data: { closedAt: null, expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000) }
+
+    const existingSession = await prisma.tableSession.findFirst({
+      where: { tableId: table1.id }
     });
+    if (existingSession) {
+      await prisma.tableSession.update({
+        where: { id: existingSession.id },
+        data: { shiftId: activeShift.id, closedAt: null, expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000) }
+      });
+    } else {
+      await prisma.tableSession.create({
+        data: {
+          tableId: table1.id,
+          shiftId: activeShift.id,
+          token: randomUUID(),
+          activeKey: table1.id,
+          expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000)
+        }
+      });
+    }
+
     await prisma.table.update({
       where: { id: table1.id },
       data: { currentState: TableFSMState.AVAILABLE, stateChangedAt: new Date() }
     });
 
     // The state-engine/QR-revocation checks need an independent clean table.
-    // table1 is intentionally used by the ordering/account scenarios above;
-    // after those scenarios it has an unpaid balance and must be rejected by
-    // the production safety guard instead of being reused for a positive FSM
-    // transition test.
-    const stateShift = await prisma.shift.findFirst({
-      where: { restaurantId: restaurant.id, closedAt: null }
-    }) || await prisma.shift.create({
-      data: { restaurantId: restaurant.id, openedAt: new Date() }
-    });
+    const stateShift = activeShift;
     stateTable = await prisma.table.create({
       data: {
         restaurantId: restaurant.id,

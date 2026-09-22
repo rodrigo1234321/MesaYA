@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MenuTemplateId, MENU_TEMPLATES } from '@mesaya/shared';
 import { AdminApi } from '../lib/api';
-import { Check, Sparkles, Paintbrush, Flame, Waves, Coffee, Utensils } from 'lucide-react';
+import { Check, Paintbrush, Flame, Waves, Coffee, Utensils } from 'lucide-react';
 
 interface TemplateSelectorProps {
   restaurantSlug: string;

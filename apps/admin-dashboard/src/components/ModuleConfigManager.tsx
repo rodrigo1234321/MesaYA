@@ -13,7 +13,6 @@ import {
   CreditCard,
   ShoppingCart,
   TrendingUp,
-  Sparkles,
   Star,
   Users,
   Gift,

@@ -5,6 +5,8 @@
     "rootDir": "./src",
     "module": "CommonJS",
     "moduleResolution": "node",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "paths": {
       "@mesaya/shared": ["../shared/dist/index.d.ts"]
     }

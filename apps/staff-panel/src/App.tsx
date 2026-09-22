@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { StaffUserDTO } from '@mesaya/shared';
 import { StaffApi } from './lib/api';
 import { useServiceSync } from './hooks/useServiceSync';
@@ -120,7 +120,6 @@ export const App: React.FC = () => {
     lastSuccessTimestamp,
     secondsSinceLastSuccess,
     snapshot,
-    calls,
     unattendedCallsCount,
     urgentTasksCount,
     refresh: refreshSync

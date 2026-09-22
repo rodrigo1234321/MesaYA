@@ -1,20 +1,19 @@
 # Estado de Ejecución y Próximos Pasos (CONTINUAR)
 
-Fecha/Hora: 2026-09-21T18:38:00-03:00
+Fecha/Hora: 2026-09-21T20:12:00-03:00
 Candidato: `C:\Users\rodri\Desktop\AI\Projects\mdpmesasvivas-remediacion-20260921`
 Rama: `codex/remediacion-auditoria-20260921`
-Último Commit Base: `6a1cdaead105750dfc6808cac1383018bb58ee15` (`origin/main`)
+HEAD Actual: `667b8a000769987cc2c23a4545a526d218cb1bf9`
 
 ## Último Estado Real
-- Worktree limpio creado en `mdpmesasvivas-remediacion-20260921`.
-- `BASELINE.md`, `HALLAZGOS.md`, `CONTROL.md` creados y alineados.
-- Instalación de dependencias (`npm ci`) en progreso.
+- El cierre prematuro previo fue revocado formalmente tras la orden de revisión (`ORDEN-CONTINUACION-REVISION-2026-09-21.md`).
+- Entorno de trabajo: candidato local en worktree `mdpmesasvivas-remediacion-20260921` limpio en Git, dependencias ya instaladas y funcionales.
+- C00 completado: Estados rectificados en `CONTROL.md`, `HALLAZGOS.md`, `CIERRE.md` y `CONTINUAR.md`.
+- C01 en progreso: Reparación del contrato de errores públicos y sanitización estricta (bloqueo de reproducciones A y B con allowlist estricta).
 
 ## Siguiente Acción Inmediata
-1. Esperar finalización de `npm ci`.
-2. Ejecutar `npm run setup:local` para inicializar el schema SQLite local y cliente Prisma.
-3. Ejecutar baseline checks (R01):
-   - `npm run check:routes`
-   - `npm run check:supabase-schema`
-   - `npm run instance:test`
-4. Avanzar inmediatamente a R02 (Errores API seguros y tipados).
+1. Escribir pruebas rojas para Reproducción A y B en `packages/api/test/error-sanitization.test.ts`.
+2. Refactorizar `packages/api/src/lib/errorHandler.ts` con allowlist explícita de códigos de dominio y validación aislada de message, error, code, details y contención de extraFields.
+3. Ejecutar pruebas de sanitización y de rutas Fastify para verificar que ambas reproducciones están bloqueadas y que los contratos legítimos se preservan.
+4. Pasar a C02 (Lint, tipos y deuda).
+

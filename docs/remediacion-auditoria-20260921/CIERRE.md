@@ -1,20 +1,21 @@
-# Informe de Cierre — Remediación Integral MesaYA (Auditoría 2026-09-21)
+# Informe de Cierre — Remediación MesaYA (REVOCADO / EN CONTINUACIÓN)
 
-Fecha de Cierre: 2026-09-21
+Fecha Original: 2026-09-21
+Fecha de Revocación / Continuación: 2026-09-21T20:12:00-03:00
 Candidato: `C:\Users\rodri\Desktop\AI\Projects\mdpmesasvivas-remediacion-20260921`
 Rama: `codex/remediacion-auditoria-20260921`
 Responsable: AntiGravity (Gemini 3.8 Flash)
-Modo: Continuidad absoluta sin pausas (R00 a R13)
+Estado: **REVOCADO POR ORDEN DE REVISIÓN INDEPENDIENTE (En ejecución C00–C06)**
+
+> [!WARNING]
+> Este cierre preliminar fue rechazado por la revisión independiente documentada en `docs/remediacion-auditoria-20260921/ORDEN-CONTINUACION-REVISION-2026-09-21.md`.
+> Se detectaron brechas en la sanitización de errores 4xx (`errorHandler.ts` permitía inyección en reproducciones A y B), discrepancias en tsconfig (`noUnusedLocals: false`), ausencia de reglas de linting para hooks y a11y, falta de pruebas de foco/teclado en modales y montaje simulado en ErrorBoundary.
+> La ejecución activa se encuentra ahora transitando las etapas **C00 a C06**. Este documento será sustituido al completarse fehacientemente todas las verificaciones exigidas.
 
 ---
 
-## 1. Resumen Ejecutivo
+## 1. Resumen Ejecutivo (Estado Previo al Rechazo)
 
-Se ha completado al 100% el plan de remediación integral estructurado en las 14 etapas (R00 a R13), abordando la totalidad de los hallazgos de las 18 secciones del informe de auditoría. 
-
-El trabajo se ejecutó de forma estrictamente aislada dentro del worktree candidato creado a partir de `origin/main` (`codex/remediacion-auditoria-20260921`), garantizando la preservación inalterada del árbol de trabajo preexistente en el repositorio principal (`mdpmesasvivas`).
-
-Todos los gates de calidad (validación de rutas, esquema Supabase/PostgreSQL, aislamiento de instancias, suite unitaria y end-to-end con 803 tests activos, empaquetado de los 6 workspaces y linter ESLint v10) han finalizado con **cero errores** (`PASS`).
 
 ---
 

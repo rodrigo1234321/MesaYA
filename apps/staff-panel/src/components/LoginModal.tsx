@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { StaffApi, API_BASE } from '../lib/api';
 import { StaffUserDTO } from '@mesaya/shared';
 import { unlockAudio } from '../lib/audio';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Lock, ArrowRight, UserCheck, Shield, Sparkles } from 'lucide-react';
 
 interface LoginModalProps {
@@ -110,9 +111,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onSuccess }) => {
     doLogin(quickPin);
   };
 
+  const focusTrapRef = useFocusTrap(true);
+
   return (
     <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto">
       <div
+        ref={focusTrapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="login-modal-title"

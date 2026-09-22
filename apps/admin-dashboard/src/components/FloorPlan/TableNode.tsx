@@ -1,5 +1,5 @@
 import React from 'react';
-import { Group, Rect, Circle, Text, Line } from 'react-konva';
+import { Group, Rect, Circle, Text } from 'react-konva';
 import { FloorTableDTO, TableFSMState, STATE_COLORS, STATE_EMOJIS } from '@mesaya/shared';
 
 interface TableNodeProps {

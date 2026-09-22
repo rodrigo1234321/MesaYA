@@ -4,8 +4,7 @@ import {
   FloorZoneDTO,
   FloorLayoutDTO,
   TableStateChangedEvent,
-  TableFSMState,
-  TableShape
+  TableFSMState
 } from '@mesaya/shared';
 import { AdminApi } from '../lib/api';
 

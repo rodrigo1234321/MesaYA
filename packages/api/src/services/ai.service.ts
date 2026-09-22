@@ -355,7 +355,7 @@ export class AIService {
   }
 
   private static deterministicDietaryAnswer(
-    restaurant: Restaurant | { name: string },
+    _restaurant: Restaurant | { name: string },
     items: MenuItemDTO[],
     intent: 'allergy' | 'gluten' | 'vegan' | 'vegetarian',
     budgetMax: number | null = null

@@ -3,7 +3,6 @@ import { Stage, Layer, Line, Rect } from 'react-konva';
 import { useFloorPlanStore } from '../../stores/useFloorPlanStore';
 import { TableNode } from './TableNode';
 import { ZonePolygon } from './ZonePolygon';
-import { TableFSMState } from '@mesaya/shared';
 
 export const FloorPlanCanvas: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);

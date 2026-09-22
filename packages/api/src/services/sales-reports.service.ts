@@ -6,7 +6,6 @@ import {
   WAITER_PAYMENT_METHOD_LABELS,
   WaiterPaymentMethod,
   OrderStatus,
-  CANONICAL_CONSUMO_STATUSES,
   isOrderComputable
 } from '@mesaya/shared';
 

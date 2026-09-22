@@ -133,4 +133,117 @@ describe('Global Error Sanitization (P0-05, R02)', () => {
     expect(body.valid).toBe(false);
     expect(body.code).toBe('NOT_FOUND');
   });
+
+  // --- C01: Reproducciones A y B y Contención de extraFields ---
+
+  it('Reproducción A: bloquea message con formato clave=valor y details no autorizados en 400', async () => {
+    const app = await buildApp();
+
+    app.get('/test-reproduction-a', async (_req, reply) => {
+      const err: any = {
+        statusCode: 400,
+        message: 'api_key=FAKE_REVIEW_ONLY',
+        details: { authorization: 'Bearer FAKE_REVIEW_ONLY' }
+      };
+      return sendSanitizedError(reply, err);
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-reproduction-a'
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    // No debe devolver el mensaje inseguro api_key=FAKE_REVIEW_ONLY
+    expect(body.message).not.toContain('FAKE_REVIEW_ONLY');
+    expect(body.message).not.toContain('api_key');
+    expect(body.message).toBe('Error en la solicitud');
+    // No debe propagar details arbitrarios o con cabecera authorization
+    expect(body.details).toBeUndefined();
+    expect(response.body).not.toContain('Bearer FAKE_REVIEW_ONLY');
+  });
+
+  it('Reproducción B: bloquea error cuando contiene datos sensibles aunque message sea seguro', async () => {
+    const app = await buildApp();
+
+    app.get('/test-reproduction-b', async (_req, reply) => {
+      const err: any = {
+        statusCode: 400,
+        message: 'Solicitud incorrecta',
+        error: 'password=FAKE_REVIEW_ONLY'
+      };
+      return sendSanitizedError(reply, err);
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-reproduction-b'
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    // Debe preservar el message seguro
+    expect(body.message).toBe('Solicitud incorrecta');
+    // NO debe exponer el contenido inseguro de error
+    expect(body.error).not.toContain('FAKE_REVIEW_ONLY');
+    expect(body.error).not.toContain('password');
+    // Debe caer a fallback seguro o coincidir con publicMessage
+    expect(body.error).toBe('Solicitud incorrecta');
+  });
+
+  it('extraFields no puede sobrescribir campos del contrato ni inyectar claves arbitrarias', async () => {
+    const app = await buildApp();
+
+    app.get('/test-extrafields-tamper', async (_req, reply) => {
+      const err: any = new Error('Mesa no encontrada');
+      err.statusCode = 404;
+      return sendSanitizedError(reply, err, {
+        message: 'OVERWRITTEN_MESSAGE',
+        error: 'OVERWRITTEN_ERROR',
+        code: 'OVERWRITTEN_CODE',
+        statusCode: 200,
+        maliciousKey: 'maliciousValue',
+        valid: false
+      });
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-extrafields-tamper'
+    });
+
+    expect(response.statusCode).toBe(404);
+    const body = JSON.parse(response.body);
+    expect(body.code).toBe('NOT_FOUND');
+    expect(body.message).toBe('Mesa no encontrada');
+    expect(body.statusCode).toBe(404);
+    expect(body.valid).toBe(false);
+    expect(body.maliciousKey).toBeUndefined();
+    expect(response.body).not.toContain('OVERWRITTEN');
+  });
+
+  it('el manejador global de errores Fastify sanitiza 4xx unhandled de forma idéntica', async () => {
+    const app = await buildApp();
+
+    app.get('/test-global-400-unhandled', async () => {
+      const customErr: any = new Error('token=SECRET_LEAK_TEST');
+      customErr.statusCode = 400;
+      customErr.details = { secretHeader: 'Bearer 12345' };
+      throw customErr;
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-global-400-unhandled'
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.message).toBe('Error en la solicitud');
+    expect(body.details).toBeUndefined();
+    expect(response.body).not.toContain('SECRET_LEAK_TEST');
+    expect(response.body).not.toContain('12345');
+  });
 });
+

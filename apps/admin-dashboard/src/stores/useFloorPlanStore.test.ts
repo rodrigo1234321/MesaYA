@@ -127,7 +127,7 @@ describe('Etapa 26 (corrección) — action versionado del store usado por Floor
 
   it('3. recarga del servidor + reintento consciente con versión fresca', async () => {
     useFloorPlanStore.getState().updateTablePositionLocal('t1', 500, 500);
-    const fetchMock = vi.fn(async (url: string, init?: any) => {
+    const fetchMock = vi.fn(async (_url: string, init?: any) => {
       if (init?.method === 'PUT') {
         const body = JSON.parse(init.body);
         if (body.expectedVersion === 7) {

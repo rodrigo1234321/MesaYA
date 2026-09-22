@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StaffApi } from '../lib/api';
 import { StaffUserDTO } from '@mesaya/shared';
 import { unlockAudio } from '../lib/audio';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Lock, ArrowRight, X, UserRound, Sparkles, UserCheck, Shield } from 'lucide-react';
 
 interface OperatorPinModalProps {
@@ -28,7 +29,7 @@ export const OperatorPinModal: React.FC<OperatorPinModalProps> = ({
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const modalRef = useRef<HTMLDivElement>(null);
+  const focusTrapRef = useFocusTrap(isOpen, canClose ? onClose : undefined);
 
   // Reset al abrir
   useEffect(() => {
@@ -126,7 +127,7 @@ export const OperatorPinModal: React.FC<OperatorPinModalProps> = ({
       aria-labelledby="pin-modal-title"
     >
       <div
-        ref={modalRef}
+        ref={focusTrapRef}
         className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 my-auto animate-in fade-in zoom-in-95 duration-150"
       >
         <div className="flex items-start justify-between">

@@ -200,7 +200,6 @@ export async function menuRoutes(fastify: FastifyInstance) {
   // 2. Crear Categoría
   fastify.post('/restaurants/:slugOrId/menu/categories', { preHandler: [requireManagedRestaurant((request) => (request.params as { slugOrId: string }).slugOrId)] }, async (request, reply) => {
     try {
-      const { slugOrId } = request.params as { slugOrId: string };
       const { name, icon, orderIndex } = request.body as {
         name: string;
         icon?: string;
@@ -357,7 +356,6 @@ export async function menuRoutes(fastify: FastifyInstance) {
   // 7. Importación Masiva desde Excel/CSV parseado
   fastify.post('/restaurants/:slugOrId/menu/import', { preHandler: [requireManagedRestaurant((request) => (request.params as { slugOrId: string }).slugOrId)] }, async (request, reply) => {
     try {
-      const { slugOrId } = request.params as { slugOrId: string };
       const { items, replaceExisting } = request.body as BatchMenuImportDTO;
 
       if (!items || !Array.isArray(items) || items.length === 0 || items.length > 200) {
@@ -460,7 +458,6 @@ export async function menuRoutes(fastify: FastifyInstance) {
   // 8. Personalización de Marca (Theme Color, Logo, Cover)
   fastify.patch('/restaurants/:slugOrId/branding', { preHandler: [requireManagedRestaurant((request) => (request.params as { slugOrId: string }).slugOrId)] }, async (request, reply) => {
     try {
-      const { slugOrId } = request.params as { slugOrId: string };
       const { themeColor, logoUrl, coverImageUrl, name, whatsappPhone } = request.body as {
         themeColor?: string;
         logoUrl?: string;
@@ -489,7 +486,6 @@ export async function menuRoutes(fastify: FastifyInstance) {
   // 9. Actualizar Template Visual y Tipografía
   fastify.patch('/restaurants/:slugOrId/template', { preHandler: [requireManagedRestaurant((request) => (request.params as { slugOrId: string }).slugOrId)] }, async (request, reply) => {
     try {
-      const { slugOrId } = request.params as { slugOrId: string };
       const { templateId, customFont, themeColor } = request.body as {
         templateId?: string;
         customFont?: string;

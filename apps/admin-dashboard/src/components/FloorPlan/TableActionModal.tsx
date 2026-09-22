@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import {
   FloorTableDTO,
   TableFSMState,
@@ -22,12 +23,7 @@ import {
   Unlink2,
   Trash2,
   Edit2,
-  Check,
-  Building2,
-  ArrowUpRight,
-  Sun,
-  Wine,
-  TreePine
+  Check
 } from 'lucide-react';
 
 const isBrightHexColor = (hex: string): boolean => {
@@ -62,16 +58,7 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
   const [targetMergeId, setTargetMergeId] = useState('');
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
-  useEffect(() => {
-    if (!table) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isEditingLabel) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [table, isEditingLabel, onClose]);
+  const focusTrapRef = useFocusTrap(!!table, onClose);
 
   if (!table) return null;
 
@@ -207,12 +194,14 @@ export const TableActionModal: React.FC<TableActionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn" onClick={onClose}>
       <div
+        ref={focusTrapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="table-action-modal-title"
         className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header with Table Label and Current State Banner */}
         <div

@@ -8,7 +8,7 @@ import { isValidPinFormat } from '@mesaya/shared';
 
 export async function authRoutes(fastify: FastifyInstance) {
   // 1. List all restaurants for admin selector / platform directory
-  fastify.get('/restaurants', async (request, reply) => {
+  fastify.get('/restaurants', async (_request, reply) => {
     try {
       const environment = getEnvironmentConfig();
       const restaurants = await prisma.restaurant.findMany({

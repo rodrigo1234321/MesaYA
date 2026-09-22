@@ -12,11 +12,6 @@ import {
 } from '@mesaya/shared';
 
 const ACTIVE_CALL_STATUSES = [CallStatus.PENDING, CallStatus.IN_PROGRESS] as const;
-const ACTIVE_ORDER_STATUSES = [
-  OrderStatus.PENDING_VALIDATION,
-  OrderStatus.IN_KITCHEN,
-  OrderStatus.READY_TO_SERVE
-] as const;
 
 const TASK_KINDS: readonly ServiceTaskKind[] = [
   'CALL',

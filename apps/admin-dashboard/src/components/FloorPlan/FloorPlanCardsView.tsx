@@ -5,9 +5,7 @@ import {
   TableFSMState,
   STATE_COLORS,
   STATE_LABELS,
-  STATE_EMOJIS,
-  getNextState,
-  NEXT_STATE_BUTTON_LABELS
+  STATE_EMOJIS
 } from '@mesaya/shared';
 import { AdminApi } from '../../lib/api';
 import {

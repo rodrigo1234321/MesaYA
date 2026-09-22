@@ -17,7 +17,6 @@ import {
   DEFAULT_REVIEW_QUANTITY_THRESHOLD,
   ServiceReviewReasonDTO,
   calculateOrderTotalMinor,
-  calculateOrderItemTotalMinor,
   calculateSessionBalance,
   isOrderComputable
 } from '@mesaya/shared';

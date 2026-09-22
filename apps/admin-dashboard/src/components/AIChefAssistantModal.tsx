@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ChefAIGenerateResponse, MenuTemplateId } from '@mesaya/shared';
 import { AdminApi } from '../lib/api';
-import { Sparkles, Bot, Check, ArrowRight, Loader2, Utensils, Flame, Waves, Coffee, X, AlertTriangle } from 'lucide-react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+import { Sparkles, Check, Loader2, X, AlertTriangle } from 'lucide-react';
 
 interface AIChefAssistantModalProps {
   isOpen: boolean;
@@ -14,7 +15,7 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
   isOpen,
   onClose,
   restaurantSlug,
-  onMenuApplied
+  onMenuApplied: _onMenuApplied
 }) => {
   const [concept, setConcept] = useState('');
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
@@ -22,14 +23,7 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
   const [generatedResult, setGeneratedResult] = useState<ChefAIGenerateResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  const focusTrapRef = useFocusTrap(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -95,12 +89,14 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
+        ref={focusTrapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ai-chef-title"
         className="bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl shadow-amber-950/30 animate-in fade-in zoom-in-95"
+        onClick={(e) => e.stopPropagation()}
       >
         
         {/* Header */}
