@@ -188,8 +188,8 @@ describe('Global Error Sanitization (P0-05, R02)', () => {
     // NO debe exponer el contenido inseguro de error
     expect(body.error).not.toContain('FAKE_REVIEW_ONLY');
     expect(body.error).not.toContain('password');
-    // Debe caer a fallback seguro o coincidir con publicMessage
-    expect(body.error).toBe('Solicitud incorrecta');
+    // Debe caer a fallback seguro o coincidir con publicCode
+    expect(body.error).toBe('BAD_REQUEST');
   });
 
   it('extraFields no puede sobrescribir campos del contrato ni inyectar claves arbitrarias', async () => {
@@ -361,6 +361,77 @@ describe('Global Error Sanitization (P0-05, R02)', () => {
     expect(body.details.expectedVersion).toBe(7);
     expect(body.details.currentVersion).toBe(9);
     expect(body.details.tableId).toBe('mesa-01');
+  });
+
+  it('P1-REPRO: bloquea IP interna en message y URL con credenciales en error en HTTP 400', async () => {
+    const app = await buildApp();
+
+    app.get('/test-p1-repro', async (_req, reply) => {
+      const err: any = new Error('Upstream 10.0.0.7 refused connection');
+      err.statusCode = 400;
+      err.error = 'https://FAKE_USER:FAKE_PASS@example.invalid/internal';
+      return sendSanitizedError(reply, err);
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-p1-repro'
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    // Verificamos que NUNCA se filtre la IP interna ni la URL con credenciales
+    expect(response.body).not.toContain('10.0.0.7');
+    expect(response.body).not.toContain('FAKE_USER');
+    expect(response.body).not.toContain('FAKE_PASS');
+    expect(response.body).not.toContain('example.invalid');
+    // Deben recibir mensajes canónicos seguros
+    expect(body.message).toBe('Error en la solicitud');
+    expect(body.error).toBe('BAD_REQUEST');
+  });
+
+  it('P1-REPRO: rechaza codigos no registrados en el contrato publico asignando el canonico', async () => {
+    const app = await buildApp();
+
+    app.get('/test-unregistered-code', async (_req, reply) => {
+      const err: any = new Error('Operación falló');
+      err.statusCode = 400;
+      err.code = 'SOME_UNREGISTERED_INTERNAL_CODE';
+      return sendSanitizedError(reply, err);
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/test-unregistered-code'
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.code).toBe('BAD_REQUEST');
+    expect(body.message).toBe('Error en la solicitud');
+  });
+
+  it('P1-REAL-ROUTE: ruta real del servidor Fastify procesa error a traves del error handler global', async () => {
+    const app = await buildApp();
+
+    // Inyectamos solicitud a una ruta REAL (/api/auth/login) con sintaxis JSON inválida
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: {
+        'content-type': 'application/json'
+      },
+      payload: '{ invalid-json-payload-from-client: true'
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.code).toBe('INVALID_JSON_BODY');
+    expect(body.statusCode).toBe(400);
+    expect(body.requestId).toBeDefined();
+    // Verifica que no se expone sintaxis interna ni detalles del parser de V8
+    expect(response.body).not.toContain('SyntaxError');
+    expect(response.body).not.toContain('at JSON.parse');
   });
 });
 

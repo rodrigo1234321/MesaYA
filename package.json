@@ -39,6 +39,7 @@
     "test:local": "node scripts/test-local.mjs",
     "test": "npm --workspace=@mesaya/api run test",
     "test:isolated": "node scripts/test-isolated.mjs",
+    "check:lint-debt": "node scripts/check-debt-gate.mjs",
     "lint": "eslint ."
   },
   "dependencies": {
