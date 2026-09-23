@@ -5,6 +5,7 @@ import { BatchMenuImportDTO, AiMenuGenerateInputSchema, AiSommelierInputSchema }
 import { requireManagedRestaurant } from '../middlewares/auth.middleware';
 import { AbuseControlService, AbusePolicies } from '../services/abuse-control.service';
 import { UpsellService } from '../services/upsell.service';
+import { MenuImportService } from '../services/menu-import.service';
 import { isRestaurantInConfiguredInstance } from '../lib/environment';
 import { sendSanitizedError } from '../lib/errorHandler';
 
@@ -83,7 +84,10 @@ export async function menuRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: 'Restaurante no encontrado' });
       }
 
-      const formattedCategories = restaurant.categories.map((cat) => ({
+      const { includeEmpty } = (request.query || {}) as { includeEmpty?: string };
+      const shouldIncludeEmpty = includeEmpty === 'true' || includeEmpty === '1';
+
+      let formattedCategories = restaurant.categories.map((cat) => ({
         id: cat.id,
         restaurantId: cat.restaurantId,
         name: cat.name,
@@ -110,6 +114,14 @@ export async function menuRoutes(fastify: FastifyInstance) {
           };
         })
       }));
+
+      // P2 / P3: En la carta operativa pública, omitir categorías vacías o inactivas salvo includeEmpty=true.
+      // Conservar una categoría si tiene al menos un plato disponible O un plato en prelanzamiento ('COMING_SOON').
+      if (!shouldIncludeEmpty) {
+        formattedCategories = formattedCategories.filter((cat) =>
+          cat.items.some((item) => item.isAvailable || (Array.isArray(item.tags) && item.tags.includes('COMING_SOON')))
+        );
+      }
 
       return reply.send({
         restaurant: {
@@ -353,103 +365,13 @@ export async function menuRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // 7. Importación Masiva desde Excel/CSV parseado
+  // 7. Importación Masiva y Sincronización Segura de Menú (E01)
   fastify.post('/restaurants/:slugOrId/menu/import', { preHandler: [requireManagedRestaurant((request) => (request.params as { slugOrId: string }).slugOrId)] }, async (request, reply) => {
     try {
-      const { items, replaceExisting } = request.body as BatchMenuImportDTO;
+      const body = (request.body || {}) as BatchMenuImportDTO;
 
-      if (!items || !Array.isArray(items) || items.length === 0 || items.length > 200) {
-        return reply.status(400).send({ error: 'Se requiere una lista de platos en "items"' });
-      }
-      const validItems = items.every((item) =>
-        typeof item.name === 'string' && item.name.trim().length > 0 && item.name.trim().length <= 120 &&
-        (item.category === undefined || (typeof item.category === 'string' && item.category.trim().length <= 80)) &&
-        Number.isFinite(Number(item.price)) && Number(item.price) >= 0 &&
-        (!item.tags || (Array.isArray(item.tags) && item.tags.length <= 10 && item.tags.every((tag) => typeof tag === 'string' && tag.length <= 50)))
-      );
-      if (!validItems) {
-        return reply.status(400).send({ error: 'La importación contiene campos inválidos o excede los límites permitidos' });
-      }
-
-      const result = await prisma.$transaction(async (tx) => {
-        // Si replaceExisting es true, borramos categorías anteriores (y sus platos en cascada)
-        if (replaceExisting) {
-          await tx.menuCategory.deleteMany({
-            where: { restaurantId: request.managedRestaurantId! }
-          });
-        }
-
-        // Agrupar items por nombre de categoría
-        const categoriesMap = new Map<string, { icon: string; items: typeof items }>();
-
-        for (const item of items) {
-          const categoryName = (item.category || 'Varios').trim();
-          if (!categoriesMap.has(categoryName)) {
-            categoriesMap.set(categoryName, {
-              icon: item.categoryIcon || '🍽️',
-              items: []
-            });
-          }
-          categoriesMap.get(categoryName)!.items.push(item);
-        }
-
-        let catOrder = 0;
-        let createdItemsCount = 0;
-
-        for (const [categoryName, data] of categoriesMap.entries()) {
-          // Buscar si existe o crear
-          let category = await tx.menuCategory.findFirst({
-            where: {
-              restaurantId: request.managedRestaurantId!,
-              name: categoryName
-            }
-          });
-
-          if (!category) {
-            category = await tx.menuCategory.create({
-              data: {
-                restaurantId: request.managedRestaurantId!,
-                name: categoryName,
-                icon: data.icon,
-                orderIndex: catOrder++
-              }
-            });
-          }
-
-          // Insertar platos
-          let itemOrder = 0;
-          for (const rawItem of data.items) {
-            if (!rawItem.name || !rawItem.name.trim()) continue;
-
-            await tx.menuItem.create({
-              data: {
-                categoryId: category.id,
-                name: rawItem.name.trim(),
-                description: rawItem.description?.trim() || null,
-                price: Number(rawItem.price) || 0,
-                priceMinor: Math.round((Number(rawItem.price) || 0) * 100), // C3: dual-write
-                imageUrl: rawItem.imageUrl?.trim() || null,
-                isAvailable: true,
-                isFeatured: Boolean(rawItem.isFeatured),
-                tags: JSON.stringify(rawItem.tags || []),
-                orderIndex: itemOrder++
-              }
-            });
-            createdItemsCount++;
-          }
-        }
-
-        return {
-          categoriesCount: categoriesMap.size,
-          itemsCount: createdItemsCount
-        };
-      });
-
-      return reply.send({
-        success: true,
-        message: `Se importaron ${result.itemsCount} platos en ${result.categoriesCount} categorías`,
-        ...result
-      });
+      const result = await MenuImportService.importMenu(request.managedRestaurantId!, body);
+      return reply.send(result);
     } catch (err: any) {
       return sendSanitizedError(reply, err);
     }
@@ -563,12 +485,28 @@ export async function menuRoutes(fastify: FastifyInstance) {
         categories,
         applied: false,
         degraded: (aiResult as any).degraded ?? false,
-        reviewNote: (aiResult as any).reviewNote || 'Vista previa pendiente de revisión humana; no se aplicó ni borró menú.'
+        reviewNote: (aiResult as any).reviewNote || 'Vista previa pendiente de revisión humana; no se aplicó ni borró menú.',
+        poweredBy: (aiResult as any).poweredBy || (aiResult.degraded ? 'local-fallback' : 'gemini')
       });
     } catch (err: any) {
       if (err?.statusCode === 429) {
         reply.header('Retry-After', String(err.retryAfterSeconds || 1));
       }
+      return sendSanitizedError(reply, err);
+    }
+  });
+
+  // 10. Diagnóstico Seguro de IA y Proveedor por Encargado (E10)
+  fastify.get('/restaurants/:slugOrId/ai/diagnostics', {
+    preHandler: [requireManagedRestaurant((request) => (request.params as { slugOrId: string }).slugOrId)]
+  }, async (request, reply) => {
+    try {
+      const query = request.query as { probe?: string } | undefined;
+      const probe = query?.probe === 'true' || query?.probe === '1';
+      const { AIService } = await import('../services/ai.service');
+      const diagnostics = await AIService.getDiagnostics({ probe });
+      return reply.send(diagnostics);
+    } catch (err: any) {
       return sendSanitizedError(reply, err);
     }
   });

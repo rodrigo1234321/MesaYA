@@ -326,6 +326,16 @@ export interface ServiceAccountDTO {
   };
 }
 
+export type SettleSplitMode = 'FIXED' | 'PERCENTAGE' | 'EQUAL_PARTS';
+
+export interface SplitOperation {
+  mode: SettleSplitMode;
+  amountMinor?: number;
+  percentage?: number;
+  parts?: number;
+  partIndex?: number;
+}
+
 export interface ServiceWorkspaceDTO {
   restaurantId: string;
   generatedAt: string;
@@ -334,6 +344,7 @@ export interface ServiceWorkspaceDTO {
   tasks: ServiceTaskDTO[];
   accounts: ServiceAccountDTO[];
   allowWaitersToCollectCash?: boolean;
+  allowSplitBill?: boolean;
   summary: {
     totalTasks: number;
     pendingCalls: number;
@@ -390,6 +401,7 @@ export const MENU_TAGS: Record<string, MenuItemTag> = {
 export interface MenuItemDTO {
   id: string;
   categoryId: string;
+  categoryName?: string;
   name: string;
   description?: string | null;
   price: number;
@@ -523,13 +535,36 @@ export interface BatchMenuImportItem {
   tags?: string[];
   imageUrl?: string;
   isFeatured?: boolean;
+  isAvailable?: boolean;
+  source?: string;
+  externalId?: string;
 }
 
 export interface BatchMenuImportDTO {
   replaceExisting?: boolean;
+  dryRun?: boolean;
   templateId?: MenuTemplateId;
   items: BatchMenuImportItem[];
 }
+
+export interface BatchMenuImportSummary {
+  categoriesCreated: number;
+  categoriesUpdated: number;
+  itemsCreated: number;
+  itemsUpdated: number;
+  itemsDeactivated: number;
+}
+
+export interface BatchMenuImportResponseDTO {
+  success: boolean;
+  dryRun: boolean;
+  message: string;
+  categoriesCount: number;
+  itemsCount: number;
+  summary: BatchMenuImportSummary;
+  warnings: string[];
+}
+
 
 export interface ChefAIGenerateDTO {
   concept: string; // e.g. "Hamburguesería artesanal con smash burgers dobles y cerveza tirada en Mar del Plata"
@@ -551,6 +586,7 @@ export interface ChefAIGenerateResponse {
   degraded?: boolean;
   applied?: boolean;
   reviewNote?: string;
+  poweredBy?: 'gemini' | 'local-fallback';
 }
 
 export interface GenerateMenuAiDTO {
@@ -581,6 +617,7 @@ export interface GenerateMenuAiResponseDTO {
   degraded?: boolean;
   applied?: boolean;
   reviewNote?: string;
+  poweredBy?: 'gemini' | 'local-fallback';
 }
 
 export interface SommelierQueryDTO {
@@ -675,6 +712,10 @@ export interface RestaurantModuleConfigDTO {
   allowSplitBill: boolean;
   allowWaitersToCollectCash: boolean;
   allowOrdering: boolean;
+  /**
+   * @deprecated El carrito colaborativo por TableSession es el comportamiento canónico permanente.
+   * Este campo se mantiene por compatibilidad histórica de esquema/DTO y siempre retorna true.
+   */
   syncSocialCart: boolean;
   requireWaiterValidation: boolean;
   /** Más de esta cantidad por línea genera revisión en modo automático. */
@@ -697,6 +738,9 @@ export interface UpdateModuleConfigDTO {
   allowSplitBill?: boolean;
   allowWaitersToCollectCash?: boolean;
   allowOrdering?: boolean;
+  /**
+   * @deprecated El carrito colaborativo es canónico por mesa; no se admiten modos individuales ficticios.
+   */
   syncSocialCart?: boolean;
   requireWaiterValidation?: boolean;
   reviewQuantityThreshold?: number;
@@ -894,6 +938,7 @@ export interface RewardLedgerEntryDTO {
   referenceId?: string | null;
   ruleVersion: string;
   idempotencyKey: string;
+  approvedBy?: string | null;
   createdAt: string;
 }
 

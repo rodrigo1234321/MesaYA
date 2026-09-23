@@ -2,7 +2,7 @@ import { randomUUID, createHash } from 'crypto';
 import { isRestaurantInConfiguredInstance } from '../lib/environment';
 import { prisma } from '../lib/prisma';
 import { eventBus } from '../lib/eventBus';
-import { fsmService } from './fsm.service';
+import { FSMService, fsmService } from './fsm.service';
 import { SessionService } from './session.service';
 import { RewardsService, normalizeRewardsPhone } from './rewards.service';
 import {
@@ -11,6 +11,7 @@ import {
   AddOrderItemDTO,
   ClaimItemDTO,
   SplitMode,
+  SplitOperation,
   SplitBillSessionDTO,
   TableFSMState,
   SignalSource,
@@ -219,6 +220,9 @@ export interface SettleSessionInput {
   amountMinor?: number;
   tipMinor?: number;
   allocations?: Array<{ orderId: string; amountMinor: number }>;
+  split?: SplitOperation;
+  customerPhone?: string;
+  rewardsConsent?: boolean;
 }
 
 export class OrderService {
@@ -919,6 +923,8 @@ export class OrderService {
     settlement: SettlementDTO;
     account: SessionAccountDTO;
     idempotentReplay: boolean;
+    rewards?: any;
+    rewardsWarning?: string | null;
   }> {
     if (!input || typeof input !== 'object') return this.settleError(400, 'INVALID_SETTLE_REQUEST', 'Datos de liquidación requeridos');
     if (input.staffRole !== 'MANAGER' && input.staffRole !== 'WAITER') {
@@ -964,6 +970,7 @@ export class OrderService {
         requestedAllocations.push({ orderId: a.orderId, amountMinor: a.amountMinor });
       }
     }
+    const splitOp = OrderService.validateSplitInput(input.split, input.amountMinor);
     if (!SETTLE_METHODS.includes(input.method)) {
       if (typeof input.method === 'string' && input.method.startsWith('DIGITAL_')) {
         return this.settleError(422, 'DIGITAL_METHOD_UNAVAILABLE', 'Pagos digitales no disponibles; el cobro es presencial');
@@ -972,6 +979,9 @@ export class OrderService {
     }
     const tipMinor = input.tipMinor ?? 0;
     if (!Number.isInteger(tipMinor) || tipMinor < 0) return this.settleError(422, 'INVALID_SETTLE_REQUEST', 'tipMinor debe ser entero ≥ 0 (centavos)');
+    const normalizedCustomerPhone = typeof input.customerPhone === 'string' && input.customerPhone.trim()
+      ? normalizeRewardsPhone(input.customerPhone)
+      : undefined;
 
     try {
       const result = await prisma.$transaction(async (tx) => {
@@ -984,13 +994,40 @@ export class OrderService {
         if (session.table.restaurantId !== input.staffRestaurantId) {
           return this.settleError(403, 'STAFF_TENANT_MISMATCH', 'No autorizado para cobrar otra cuenta/restaurante');
         }
+        const moduleConfig = await tx.restaurantModuleConfig.findUnique({
+          where: { restaurantId: session.table.restaurantId },
+          select: {
+            allowWaitersToCollectCash: true,
+            allowSplitBill: true,
+            enableSmartTips: true,
+            enableRewards: true,
+            pointsPerHundredPesos: true
+          }
+        });
         if (input.staffRole === 'WAITER') {
-          const moduleConfig = await tx.restaurantModuleConfig.findUnique({
-            where: { restaurantId: session.table.restaurantId },
-            select: { allowWaitersToCollectCash: true }
-          });
           if (!moduleConfig?.allowWaitersToCollectCash) {
             return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'El cobro en efectivo por mozos no está habilitado para este local.');
+          }
+        }
+        if (splitOp) {
+          if (!moduleConfig?.allowSplitBill) {
+            return this.settleError(403, 'SPLIT_BILL_DISABLED', 'La división de cuenta no está habilitada para este local.');
+          }
+        }
+        if (tipMinor > 0 && moduleConfig?.enableSmartTips === false) {
+          return this.settleError(403, 'SMART_TIPS_DISABLED', 'El módulo de propinas no está habilitado para este local.');
+        }
+        if (normalizedCustomerPhone) {
+          if (!moduleConfig?.enableRewards) {
+            return this.settleError(409, 'REWARDS_DISABLED', 'Rewards no está habilitado para este restaurante.');
+          }
+          const existingLoyalty = await tx.customerLoyalty.findUnique({
+            where: { restaurantId_phone: { restaurantId: session.table.restaurantId, phone: normalizedCustomerPhone } }
+          });
+          if (!existingLoyalty || !existingLoyalty.consentAt) {
+            if (input.rewardsConsent !== true) {
+              return this.settleError(400, 'REWARDS_CONSENT_REQUIRED', 'El cliente debe aceptar el programa Rewards antes de sumar puntos.');
+            }
           }
         }
         const fresh = this.buildSessionAccount(session.id, session.tableId, orders, settlements);
@@ -1008,11 +1045,23 @@ export class OrderService {
         // (misma intención completa: presencia exacta de allocations + contenido)
         // devuelve 200; lo demás es 409 sin escribir.
         if (session.closedAt) {
-          if (existing && OrderService.isSameSettleIntent(existing, session.id, input, tipMinor, requestedAllocations)) {
+          if (existing && OrderService.isSameSettleIntent(existing, session.id, input, tipMinor, requestedAllocations, fresh.saldoMinor, fresh.consumoMinor)) {
+            let rewardsReplay: any = null;
+            if (normalizedCustomerPhone) {
+              rewardsReplay = await RewardsService.accrueForSettlementTx(tx, {
+                restaurantId: session.table.restaurantId,
+                phone: normalizedCustomerPhone,
+                amountMinor: existing.amountMinor,
+                settlementId: existing.id,
+                consent: Boolean(input.rewardsConsent),
+                approvedBy: input.staffUserId
+              });
+            }
             return {
               settlement: this.formatSettlement(existing),
               account: fresh,
-              idempotentReplay: true
+              idempotentReplay: true,
+              ...(rewardsReplay ? { rewards: rewardsReplay } : {})
             };
           }
           const closedError: any = new Error('La sesión ya fue cerrada; no se aceptan nuevos cobros sobre esta ocupación');
@@ -1029,14 +1078,35 @@ export class OrderService {
           // body/versión devuelve replay. Camino FIFO (sin allocations): la versión
           // existente ancla la intención, por eso el replay tras saldo 0 sigue
           // devolviendo 200 con el mismo payload.
-          if (OrderService.isSameSettleIntent(existing, session.id, input, tipMinor, requestedAllocations)) {
+          if (OrderService.isSameSettleIntent(existing, session.id, input, tipMinor, requestedAllocations, fresh.saldoMinor, fresh.consumoMinor)) {
+            let rewardsReplay: any = null;
+            if (normalizedCustomerPhone) {
+              rewardsReplay = await RewardsService.accrueForSettlementTx(tx, {
+                restaurantId: session.table.restaurantId,
+                phone: normalizedCustomerPhone,
+                amountMinor: existing.amountMinor,
+                settlementId: existing.id,
+                consent: Boolean(input.rewardsConsent),
+                approvedBy: input.staffUserId
+              });
+            }
             return {
               settlement: this.formatSettlement(existing),
               account: fresh,
-              idempotentReplay: true
+              idempotentReplay: true,
+              ...(rewardsReplay ? { rewards: rewardsReplay } : {})
             };
           }
           return this.settleError(409, 'IDEMPOTENCY_KEY_REUSED', 'La clave ya se usó con otra intención/sesión/monto/reparto');
+        }
+
+        // E05: otra clave que repita la misma parte (mismo splitSignature) => 409 SPLIT_PART_ALREADY_SETTLED (replay ya atendido arriba)
+        if (splitOp && splitOp.mode === 'EQUAL_PARTS') {
+          const sig = OrderService.normalizeSplitSignature(splitOp, input.amountMinor);
+          const dup = settlements.find((s: any) => s.splitSignature === sig);
+          if (dup) {
+            return this.settleError(409, 'SPLIT_PART_ALREADY_SETTLED', 'La parte ya fue liquidada para esta cuenta');
+          }
         }
 
         // 2. Versión optimista ANTES de validar montos: un perdedor serializado de
@@ -1049,7 +1119,7 @@ export class OrderService {
           throw error;
         }
 
-        const amountMinor = input.amountMinor ?? fresh.saldoMinor;
+        const amountMinor = OrderService.calculateSplitAmount(splitOp, input.amountMinor, fresh.consumoMinor, fresh.saldoMinor);
         if (!Number.isInteger(amountMinor) || amountMinor <= 0) {
           return this.settleError(422, 'INVALID_SETTLE_REQUEST', 'amountMinor debe ser entero > 0 (centavos)');
         }
@@ -1116,6 +1186,7 @@ export class OrderService {
         );
 
         let created: any;
+        const splitSignature = OrderService.normalizeSplitSignature(splitOp, input.amountMinor);
         try {
           created = await tx.accountSettlement.create({
             data: {
@@ -1130,6 +1201,7 @@ export class OrderService {
               createdBy: input.staffUserId,
               responsibleStaffUserId,
               allocationsProvided: requestedAllocations !== undefined,
+              splitSignature,
               allocations: { create: allocations.map((a) => ({ orderId: a.orderId, amountMinor: a.amountMinor })) }
             },
             include: { allocations: true }
@@ -1144,11 +1216,28 @@ export class OrderService {
           throw err;
         }
 
+        let rewardsResult: any = null;
+        if (normalizedCustomerPhone) {
+          rewardsResult = await RewardsService.accrueForSettlementTx(tx, {
+            restaurantId: session.table.restaurantId,
+            phone: normalizedCustomerPhone,
+            amountMinor,
+            settlementId: created.id,
+            consent: Boolean(input.rewardsConsent),
+            approvedBy: input.staffUserId
+          });
+        }
+
         const after = this.buildSessionAccount(session.id, session.tableId, orders, [
           ...settlements,
           { ...created, allocations: created.allocations }
         ]);
-        return { settlement: this.formatSettlement(created), account: after, idempotentReplay: false };
+        return {
+          settlement: this.formatSettlement(created),
+          account: after,
+          idempotentReplay: false,
+          ...(rewardsResult ? { rewards: rewardsResult } : {})
+        };
       });
 
       // El cobro de la cuenta no cambia el estado de las órdenes de cocina ni
@@ -1204,6 +1293,8 @@ export class OrderService {
     idempotentReplay: boolean;
     closed: boolean;
     tableId: string;
+    rewards?: any;
+    rewardsWarning?: string | null;
   }> {
     if (!input || typeof input !== 'object') return this.settleError(400, 'INVALID_SETTLE_REQUEST', 'Datos de liquidación requeridos');
     if (input.staffRole !== 'MANAGER' && input.staffRole !== 'WAITER') {
@@ -1245,6 +1336,7 @@ export class OrderService {
         requestedAllocations.push({ orderId: a.orderId, amountMinor: a.amountMinor });
       }
     }
+    const splitOp = OrderService.validateSplitInput(input.split, input.amountMinor);
     if (!SETTLE_METHODS.includes(input.method)) {
       if (typeof input.method === 'string' && input.method.startsWith('DIGITAL_')) {
         return this.settleError(422, 'DIGITAL_METHOD_UNAVAILABLE', 'Pagos digitales no disponibles; el cobro es presencial');
@@ -1252,6 +1344,9 @@ export class OrderService {
       return this.settleError(422, 'INVALID_SETTLE_REQUEST', 'Método presencial inválido (WAITER_CASH | WAITER_CARD | WAITER_MP_QR)');
     }
     const tipMinor = input.tipMinor ?? 0;
+    const normalizedCustomerPhone = typeof input.customerPhone === 'string' && input.customerPhone.trim()
+      ? normalizeRewardsPhone(input.customerPhone)
+      : undefined;
 
     try {
       const result = await prisma.$transaction(async (tx) => {
@@ -1261,13 +1356,40 @@ export class OrderService {
         if (session.table.restaurantId !== input.staffRestaurantId) {
           return this.settleError(403, 'STAFF_TENANT_MISMATCH', 'No autorizado para cobrar otra cuenta/restaurante');
         }
+        const moduleConfig = await tx.restaurantModuleConfig.findUnique({
+          where: { restaurantId: session.table.restaurantId },
+          select: {
+            allowWaitersToCollectCash: true,
+            allowSplitBill: true,
+            enableSmartTips: true,
+            enableRewards: true,
+            pointsPerHundredPesos: true
+          }
+        });
         if (input.staffRole === 'WAITER') {
-          const moduleConfig = await tx.restaurantModuleConfig.findUnique({
-            where: { restaurantId: session.table.restaurantId },
-            select: { allowWaitersToCollectCash: true }
-          });
           if (!moduleConfig?.allowWaitersToCollectCash) {
             return this.settleError(403, 'SETTLE_REQUIRES_MANAGER', 'El cobro en efectivo por mozos no está habilitado para este local.');
+          }
+        }
+        if (splitOp) {
+          if (!moduleConfig?.allowSplitBill) {
+            return this.settleError(403, 'SPLIT_BILL_DISABLED', 'La división de cuenta no está habilitada para este local.');
+          }
+        }
+        if (tipMinor > 0 && moduleConfig?.enableSmartTips === false) {
+          return this.settleError(403, 'SMART_TIPS_DISABLED', 'El módulo de propinas no está habilitado para este local.');
+        }
+        if (normalizedCustomerPhone) {
+          if (!moduleConfig?.enableRewards) {
+            return this.settleError(409, 'REWARDS_DISABLED', 'Rewards no está habilitado para este restaurante.');
+          }
+          const existingLoyalty = await tx.customerLoyalty.findUnique({
+            where: { restaurantId_phone: { restaurantId: session.table.restaurantId, phone: normalizedCustomerPhone } }
+          });
+          if (!existingLoyalty || !existingLoyalty.consentAt) {
+            if (input.rewardsConsent !== true) {
+              return this.settleError(400, 'REWARDS_CONSENT_REQUIRED', 'El cliente debe aceptar el programa Rewards antes de sumar puntos.');
+            }
           }
         }
         const fresh = this.buildSessionAccount(session.id, session.tableId, orders, settlements);
@@ -1280,13 +1402,25 @@ export class OrderService {
         // Sesión ya cerrada: sólo replay seguro de la misma intención completa
         // (presencia exacta de allocations + contenido). Lo demás es 409.
         if (session.closedAt) {
-          if (existing && OrderService.isSameSettleIntent(existing, session.id, input, tipMinor, requestedAllocations)) {
+          if (existing && OrderService.isSameSettleIntent(existing, session.id, input, tipMinor, requestedAllocations, fresh.saldoMinor, fresh.consumoMinor)) {
+            let rewardsReplay: any = null;
+            if (normalizedCustomerPhone) {
+              rewardsReplay = await RewardsService.accrueForSettlementTx(tx, {
+                restaurantId: session.table.restaurantId,
+                phone: normalizedCustomerPhone,
+                amountMinor: existing.amountMinor,
+                settlementId: existing.id,
+                consent: Boolean(input.rewardsConsent),
+                approvedBy: input.staffUserId
+              });
+            }
             return {
               settlement: this.formatSettlement(existing),
               account: fresh,
               idempotentReplay: true,
               closed: true,
-              tableId: session.tableId
+              tableId: session.tableId,
+              ...(rewardsReplay ? { rewards: rewardsReplay } : {})
             };
           }
           const closedError: any = new Error('La sesión ya fue cerrada; no se aceptan nuevos cobros sobre esta ocupación');
@@ -1299,12 +1433,24 @@ export class OrderService {
         let settlementRow: any;
         let accountAfter: SessionAccountDTO;
         let isReplay = false;
+        let rewardsReplay: any = null;
+        let rewardsResult: any = null;
 
         if (existing) {
           // L2: misma clave exige mismo body/versión (presencia exacta de
           // allocations + contenido). Omitido ≠ [] ≠ reparto distinto → 409.
-          if (!OrderService.isSameSettleIntent(existing, session.id, input, tipMinor, requestedAllocations)) {
+          if (!OrderService.isSameSettleIntent(existing, session.id, input, tipMinor, requestedAllocations, fresh.saldoMinor, fresh.consumoMinor)) {
             return this.settleError(409, 'IDEMPOTENCY_KEY_REUSED', 'La clave ya se usó con otra intención/sesión/monto/reparto');
+          }
+          if (normalizedCustomerPhone) {
+            rewardsReplay = await RewardsService.accrueForSettlementTx(tx, {
+              restaurantId: session.table.restaurantId,
+              phone: normalizedCustomerPhone,
+              amountMinor: existing.amountMinor,
+              settlementId: existing.id,
+              consent: Boolean(input.rewardsConsent),
+              approvedBy: input.staffUserId
+            });
           }
           // Reintento tras respuesta perdida: el pago ya existe; completar el cierre abajo.
           settlementRow = existing;
@@ -1352,8 +1498,17 @@ export class OrderService {
             throw error;
           }
 
+          // E05: otra clave que repita la misma parte => 409 antes de validar saldo (replay ya atendido)
+          if (splitOp && splitOp.mode === 'EQUAL_PARTS' && !existing) {
+            const sig = OrderService.normalizeSplitSignature(splitOp, input.amountMinor);
+            const dup = settlements.find((s: any) => s.splitSignature === sig);
+            if (dup) {
+              return this.settleError(409, 'SPLIT_PART_ALREADY_SETTLED', 'La parte ya fue liquidada para esta cuenta');
+            }
+          }
+
           // settle-and-close exige saldar el TOTAL: nada de cierre parcial con deuda restante.
-          const amountMinor = input.amountMinor ?? fresh.saldoMinor;
+          const amountMinor = OrderService.calculateSplitAmount(splitOp, input.amountMinor, fresh.consumoMinor, fresh.saldoMinor);
           if (!Number.isInteger(amountMinor) || amountMinor <= 0) {
             return this.settleError(422, 'INVALID_SETTLE_REQUEST', 'amountMinor debe ser entero > 0 (centavos)');
           }
@@ -1413,6 +1568,7 @@ export class OrderService {
             input.responsibleStaffUserId
           );
 
+          const splitSignature = OrderService.normalizeSplitSignature(splitOp, input.amountMinor);
           try {
             settlementRow = await tx.accountSettlement.create({
               data: {
@@ -1427,6 +1583,7 @@ export class OrderService {
                 createdBy: input.staffUserId,
                 responsibleStaffUserId,
                 allocationsProvided: requestedAllocations !== undefined,
+                splitSignature,
                 allocations: { create: allocations.map((a) => ({ orderId: a.orderId, amountMinor: a.amountMinor })) }
               },
               include: { allocations: true }
@@ -1439,6 +1596,17 @@ export class OrderService {
               throw conflict;
             }
             throw err;
+          }
+          rewardsResult = null;
+          if (normalizedCustomerPhone) {
+            rewardsResult = await RewardsService.accrueForSettlementTx(tx, {
+              restaurantId: session.table.restaurantId,
+              phone: normalizedCustomerPhone,
+              amountMinor,
+              settlementId: settlementRow.id,
+              consent: Boolean(input.rewardsConsent),
+              approvedBy: input.staffUserId
+            });
           }
           accountAfter = this.buildSessionAccount(session.id, session.tableId, orders, [
             ...settlements,
@@ -1464,7 +1632,8 @@ export class OrderService {
           account: accountAfter,
           idempotentReplay: isReplay,
           closed: true,
-          tableId: session.tableId
+          tableId: session.tableId,
+          ...(rewardsResult ? { rewards: rewardsResult } : (rewardsReplay ? { rewards: rewardsReplay } : {}))
         };
       });
 
@@ -1543,6 +1712,110 @@ export class OrderService {
   }
 
   /**
+   * Validación formal de la operación split (E05).
+   * Modos: FIXED, PERCENTAGE, EQUAL_PARTS.
+   * Reglas E05: EQUAL_PARTS exige parts entero >=2; porcentajes/fijos son enteros en rangos válidos.
+   * Nunca 500: todo payload inválido produce 400/422 accionable.
+   */
+  private static validateSplitInput(split: any, inputAmountMinor?: number): SplitOperation | undefined {
+    if (split === undefined || split === null) return undefined;
+    if (!split || typeof split !== 'object' || Array.isArray(split)) {
+      this.settleError(400, 'INVALID_SETTLE_REQUEST', 'split debe ser un objeto');
+    }
+    const mode = split.mode;
+    if (mode !== 'FIXED' && mode !== 'PERCENTAGE' && mode !== 'EQUAL_PARTS') {
+      this.settleError(422, 'INVALID_SETTLE_REQUEST', 'Modo de división inválido (FIXED | PERCENTAGE | EQUAL_PARTS)');
+    }
+    if (mode === 'FIXED') {
+      const fixedAmount = split.amountMinor ?? inputAmountMinor;
+      if (fixedAmount === undefined || !Number.isSafeInteger(fixedAmount) || fixedAmount <= 0) {
+        this.settleError(422, 'INVALID_SETTLE_REQUEST', 'amountMinor debe ser entero seguro > 0 para modo FIXED');
+      }
+      if (split.amountMinor !== undefined && (!Number.isSafeInteger(split.amountMinor) || split.amountMinor <= 0)) {
+        this.settleError(422, 'INVALID_SETTLE_REQUEST', 'split.amountMinor debe ser entero seguro > 0');
+      }
+      if (split.amountMinor !== undefined && inputAmountMinor !== undefined && split.amountMinor !== inputAmountMinor) {
+        this.settleError(422, 'INVALID_SETTLE_REQUEST', 'amountMinor y split.amountMinor no coinciden');
+      }
+    } else if (mode === 'PERCENTAGE') {
+      const pct = split.percentage;
+      if (!Number.isSafeInteger(pct) || pct < 1 || pct > 100) {
+        this.settleError(422, 'INVALID_SETTLE_REQUEST', 'percentage debe ser un entero entre 1 y 100');
+      }
+    } else if (mode === 'EQUAL_PARTS') {
+      const parts = split.parts;
+      if (!Number.isSafeInteger(parts) || parts < 2) {
+        this.settleError(422, 'INVALID_SETTLE_REQUEST', 'parts debe ser un entero seguro >= 2');
+      }
+      const partIndex = split.partIndex;
+      if (!Number.isSafeInteger(partIndex) || partIndex < 1 || partIndex > parts) {
+        this.settleError(422, 'INVALID_SETTLE_REQUEST', 'partIndex debe ser un entero entre 1 y el número de partes');
+      }
+    }
+    return split as SplitOperation;
+  }
+
+  /** Firma normalizada y persistida de la operación Split (E05). Null = legacy/no-split. */
+  private static normalizeSplitSignature(split: SplitOperation | undefined, inputAmountMinor?: number): string | null {
+    if (!split) return null;
+    if (split.mode === 'FIXED') {
+      const amount = split.amountMinor ?? inputAmountMinor;
+      // validateSplitInput ya garantiza entero >0; si falta por compatibilidad, null no debe persistirse como firma.
+      if (amount === undefined || !Number.isSafeInteger(amount)) return null;
+      return `FIXED:${amount}`;
+    }
+    if (split.mode === 'PERCENTAGE') {
+      return `PERCENTAGE:${split.percentage}`;
+    }
+    // EQUAL_PARTS: partIndex es requerido (validateSplitInput)
+    const parts = split.parts!;
+    const partIndex = split.partIndex!;
+    return `EQUAL_PARTS:${parts}:${partIndex}`;
+  }
+
+  /**
+   * Cálculo determinista del monto a liquidar en minor units según la operación split (E05).
+   * FIXED usa amountMinor; PERCENTAGE usa saldo pendiente; EQUAL_PARTS divide fresh.consumoMinor en N partes.
+   */
+  private static calculateSplitAmount(
+    split: SplitOperation | undefined,
+    inputAmountMinor: number | undefined,
+    consumoMinor: number,
+    saldoMinor: number
+  ): number {
+    if (!split) {
+      return inputAmountMinor ?? saldoMinor;
+    }
+    if (split.mode === 'FIXED') {
+      const fixed = split.amountMinor ?? inputAmountMinor!;
+      return fixed;
+    }
+    if (split.mode === 'PERCENTAGE') {
+      const calculated = Math.round((saldoMinor * split.percentage!) / 100);
+      if (calculated <= 0 && saldoMinor > 0) {
+        this.settleError(422, 'INVALID_SETTLE_REQUEST', 'El porcentaje resulta en un monto menor a 1 centavo');
+      }
+      if (inputAmountMinor !== undefined && inputAmountMinor !== calculated) {
+        this.settleError(422, 'INVALID_SETTLE_REQUEST', `El monto provisto (${inputAmountMinor}) no coincide con el cálculo del porcentaje (${calculated})`);
+      }
+      return calculated;
+    }
+    // EQUAL_PARTS: divide consumoMinor total en N partes de centavos (floor + resto en primeras partes)
+    const parts = split.parts!;
+    const base = Math.floor(consumoMinor / parts);
+    const remainder = consumoMinor % parts;
+    const index = split.partIndex!;
+    const calculated = base + (index <= remainder ? 1 : 0);
+    if (calculated <= 0 && consumoMinor > 0) {
+      this.settleError(422, 'INVALID_SETTLE_REQUEST', 'La parte resulta en un monto menor a 1 centavo');
+    }
+    if (inputAmountMinor !== undefined && inputAmountMinor !== calculated) {
+      this.settleError(422, 'INVALID_SETTLE_REQUEST', `El monto provisto (${inputAmountMinor}) no coincide con el cálculo de partes (${calculated})`);
+    }
+    return calculated;
+  }
+
+  /**
    * L2: idempotencia exacta de allocations sobre el modelo Prisma.
    * `AccountSettlement.allocationsProvided` registra si la liquidación original
    * trajo `allocations` explícito (true) u omitido (false, default de filas
@@ -1555,16 +1828,44 @@ export class OrderService {
     sessionId: string,
     input: SettleSessionInput,
     tipMinor: number,
-    requestedAllocations: Array<{ orderId: string; amountMinor: number }> | undefined
+    requestedAllocations: Array<{ orderId: string; amountMinor: number }> | undefined,
+    currentSaldoMinor?: number,
+    consumoMinor?: number
   ): boolean {
     if (
       existing.tableSessionId !== sessionId ||
       existing.method !== input.method ||
       existing.tipMinor !== tipMinor ||
-      existing.accountVersion !== input.expectedAccountVersion ||
-      (input.amountMinor !== undefined && existing.amountMinor !== input.amountMinor)
+      existing.accountVersion !== input.expectedAccountVersion
     ) {
       return false;
+    }
+    // Firma persistida E05: misma clave con split distinto => 409 aunque monto coincida.
+    const expectedSignature = OrderService.normalizeSplitSignature(input.split as SplitOperation | undefined, input.amountMinor);
+    const existingSignature: string | null = existing.splitSignature ?? null;
+    if ((expectedSignature ?? null) !== (existingSignature ?? null)) return false;
+    const expectedFixedAmount = input.split?.mode === 'FIXED'
+      ? (input.split.amountMinor ?? input.amountMinor)
+      : input.amountMinor;
+    if (expectedFixedAmount !== undefined && existing.amountMinor !== expectedFixedAmount) {
+      return false;
+    }
+    if (input.split && currentSaldoMinor !== undefined) {
+      const priorSaldo = currentSaldoMinor + existing.amountMinor;
+      if (input.split.mode === 'PERCENTAGE' && input.split.percentage !== undefined) {
+        const expectedPctAmount = Math.round((priorSaldo * input.split.percentage) / 100);
+        if (existing.amountMinor !== expectedPctAmount) return false;
+      } else if (input.split.mode === 'EQUAL_PARTS' && input.split.parts !== undefined) {
+        // EQUAL_PARTS es sobre consumo total, no saldo remanente. Prior consumo ≈ current consumo (estable durante split)
+        // Si tenemos consumo, usarlo; si no, fallback a priorSaldo por compat
+        const total = typeof consumoMinor === 'number' ? consumoMinor : priorSaldo;
+        const parts = input.split.parts;
+        const base = Math.floor(total / parts);
+        const remainder = total % parts;
+        const index = input.split.partIndex!;
+        const expectedPartAmount = base + (index <= remainder ? 1 : 0);
+        if (existing.amountMinor !== expectedPartAmount) return false;
+      }
     }
     const retryHasAllocations = requestedAllocations !== undefined;
     // Filas legadas (default false) = camino FIFO sin allocations explícito.
@@ -2926,11 +3227,137 @@ export class OrderService {
   }
 
   /**
+   * Núcleo tx-aware de promoción de pre-pedido (E07): valida y escribe la
+   * comanda dentro del `tx` provisto, sin abrir una transacción nueva ni
+   * emitir broadcasts. El llamante decide el commit/broadcast. Usado por
+   * WaitlistService.seatGuest para claim + FSM + promoción atómicos.
+   */
+  private static async addPreOrderCoreTx(
+    tx: any,
+    params: {
+      tableId: string;
+      lines: Array<{ menuItemId: string; quantity: number; notes?: string }>;
+      staffUserId?: string;
+      staffName?: string;
+      staffRestaurantId?: string;
+    },
+    now: Date
+  ): Promise<{ orderId: string; table: any; sessionId: string }> {
+    const table = await tx.table.findUnique({
+      where: { id: params.tableId },
+      include: { restaurant: true }
+    });
+    if (!table) {
+      const error: any = new Error('Mesa no encontrada');
+      error.statusCode = 404; error.code = 'TABLE_NOT_FOUND'; throw error;
+    }
+    if (params.staffRestaurantId && table.restaurantId !== params.staffRestaurantId) {
+      const error: any = new Error('No autorizado para gestionar mesas de otro restaurante');
+      error.statusCode = 403; error.code = 'STAFF_TENANT_MISMATCH'; throw error;
+    }
+    OrderService.assertTableCanReceiveOrder(
+      (table.currentState as TableFSMState) || TableFSMState.AVAILABLE
+    );
+    const lines = params.lines.map((line) => ({
+      menuItemId: typeof line?.menuItemId === 'string' ? line.menuItemId.trim() : '',
+      quantity: line?.quantity,
+      notes: line?.notes
+    }));
+    if (lines.some((line) => !line.menuItemId || !Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 50 || (line.notes !== undefined && (typeof line.notes !== 'string' || line.notes.length > 500)))) {
+      const error: any = new Error('Cada ítem del pre-pedido requiere plato, cantidad entre 1 y 50 y notas de hasta 500 caracteres');
+      error.statusCode = 400; error.code = 'INVALID_PREORDER'; throw error;
+    }
+    if (lines.length === 0 || lines.length > 20) {
+      const error: any = new Error('El pre-pedido debe contener entre 1 y 20 ítems');
+      error.statusCode = 400; error.code = 'INVALID_PREORDER'; throw error;
+    }
+    const ids = [...new Set(lines.map((line) => line.menuItemId))];
+    const menuItems = await tx.menuItem.findMany({
+      where: { id: { in: ids }, category: { restaurantId: table.restaurantId } },
+      include: { category: true }
+    });
+    const menuById = new Map<string, any>(menuItems.map((item: any) => [item.id, item] as [string, any]));
+    if (ids.some((id) => !menuById.has(id))) {
+      const error: any = new Error('Uno o más platos del pre-pedido no pertenecen a este restaurante');
+      error.statusCode = 404; error.code = 'ITEM_NOT_FOUND'; throw error;
+    }
+    if (ids.some((id) => !menuById.get(id).isAvailable)) {
+      const error: any = new Error('Uno o más platos del pre-pedido ya no están disponibles');
+      error.statusCode = 422; error.code = 'ITEM_NOT_AVAILABLE'; throw error;
+    }
+    const session = await SessionService.getOrCreateOperationalSessionTx(tx, table.id, table.restaurantId, now);
+    if (!session) {
+      const error: any = new Error('No hay un turno de servicio abierto para esta mesa');
+      error.statusCode = 409; error.code = 'SHIFT_INACTIVE'; throw error;
+    }
+    await OrderService.assertSessionCanReceiveOrderTx(tx, session.id);
+    let order = await tx.order.findFirst({
+      where: { tableSessionId: session.id, status: { in: [OrderStatus.DRAFT, OrderStatus.PENDING_VALIDATION, OrderStatus.IN_KITCHEN, OrderStatus.CONFIRMED] } }
+    });
+    if (!order) {
+      order = await tx.order.create({ data: { tableSessionId: session.id, status: OrderStatus.IN_KITCHEN, totalAmount: 0 } });
+    } else if (order.status === OrderStatus.DRAFT || order.status === OrderStatus.PENDING_VALIDATION) {
+      order = await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.IN_KITCHEN, draftKey: null } });
+    }
+    await tx.orderItem.createMany({
+      data: lines.map((line) => {
+        const menuItem = menuById.get(line.menuItemId);
+        return {
+          orderId: order.id,
+          menuItemId: menuItem.id,
+          quantity: line.quantity,
+          unitPrice: menuItem.price,
+          unitPriceMinor: menuItem.priceMinor ?? toMinor(menuItem.price),
+          notes: line.notes ? `${line.notes} (Cargado por ${params.staffName || 'Fila virtual'})` : `(Cargado por ${params.staffName || 'Fila virtual'})`,
+          addedByGuest: params.staffName || 'Fila virtual'
+        };
+      })
+    });
+    const allItems = await tx.orderItem.findMany({ where: { orderId: order.id }, select: { unitPrice: true, unitPriceMinor: true, quantity: true } });
+    const totalAmount = Math.max(0, Math.round(allItems.reduce((sum: number, item: any) => sum + item.unitPrice * item.quantity, 0) * 100) / 100);
+    const totalAmountMinor = allItems.reduce((sum: number, item: any) => sum + (item.unitPriceMinor ?? toMinor(item.unitPrice)) * item.quantity, 0);
+    await tx.order.update({ where: { id: order.id }, data: { totalAmount, totalAmountMinor } });
+    return { orderId: order.id, table, sessionId: session.id };
+  }
+
+  /**
+   * Variante tx-aware pública para WaitlistService (E07): ejecuta la
+   * promoción dentro del `tx` provisto y converge la FSM a
+   * ORDER_IN_KITCHEN vía transitionTx/ensureOperationalStateTx en la misma
+   * transacción. No emite broadcasts; el llamante lo hace post-commit.
+   */
+  static async addPreOrderByStaffTx(
+    tx: any,
+    params: {
+      tableId: string;
+      lines: Array<{ menuItemId: string; quantity: number; notes?: string }>;
+      staffUserId?: string;
+      staffName?: string;
+      staffRestaurantId?: string;
+    }
+  ): Promise<{ orderId: string; table: any; sessionId: string }> {
+    const now = new Date();
+    const result = await OrderService.addPreOrderCoreTx(tx, params, now);
+    // Converger FSM a ORDER_IN_KITCHEN dentro de la misma tx (claim ya hizo AVAILABLE->OCCUPIED).
+    // Si la mesa ya está en OCCUPIED_NO_ORDER, avanza a ORDER_IN_KITCHEN; si ya está más allá, no retrocede.
+    await FSMService.ensureOperationalStateTx(tx, {
+      tableId: result.table.id,
+      toState: TableFSMState.ORDER_IN_KITCHEN,
+      source: SignalSource.STAFF_TERMINAL_TAP,
+      trigger: `Pre-pedido de fila cargado por ${params.staffName || 'Salón'}`,
+      staffUserId: params.staffUserId,
+      restaurantId: result.table.restaurantId
+    });
+    return result;
+  }
+
+  /**
    * Promueve un pre-pedido de fila en una única transacción.
    *
    * A diferencia de addItemByStaff (que atiende un toque individual del panel),
    * este camino valida todos los platos y escribe todas las líneas juntas. Así
    * un cambio de stock o un error de tenant no puede dejar media comanda en KDS.
+   * Camino no-atómico legacy preservado para otros callers; E07 usa addPreOrderByStaffTx.
    */
   static async addPreOrderByStaff(params: {
     tableId: string;
@@ -2945,131 +3372,15 @@ export class OrderService {
       error.code = 'INVALID_PREORDER';
       throw error;
     }
-
     const result = await prisma.$transaction(async (tx: any) => {
       const now = new Date();
-      const table = await tx.table.findUnique({
-        where: { id: params.tableId },
-        include: { restaurant: true }
-      });
-
-      if (!table) {
-        const error: any = new Error('Mesa no encontrada');
-        error.statusCode = 404;
-        error.code = 'TABLE_NOT_FOUND';
-        throw error;
-      }
-      if (params.staffRestaurantId && table.restaurantId !== params.staffRestaurantId) {
-        const error: any = new Error('No autorizado para gestionar mesas de otro restaurante');
-        error.statusCode = 403;
-        error.code = 'STAFF_TENANT_MISMATCH';
-        throw error;
-      }
-      OrderService.assertTableCanReceiveOrder(
-        (table.currentState as TableFSMState) || TableFSMState.AVAILABLE
-      );
-
-      const lines = params.lines.map((line) => ({
-        menuItemId: typeof line?.menuItemId === 'string' ? line.menuItemId.trim() : '',
-        quantity: line?.quantity,
-        notes: line?.notes
-      }));
-      if (lines.some((line) => !line.menuItemId || !Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 50 || (line.notes !== undefined && (typeof line.notes !== 'string' || line.notes.length > 500)))) {
-        const error: any = new Error('Cada ítem del pre-pedido requiere plato, cantidad entre 1 y 50 y notas de hasta 500 caracteres');
-        error.statusCode = 400;
-        error.code = 'INVALID_PREORDER';
-        throw error;
-      }
-
-      const ids = [...new Set(lines.map((line) => line.menuItemId))];
-      const menuItems = await tx.menuItem.findMany({
-        where: {
-          id: { in: ids },
-          category: { restaurantId: table.restaurantId }
-        },
-        include: { category: true }
-      });
-      const menuById = new Map<string, any>(menuItems.map((item: any) => [item.id, item] as [string, any]));
-      if (ids.some((id) => !menuById.has(id))) {
-        const error: any = new Error('Uno o más platos del pre-pedido no pertenecen a este restaurante');
-        error.statusCode = 404;
-        error.code = 'ITEM_NOT_FOUND';
-        throw error;
-      }
-      if (ids.some((id) => !menuById.get(id).isAvailable)) {
-        const error: any = new Error('Uno o más platos del pre-pedido ya no están disponibles');
-        error.statusCode = 422;
-        error.code = 'ITEM_NOT_AVAILABLE';
-        throw error;
-      }
-
-      const session = await SessionService.getOrCreateOperationalSessionTx(
-        tx,
-        table.id,
-        table.restaurantId,
-        now
-      );
-      if (!session) {
-        const error: any = new Error('No hay un turno de servicio abierto para esta mesa');
-        error.statusCode = 409;
-        error.code = 'SHIFT_INACTIVE';
-        throw error;
-      }
-
-      await OrderService.assertSessionCanReceiveOrderTx(tx, session.id);
-
-      let order = await tx.order.findFirst({
-        where: {
-          tableSessionId: session.id,
-          status: { in: [OrderStatus.DRAFT, OrderStatus.PENDING_VALIDATION, OrderStatus.IN_KITCHEN, OrderStatus.CONFIRMED] }
-        }
-      });
-      if (!order) {
-        order = await tx.order.create({
-          data: { tableSessionId: session.id, status: OrderStatus.IN_KITCHEN, totalAmount: 0 }
-        });
-      } else if (order.status === OrderStatus.DRAFT || order.status === OrderStatus.PENDING_VALIDATION) {
-        order = await tx.order.update({
-          where: { id: order.id },
-          data: { status: OrderStatus.IN_KITCHEN, draftKey: null }
-        });
-      }
-
-      await tx.orderItem.createMany({
-        data: lines.map((line) => {
-          const menuItem = menuById.get(line.menuItemId);
-          return {
-            orderId: order.id,
-            menuItemId: menuItem.id,
-            quantity: line.quantity,
-            unitPrice: menuItem.price,
-            unitPriceMinor: menuItem.priceMinor ?? toMinor(menuItem.price),
-            notes: line.notes ? `${line.notes} (Cargado por ${params.staffName || 'Fila virtual'})` : `(Cargado por ${params.staffName || 'Fila virtual'})`,
-            addedByGuest: params.staffName || 'Fila virtual'
-          };
-        })
-      });
-
-      const allItems = await tx.orderItem.findMany({
-        where: { orderId: order.id },
-        select: { unitPrice: true, unitPriceMinor: true, quantity: true }
-      });
-      const totalAmount = Math.max(0, Math.round(allItems.reduce((sum: number, item: any) => sum + item.unitPrice * item.quantity, 0) * 100) / 100);
-      const totalAmountMinor = allItems.reduce(
-        (sum: number, item: any) => sum + (item.unitPriceMinor ?? toMinor(item.unitPrice)) * item.quantity,
-        0
-      );
-      await tx.order.update({ where: { id: order.id }, data: { totalAmount, totalAmountMinor } });
-
-      return { orderId: order.id, table };
+      return OrderService.addPreOrderCoreTx(tx, params, now);
     });
-
     await OrderService.transitionTableForStaffOrder({
       tableId: result.table.id,
       staffUserId: params.staffUserId,
       trigger: `Pre-pedido de fila cargado por ${params.staffName || 'Salón'}`
     });
-
     const fullOrder = await this.getOrderById(result.orderId, { includeTechnicalIdentity: true });
     if (!fullOrder) throw new Error('Error al recargar orden');
     eventBus.broadcast(result.table.restaurantId, 'order.submitted', {
@@ -3194,6 +3505,26 @@ export class OrderService {
         throw error;
       }
 
+      const tipAmount = Math.max(0, options?.tipAmount || 0);
+      if (tipAmount > 0 && order.tableSessionId) {
+        const orderSession = await prisma.tableSession.findUnique({
+          where: { id: order.tableSessionId },
+          include: { table: { select: { restaurantId: true } } }
+        });
+        if (orderSession?.table?.restaurantId) {
+          const moduleConfig = await prisma.restaurantModuleConfig.findUnique({
+            where: { restaurantId: orderSession.table.restaurantId },
+            select: { enableSmartTips: true }
+          });
+          if (moduleConfig && moduleConfig.enableSmartTips === false) {
+            const error: any = new Error('El módulo de propinas no está habilitado para este local.');
+            error.statusCode = 403;
+            error.code = 'SMART_TIPS_DISABLED';
+            throw error;
+          }
+        }
+      }
+
       // Registrar cobro presencial trazable sin crear 'APPROVED' digital de pasarela
       await prisma.paymentTransaction.create({
         data: {
@@ -3203,7 +3534,7 @@ export class OrderService {
           guestSessionId: options?.staffUserId || 'manager-in-person',
           method: physicalMethod,
           amount: order.totalAmount,
-          tipAmount: Math.max(0, options?.tipAmount || 0),
+          tipAmount,
           mpPaymentId: null, // NUNCA confirmación digital de proveedor externo
           status: 'MANUAL_SETTLED', // Estado manual presencial trazable
           resolvedAt: new Date()
@@ -3302,6 +3633,7 @@ export class OrderService {
     tipAmount?: number;
     idempotencyKey?: string;
     customerPhone?: string;
+    rewardsConsent?: boolean;
   }) {
     const normalizedCustomerPhone = params.customerPhone?.trim()
       ? normalizeRewardsPhone(params.customerPhone)
@@ -3312,6 +3644,43 @@ export class OrderService {
       error.statusCode = 400;
       error.code = 'INVALID_IDEMPOTENCY_KEY';
       throw error;
+    }
+
+    let rewardContext: any = null;
+    if (normalizedCustomerPhone) {
+      rewardContext = await prisma.order.findUnique({
+        where: { id: params.orderId },
+        select: {
+          tableSession: {
+            select: {
+              table: {
+                select: {
+                  restaurantId: true,
+                  restaurant: { select: { moduleConfig: { select: { enableRewards: true, pointsPerHundredPesos: true } } } }
+                }
+              }
+            }
+          }
+        }
+      });
+      if (rewardContext?.tableSession.table.restaurant.moduleConfig?.enableRewards) {
+        const existingLoyalty = await prisma.customerLoyalty.findUnique({
+          where: {
+            restaurantId_phone: {
+              restaurantId: rewardContext.tableSession.table.restaurantId,
+              phone: normalizedCustomerPhone
+            }
+          }
+        });
+        if (!existingLoyalty || !existingLoyalty.consentAt) {
+          if (params.rewardsConsent !== true) {
+            const consentErr: any = new Error('El cliente debe aceptar el programa Rewards antes de sumar puntos.');
+            consentErr.statusCode = 400;
+            consentErr.code = 'REWARDS_CONSENT_REQUIRED';
+            throw consentErr;
+          }
+        }
+      }
     }
 
     const existingPayment = await prisma.paymentTransaction.findUnique({
@@ -3325,6 +3694,21 @@ export class OrderService {
         throw error;
       }
       const existingOrder = await this.getOrderById(params.orderId, { includeTechnicalIdentity: true });
+      let rewardsReplay: any = null;
+      if (normalizedCustomerPhone) {
+        try {
+          rewardsReplay = await RewardsService.accrueForPayment({
+            restaurantId: params.staffRestaurantId,
+            phone: normalizedCustomerPhone,
+            amount: existingPayment.amount,
+            paymentId: existingPayment.id,
+            consent: Boolean(params.rewardsConsent),
+            approvedBy: params.staffUserId
+          });
+        } catch {
+          // Replay no bloqueante
+        }
+      }
       return {
         order: existingOrder,
         transaction: {
@@ -3336,7 +3720,8 @@ export class OrderService {
           recordedBy: existingPayment.guestSessionId,
           resolvedAt: existingPayment.resolvedAt?.toISOString() || null
         },
-        idempotentReplay: true
+        idempotentReplay: true,
+        rewards: rewardsReplay
       };
     }
 
@@ -3357,28 +3742,32 @@ export class OrderService {
     let rewards: any = null;
     let rewardsWarning: string | null = null;
     if (normalizedCustomerPhone && paymentTx) {
-      const rewardContext = await prisma.order.findUnique({
-        where: { id: params.orderId },
-        select: {
-          tableSession: {
-            select: {
-              table: {
-                select: {
-                  restaurantId: true,
-                  restaurant: { select: { moduleConfig: { select: { enableRewards: true } } } }
+      if (!rewardContext) {
+        rewardContext = await prisma.order.findUnique({
+          where: { id: params.orderId },
+          select: {
+            tableSession: {
+              select: {
+                table: {
+                  select: {
+                    restaurantId: true,
+                    restaurant: { select: { moduleConfig: { select: { enableRewards: true, pointsPerHundredPesos: true } } } }
+                  }
                 }
               }
             }
           }
-        }
-      });
+        });
+      }
       if (rewardContext?.tableSession.table.restaurant.moduleConfig?.enableRewards) {
         try {
           rewards = await RewardsService.accrueForPayment({
             restaurantId: rewardContext.tableSession.table.restaurantId,
             phone: normalizedCustomerPhone,
             amount: paymentTx.amount,
-            paymentId: paymentTx.id
+            paymentId: paymentTx.id,
+            consent: Boolean(params.rewardsConsent),
+            approvedBy: params.staffUserId
           });
         } catch (err: any) {
           // El cobro presencial ya quedó confirmado. No se revierte por un

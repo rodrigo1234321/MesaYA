@@ -44,3 +44,16 @@ test('local override requires an isolated branch and commit', () => {
   assert.ok(result.errors.some((error) => error.includes('overrideBranch')));
   assert.ok(result.errors.some((error) => error.includes('overrideCommit')));
 });
+
+test('base manifest is instance-neutral and carries no Fauno/demo URL by accident', () => {
+  const serialized = JSON.stringify(example).toLowerCase();
+  assert.equal(example.customization.mode, 'BASE_RELEASE');
+  assert.equal(example.customization.overrideBranch, '');
+  assert.equal(example.customization.overrideCommit, '');
+  assert.equal(serialized.includes('fauno'), false);
+  assert.equal(serialized.includes('olavarria'), false);
+  for (const domain of Object.values(example.domains)) {
+    assert.match(domain, /^https:\/\//);
+    assert.equal(domain.includes('fauno'), false);
+  }
+});

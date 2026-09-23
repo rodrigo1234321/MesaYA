@@ -6,7 +6,8 @@ import {
   RestaurantModuleConfigDTO,
   ModuleConfigAuditDTO,
   CapabilityKey,
-  CapabilityState
+  CapabilityState,
+  sanitizeGooglePlaceId
 } from '@mesaya/shared';
 import {
   Sliders,
@@ -68,13 +69,15 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
       allowWaitersToCollectCash: 'waiter_cash_collection',
       enableUpsell: 'upsell',
       enableSmartTips: 'smart_tips',
+      enableReviews: 'reviews',
+      enableWaitlist: 'waitlist',
       enableWaitlistPreOrder: 'waitlist_preorder',
       enableRewards: 'rewards'
     };
     const capabilityKey = capabilityByField[key];
     const capability = capabilityKey ? config.capabilities?.[capabilityKey] : undefined;
-    if (capability && !capability.effectiveEnabled && !config[key]) {
-      setErrorMsg(capability.message || 'Esta capacidad todavía no está disponible.');
+    if (capability && capability.state !== CapabilityState.AVAILABLE && !config[key]) {
+      setErrorMsg(capability.message || 'Esta capacidad todavía no está disponible en este local.');
       return;
     }
     setConfig({
@@ -169,7 +172,8 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
 
   const capabilityBlocked = (key: CapabilityKey) => {
     const capability = config.capabilities?.[key];
-    return Boolean(capability && !capability.effectiveEnabled && !capability.configuredEnabled);
+    if (!capability) return false;
+    return capability.state !== CapabilityState.AVAILABLE;
   };
 
   return (
@@ -281,29 +285,31 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                 {capabilityStatus('digital_payment')}
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
-                <div>
-                  <p className="text-xs font-bold text-slate-200">Dividir Cuenta (Split Bill)</p>
-                  <p className="text-[11px] text-slate-400">Permite dividir en partes iguales o por plato</p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={config.allowSplitBill}
-                  aria-label="Dividir cuenta"
-                  disabled={capabilityBlocked('split_bill') && !config.allowSplitBill}
-                  onClick={() => handleToggle('allowSplitBill')}
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                    config.allowSplitBill ? 'bg-emerald-500' : 'bg-slate-700'
-                  }`}
-                >
-                  <div
-                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                      config.allowSplitBill ? 'translate-x-5' : 'translate-x-0'
+              <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-bold text-slate-200">Dividir Cuenta (Split Bill)</p>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Permite dividir la cuenta por monto fijo, porcentaje o partes iguales desde Servicio</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(config.allowSplitBill)}
+                    aria-label="Dividir cuenta"
+                    onClick={() => handleToggle('allowSplitBill')}
+                    className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                      config.allowSplitBill ? 'bg-indigo-600' : 'bg-slate-800'
                     }`}
-                  />
-                </button>
-                {capabilityStatus('split_bill')}
+                  >
+                    <div
+                      className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                        config.allowSplitBill ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
@@ -445,7 +451,7 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </button>
             </div>
             <p className="text-xs text-slate-400">
-              Ofrece al comensal sugerencias no invasivas (ej. vino sugerido, papas especiales) al agregar un plato. El impacto debe medirse con datos del local; este módulo no promete un aumento.
+              Módulo base disponible en API. Las sugerencias automáticas invasivas sobre el producto seleccionado están desactivadas en la carta web para priorizar la rapidez y fluidez de atención.
             </p>
             {capabilityStatus('upsell')}
           </div>
@@ -490,6 +496,31 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
               </div>
               {capabilityStatus('smart_tips')}
 
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                <div>
+                  <p className="text-xs font-bold text-slate-200">Permitir Reseñas y Feedback</p>
+                  <p className="text-[11px] text-slate-400">Habilita la valoración privada interna y comentarios al comensal tras abonar</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={config.enableReviews}
+                  aria-label="Permitir reseñas y feedback"
+                  disabled={capabilityBlocked('reviews') && !config.enableReviews}
+                  onClick={() => handleToggle('enableReviews')}
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    config.enableReviews ? 'bg-purple-600' : 'bg-slate-700'
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      config.enableReviews ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+              {capabilityStatus('reviews')}
+
               <div>
                 <label className="block text-[11px] font-bold text-slate-400 mb-1">
                   Google Place ID (Direct Review Deep Link)
@@ -498,20 +529,24 @@ export const ModuleConfigManager: React.FC<Props> = ({ restaurantId }) => {
                   type="text"
                   placeholder="Ej: ChIJN1t_tDeuEmsRUsoyG83frY4"
                   value={config.googlePlaceId || ''}
+                  disabled={!config.enableReviews}
                   onChange={(e) => setConfig({ ...config, googlePlaceId: e.target.value || null })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 disabled:opacity-40"
                 />
-                {config.googlePlaceId && (
-                  <a
-                    href={`https://search.google.com/local/writereview?placeid=${config.googlePlaceId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 mt-1 text-[11px] text-purple-400 hover:underline"
-                  >
-                    <span>Probar enlace de reseña</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
+                {(() => {
+                  const safePlaceId = config.googlePlaceId ? sanitizeGooglePlaceId(config.googlePlaceId) : null;
+                  return safePlaceId && config.enableReviews ? (
+                    <a
+                      href={`https://search.google.com/local/writereview?placeid=${encodeURIComponent(safePlaceId)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 mt-1 text-[11px] text-purple-400 hover:underline"
+                    >
+                      <span>Probar enlace de reseña</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  ) : null;
+                })()}
               </div>
             </div>
           </div>

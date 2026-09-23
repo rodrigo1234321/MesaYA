@@ -1,4 +1,5 @@
 import {
+  AiDiagnosticsDTO,
   Sector,
   MetricsDTO,
   RestaurantMenuResponse,
@@ -331,6 +332,15 @@ export class AdminApi {
       const err = await res.json().catch(() => ({ error: 'Error al generar con IA' }));
       throw new Error(err.error || 'Error al generar carta con IA');
     }
+    return res.json();
+  }
+
+  static async getAiDiagnostics(slugOrId: string, probe: boolean = false): Promise<AiDiagnosticsDTO> {
+    const query = probe ? '?probe=true' : '';
+    const res = await fetch(`${API_BASE}/restaurants/${encodeURIComponent(slugOrId)}/ai/diagnostics${query}`, {
+      headers: this.getAuthHeaders({ isJson: false })
+    });
+    await this.requireAuthorized(res, 'Error al consultar diagnóstico de IA');
     return res.json();
   }
 

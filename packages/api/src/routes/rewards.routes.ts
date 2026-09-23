@@ -21,6 +21,25 @@ export const rewardsRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
+  fastify.post<{ Params: { id: string }; Body: Record<string, any> }>(
+    '/staff/restaurants/:id/rewards/customer',
+    { preHandler: [requireRestaurantAccess((request) => (request.params as { id: string }).id)] },
+    async (request, reply) => {
+      const body = bodyObject(request.body);
+      try {
+        const result = await RewardsService.registerCustomer({
+          restaurantId: request.params.id,
+          phone: body.phone,
+          consent: body.consent === true,
+          approvedBy: request.staffUser?.sub
+        });
+        return reply.status(201).send(result);
+      } catch (err: any) {
+        return sendSanitizedError(reply, err);
+      }
+    }
+  );
+
   fastify.get<{ Params: { id: string } }>(
     '/staff/restaurants/:id/rewards/items',
     { preHandler: [requireRestaurantAccess((request) => (request.params as { id: string }).id)] },
@@ -36,8 +55,11 @@ export const rewardsRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Params: { id: string }; Body: Record<string, any> }>(
     '/staff/restaurants/:id/rewards/accrual',
-    { preHandler: [requireRestaurantAccess((request) => (request.params as { id: string }).id)] },
+    { preHandler: [verifyManagerRole] },
     async (request, reply) => {
+      if (request.staffUser?.restaurantId !== request.params.id) {
+        return reply.status(404).send({ error: 'NOT_FOUND', code: 'NOT_FOUND' });
+      }
       const body = bodyObject(request.body);
       try {
         if (!Number.isInteger(body.points) || body.points <= 0) {
@@ -47,10 +69,12 @@ export const rewardsRoutes: FastifyPluginAsync = async (fastify) => {
           restaurantId: request.params.id,
           phone: body.phone,
           points: body.points,
-          reason: typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'Ajuste autorizado por personal',
+          reason: typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'Ajuste autorizado por encargado',
           referenceType: typeof body.referenceType === 'string' ? body.referenceType.trim() : undefined,
           referenceId: typeof body.referenceId === 'string' ? body.referenceId.trim() : undefined,
-          idempotencyKey: body.idempotencyKey
+          idempotencyKey: body.idempotencyKey,
+          consent: body.consent,
+          approvedBy: request.staffUser!.sub
         });
         return reply.status(result.idempotentReplay ? 200 : 201).send(result);
       } catch (err: any) {
@@ -93,6 +117,68 @@ export const rewardsRoutes: FastifyPluginAsync = async (fastify) => {
           redemptionId: request.params.redemptionId,
           approvedBy: request.staffUser!.sub,
           reason: typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'Canje cancelado por encargado'
+        });
+        return reply.send(result);
+      } catch (err: any) {
+        return sendSanitizedError(reply, err);
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: string; ledgerId: string }; Body: Record<string, any> }>(
+    '/staff/restaurants/:id/rewards/ledger/:ledgerId/reverse',
+    { preHandler: [verifyManagerRole] },
+    async (request, reply) => {
+      if (request.staffUser?.restaurantId !== request.params.id) {
+        return reply.status(404).send({ error: 'NOT_FOUND', code: 'NOT_FOUND' });
+      }
+      const body = bodyObject(request.body);
+      try {
+        const result = await RewardsService.reverse({
+          restaurantId: request.params.id,
+          originalLedgerId: request.params.ledgerId,
+          approvedBy: request.staffUser!.sub,
+          reason: typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'Reversión autorizada por encargado'
+        });
+        return reply.send(result);
+      } catch (err: any) {
+        return sendSanitizedError(reply, err);
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: string }; Body: Record<string, any> }>(
+    '/staff/restaurants/:id/rewards/reconcile-payment',
+    { preHandler: [requireRestaurantAccess((request) => (request.params as { id: string }).id)] },
+    async (request, reply) => {
+      const body = bodyObject(request.body);
+      try {
+        const result = await RewardsService.reconcilePaymentTransaction({
+          restaurantId: request.params.id,
+          paymentId: body.paymentTransactionId || body.paymentId,
+          phone: body.phone,
+          consent: body.consent === true,
+          approvedBy: request.staffUser?.sub
+        });
+        return reply.send(result);
+      } catch (err: any) {
+        return sendSanitizedError(reply, err);
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: string }; Body: Record<string, any> }>(
+    '/staff/restaurants/:id/rewards/reconcile-settlement',
+    { preHandler: [requireRestaurantAccess((request) => (request.params as { id: string }).id)] },
+    async (request, reply) => {
+      const body = bodyObject(request.body);
+      try {
+        const result = await RewardsService.reconcileSettlement({
+          restaurantId: request.params.id,
+          settlementId: body.settlementId,
+          phone: body.phone,
+          consent: body.consent === true,
+          approvedBy: request.staffUser?.sub
         });
         return reply.send(result);
       } catch (err: any) {

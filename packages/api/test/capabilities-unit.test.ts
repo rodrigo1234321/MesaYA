@@ -71,14 +71,18 @@ describe('Etapa 00 — ConfigService.buildCapabilities (unit)', () => {
     }
   });
 
-  it('split_bill always COMING_SOON regardless of allowSplitBill', () => {
-    for (const allow of [true, false]) {
-      const caps = ConfigService.buildCapabilities(baseConfig({ allowSplitBill: allow }));
-      expect(caps.capabilities.split_bill.state).toBe(CapabilityState.COMING_SOON);
-      expect(caps.capabilities.split_bill.configuredEnabled).toBe(allow);
-      expect(caps.capabilities.split_bill.effectiveEnabled).toBe(false);
-      expect(caps.capabilities.split_bill.reasonCode).toBe('SPLIT_BILL_UNAVAILABLE');
-    }
+  it('split_bill AVAILABLE and effectiveEnabled follows allowSplitBill', () => {
+    const disabled = ConfigService.buildCapabilities(baseConfig({ allowSplitBill: false }));
+    expect(disabled.capabilities.split_bill.state).toBe(CapabilityState.AVAILABLE);
+    expect(disabled.capabilities.split_bill.configuredEnabled).toBe(false);
+    expect(disabled.capabilities.split_bill.effectiveEnabled).toBe(false);
+    expect(disabled.capabilities.split_bill.reasonCode).toBe('SPLIT_BILL_DISABLED');
+
+    const enabled = ConfigService.buildCapabilities(baseConfig({ allowSplitBill: true }));
+    expect(enabled.capabilities.split_bill.state).toBe(CapabilityState.AVAILABLE);
+    expect(enabled.capabilities.split_bill.configuredEnabled).toBe(true);
+    expect(enabled.capabilities.split_bill.effectiveEnabled).toBe(true);
+    expect(enabled.capabilities.split_bill.reasonCode).toBe('SPLIT_BILL_ENABLED');
   });
 
   it('waitlist is available and effective only when enabled', () => {
@@ -139,10 +143,12 @@ describe('Etapa 00 — ConfigService.buildCapabilities (unit)', () => {
     expect(caps.capabilities.reviews.effectiveEnabled).toBe(true);
   });
 
-  it('reviews COMING_SOON when disabled', () => {
+  it('reviews AVAILABLE but ineffective when disabled by config', () => {
     const caps = ConfigService.buildCapabilities(baseConfig({ enableReviews: false }));
-    expect(caps.capabilities.reviews.state).toBe(CapabilityState.COMING_SOON);
+    expect(caps.capabilities.reviews.state).toBe(CapabilityState.AVAILABLE);
+    expect(caps.capabilities.reviews.configuredEnabled).toBe(false);
     expect(caps.capabilities.reviews.effectiveEnabled).toBe(false);
+    expect(caps.capabilities.reviews.reasonCode).toBe('REVIEWS_DISABLED');
   });
 
   it('manual_payment is available when the shared-screen cash UI exists', () => {

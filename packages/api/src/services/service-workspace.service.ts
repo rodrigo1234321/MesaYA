@@ -139,7 +139,7 @@ export class ServiceWorkspaceService {
       select: {
         id: true,
         moduleConfig: {
-          select: { allowWaitersToCollectCash: true }
+          select: { allowWaitersToCollectCash: true, allowSplitBill: true }
         }
       }
     });
@@ -440,6 +440,7 @@ export class ServiceWorkspaceService {
       tasks,
       accounts: isTerminalOnly ? [] : [...accountByTableId.values()].sort((a, b) => a.tableLabel.localeCompare(b.tableLabel, 'es', { numeric: true })),
       allowWaitersToCollectCash: Boolean(restaurant.moduleConfig?.allowWaitersToCollectCash),
+      allowSplitBill: Boolean(restaurant.moduleConfig?.allowSplitBill),
       summary: {
         totalTasks: tasks.length,
         pendingCalls,

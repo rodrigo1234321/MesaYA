@@ -145,6 +145,7 @@ model MenuItem {
   isFeatured   Boolean      @default(false)
   tags         String       @default("[]") // JSON string: ["GLUTEN_FREE", "VEGAN", "CHEF_PICK"]
   orderIndex   Int          @default(0)
+  catalogKey   String?      @unique // Clave canónica opcional y única: restaurantId:source:externalId
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -375,6 +376,9 @@ model AccountSettlement {
   // Presencia exacta de `allocations` en el request original (omitido ≠ []).
   // Aditivo con default false: filas legadas = camino FIFO sin allocations.
   allocationsProvided Boolean @default(false)
+  // Firma normalizada de la operación Split (E05). Nullable para histórico/legacy sin split.
+  // Formato canónico: FIXED:<amountMinor> | PERCENTAGE:<pct> | EQUAL_PARTS:<parts>:<partIndex>
+  splitSignature String?
 
   allocations      SettlementAllocation[]
   receipts         ReceiptSnapshot[]
@@ -568,6 +572,7 @@ model RewardLedgerEntry {
   referenceId       String?
   ruleVersion       String          @default("rewards-v1")
   idempotencyKey    String          @unique
+  approvedBy        String?
   createdAt         DateTime        @default(now())
 
   @@index([restaurantId, createdAt])

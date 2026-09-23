@@ -54,19 +54,35 @@ describe('Etapa 00 — capabilities: stored flags ≠ effective availability', (
     } finally { await app.close(); }
   });
 
-  it('allowSplitBill true no produce AVAILABLE capability', async () => {
+  it('allowSplitBill true produce AVAILABLE capability con SPLIT_BILL_ENABLED', async () => {
     mocks.getCapabilities.mockResolvedValue({
       restaurantId: 'restaurant-a',
       capabilities: {
-        split_bill: { key: 'split_bill', state: CapabilityState.COMING_SOON, reasonCode: 'SPLIT_BILL_UNAVAILABLE', message: 'No disponible' }
+        split_bill: { key: 'split_bill', state: CapabilityState.AVAILABLE, reasonCode: 'SPLIT_BILL_ENABLED', message: 'División activa' }
       }
     });
     const app = await appWithRoutes();
     try {
       const res = await app.inject({ method: 'GET', url: '/restaurants/local/capabilities' });
       expect(res.statusCode).toBe(200);
-      expect(res.json().capabilities.split_bill.state).toBe(CapabilityState.COMING_SOON);
-      expect(res.json().capabilities.split_bill.reasonCode).toBe('SPLIT_BILL_UNAVAILABLE');
+      expect(res.json().capabilities.split_bill.state).toBe(CapabilityState.AVAILABLE);
+      expect(res.json().capabilities.split_bill.reasonCode).toBe('SPLIT_BILL_ENABLED');
+    } finally { await app.close(); }
+  });
+
+  it('allowSplitBill false mantiene AVAILABLE con SPLIT_BILL_DISABLED', async () => {
+    mocks.getCapabilities.mockResolvedValue({
+      restaurantId: 'restaurant-a',
+      capabilities: {
+        split_bill: { key: 'split_bill', state: CapabilityState.AVAILABLE, reasonCode: 'SPLIT_BILL_DISABLED', message: 'Deshabilitada' }
+      }
+    });
+    const app = await appWithRoutes();
+    try {
+      const res = await app.inject({ method: 'GET', url: '/restaurants/local/capabilities' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().capabilities.split_bill.state).toBe(CapabilityState.AVAILABLE);
+      expect(res.json().capabilities.split_bill.reasonCode).toBe('SPLIT_BILL_DISABLED');
     } finally { await app.close(); }
   });
 

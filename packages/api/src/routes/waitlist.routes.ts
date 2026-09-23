@@ -79,6 +79,30 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   /**
+   * POST /v1/waitlist/:id/cancel
+   * Cancelación segura pública del ticket desde el dispositivo del comensal.
+   * Requiere el teléfono normalizado para validación privada (no enumeración).
+   */
+  fastify.post<{
+    Params: { id: string };
+    Body: { phone?: string; reason?: string };
+    Querystring: { phone?: string };
+  }>(
+    '/waitlist/:id/cancel',
+    async (request, reply) => {
+      const { id } = request.params;
+      const phone = request.body?.phone || request.query?.phone || '';
+      const reason = request.body?.reason;
+      try {
+        const entry = await WaitlistService.cancelPublicTicket(id, phone, reason);
+        return reply.send(entry);
+      } catch (err: any) {
+        return sendSanitizedError(reply, err);
+      }
+    }
+  );
+
+  /**
    * GET /v1/staff/restaurants/:id/waitlist
    * Consulta de fila de espera para el panel del staff.
    */
@@ -122,7 +146,7 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.patch<{
     Params: { id: string };
-    Body: { tableId?: string };
+    Body: { tableId?: string; skipPreOrder?: boolean; skipReason?: string };
   }>(
     '/staff/waitlist/:id/seat',
     { preHandler: [verifyStaffToken] },
@@ -130,7 +154,8 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
       const { id } = request.params;
       const staffRestaurantId = request.staffUser?.restaurantId;
       const staffUserId = request.staffUser?.sub;
-      const { tableId } = (request.body as any) || {};
+      const staffRole = request.staffUser?.role;
+      const { tableId, skipPreOrder, skipReason } = (request.body as any) || {};
 
       if (!tableId || typeof tableId !== 'string' || !tableId.trim()) {
         return reply.status(400).send({
@@ -143,8 +168,57 @@ export const waitlistRoutes: FastifyPluginAsync = async (fastify) => {
         const entry = await WaitlistService.seatGuest(id, {
           staffRestaurantId,
           staffUserId,
-          tableId: tableId.trim()
+          staffRole,
+          tableId: tableId.trim(),
+          skipPreOrder: Boolean(skipPreOrder),
+          skipReason: typeof skipReason === 'string' ? skipReason : undefined
         });
+        return reply.send(entry);
+      } catch (err: any) {
+        return sendSanitizedError(reply, err);
+      }
+    }
+  );
+
+  /**
+   * PATCH /v1/staff/waitlist/:id/cancel
+   * Mozo o encargado cancela un turno de espera del salón.
+   */
+  fastify.patch<{
+    Params: { id: string };
+    Body: { reason?: string };
+  }>(
+    '/staff/waitlist/:id/cancel',
+    { preHandler: [verifyStaffToken] },
+    async (request, reply) => {
+      const { id } = request.params;
+      const staffRestaurantId = request.staffUser?.restaurantId;
+      const reason = request.body?.reason;
+      try {
+        const entry = await WaitlistService.cancelByStaff(id, staffRestaurantId, reason);
+        return reply.send(entry);
+      } catch (err: any) {
+        return sendSanitizedError(reply, err);
+      }
+    }
+  );
+
+  /**
+   * PATCH /v1/staff/waitlist/:id/no-show
+   * Mozo o encargado marca el turno como no-show tras aviso sin comparecencia.
+   */
+  fastify.patch<{
+    Params: { id: string };
+    Body: { reason?: string };
+  }>(
+    '/staff/waitlist/:id/no-show',
+    { preHandler: [verifyStaffToken] },
+    async (request, reply) => {
+      const { id } = request.params;
+      const staffRestaurantId = request.staffUser?.restaurantId;
+      const reason = request.body?.reason;
+      try {
+        const entry = await WaitlistService.markNoShow(id, staffRestaurantId, reason);
         return reply.send(entry);
       } catch (err: any) {
         return sendSanitizedError(reply, err);

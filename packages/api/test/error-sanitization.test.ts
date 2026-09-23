@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { buildApp } from '../src/index';
-import { sendSanitizedError } from '../src/lib/errorHandler';
+import { isSafePublicMessage, sendSanitizedError } from '../src/lib/errorHandler';
 
 describe('Global Error Sanitization (P0-05, R02)', () => {
+  it('preserva comparadores de validación sin aceptar asignaciones clave=valor', () => {
+    expect(isSafePublicMessage('parts debe ser un entero seguro >= 2')).toBe(true);
+    expect(isSafePublicMessage('api_key=FAKE_REVIEW_ONLY')).toBe(false);
+  });
+
   it('sanitiza excepciones 5xx ocultando stack traces y detalles internos', async () => {
     const app = await buildApp();
 

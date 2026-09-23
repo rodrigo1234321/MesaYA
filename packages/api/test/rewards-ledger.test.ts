@@ -50,7 +50,8 @@ describe('Rewards ledger', () => {
       reason: 'Cobro manual de prueba',
       referenceType: 'PAYMENT',
       referenceId: 'payment-1',
-      idempotencyKey: 'reward-test-accrual-1'
+      idempotencyKey: 'reward-test-accrual-1',
+      consent: true
     });
     const replay = await RewardsService.accrue({
       restaurantId: restaurant.id,
@@ -73,7 +74,8 @@ describe('Rewards ledger', () => {
       phone: '2235551234',
       points: 30,
       reason: 'Acreditación inicial',
-      idempotencyKey: 'reward-test-accrual-2'
+      idempotencyKey: 'reward-test-accrual-2',
+      consent: true
     });
     const redemption = await RewardsService.redeem({
       restaurantId: restaurant.id,
@@ -111,7 +113,8 @@ describe('Rewards ledger', () => {
       restaurantId: restaurant.id,
       phone: '2235551234',
       amount: 1250,
-      paymentId: 'payment-rewards-1'
+      paymentId: 'payment-rewards-1',
+      consent: true
     });
     expect(result?.entry.pointsDelta).toBe(25);
     expect(result?.entry.ruleVersion).toBe(RewardsService.RULE_VERSION);

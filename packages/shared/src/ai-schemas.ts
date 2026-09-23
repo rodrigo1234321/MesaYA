@@ -83,3 +83,74 @@ export const AiSommelierOutputSchema = z.object({
 });
 
 export type AiSommelierOutput = z.infer<typeof AiSommelierOutputSchema>;
+
+/**
+ * Categorías canónicas de diagnóstico seguro de proveedor IA (E10).
+ * No exponen cuerpos ni mensajes de error crudos del proveedor externo.
+ */
+export const AiDiagnosticCategory = {
+  DISABLED: 'DISABLED',
+  MISSING_KEY: 'MISSING_KEY',
+  INVALID_KEY: 'INVALID_KEY',
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
+  MODEL_NOT_FOUND: 'MODEL_NOT_FOUND',
+  INVALID_REQUEST: 'INVALID_REQUEST',
+  BILLING_DISABLED: 'BILLING_DISABLED',
+  RATE_LIMITED: 'RATE_LIMITED',
+  QUOTA_EXHAUSTED: 'QUOTA_EXHAUSTED',
+  PROVIDER_UNAVAILABLE: 'PROVIDER_UNAVAILABLE',
+  TIMEOUT: 'TIMEOUT',
+  INVALID_RESPONSE: 'INVALID_RESPONSE',
+  READY: 'READY',
+  NOT_PROBED: 'NOT_PROBED',
+  // Alias de compatibilidad y contención
+  SKIPPED: 'NOT_PROBED',
+  BILLING_PRECONDITION: 'BILLING_DISABLED'
+} as const;
+
+export const AiDiagnosticCategorySchema = z.enum([
+  'DISABLED',
+  'MISSING_KEY',
+  'INVALID_KEY',
+  'PERMISSION_DENIED',
+  'MODEL_NOT_FOUND',
+  'INVALID_REQUEST',
+  'BILLING_DISABLED',
+  'RATE_LIMITED',
+  'QUOTA_EXHAUSTED',
+  'PROVIDER_UNAVAILABLE',
+  'TIMEOUT',
+  'INVALID_RESPONSE',
+  'READY',
+  'NOT_PROBED'
+]);
+
+export type AiDiagnosticCategory = z.infer<typeof AiDiagnosticCategorySchema>;
+
+export const AiKeySourceSchema = z.enum(['GOOGLE_API_KEY', 'GEMINI_API_KEY', 'none']);
+export type AiKeySource = z.infer<typeof AiKeySourceSchema>;
+
+export const AiProbeResultSchema = z.object({
+  category: AiDiagnosticCategorySchema,
+  attemptedModel: z.string().nullable(),
+  httpStatus: z.number().int().nullable(),
+  retryable: z.boolean(),
+  checkedAt: z.string()
+});
+
+export type AiProbeResult = z.infer<typeof AiProbeResultSchema>;
+
+export const AiDiagnosticsSchema = z.object({
+  enabled: z.boolean(),
+  provider: z.literal('gemini'),
+  keyConfigured: z.boolean(),
+  keySource: AiKeySourceSchema,
+  primaryModel: z.string(),
+  fallbackModel: z.string().nullable(),
+  usingDefaults: z.boolean(),
+  timeoutMs: z.number().positive(),
+  fallbackLocalAvailable: z.boolean(),
+  probe: AiProbeResultSchema.nullable().optional()
+});
+
+export type AiDiagnosticsDTO = z.infer<typeof AiDiagnosticsSchema>;

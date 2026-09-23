@@ -271,6 +271,30 @@ describe('E17 — carrito resistente a doble acción', () => {
       expect(names).toEqual(['Ana', 'Bruno']);
     });
 
+    it('S20 dos sesiones aisladas: cada token recibe su item, getActiveOrder sólo tiene su línea propia y count DRAFT por sesión es 1', async () => {
+      const { session: s1 } = await mkSession('Mesa E17-S20-iso1');
+      const { session: s2 } = await mkSession('Mesa E17-S20-iso2');
+      const [item1, item2] = await Promise.all([
+        mkItem('Plato E17-Iso1', 1200),
+        mkItem('Plato E17-Iso2', 1800)
+      ]);
+
+      await add(s1.token, item1.id, 1);
+      await add(s2.token, item2.id, 1);
+
+      const active1 = await OrderService.getActiveOrder(s1.id);
+      const active2 = await OrderService.getActiveOrder(s2.id);
+
+      expect(active1?.items).toHaveLength(1);
+      expect(active1?.items[0].menuItemId).toBe(item1.id);
+
+      expect(active2?.items).toHaveLength(1);
+      expect(active2?.items[0].menuItemId).toBe(item2.id);
+
+      expect(await prisma.order.count({ where: { tableSessionId: s1.id, status: 'DRAFT' } })).toBe(1);
+      expect(await prisma.order.count({ where: { tableSessionId: s2.id, status: 'DRAFT' } })).toBe(1);
+    });
+
     it('S20 agotado al enviar: queda en revisión con motivo persistido, resto intacto', async () => {
       const { session } = await mkSession('Mesa E17-S20b');
       const okItem = await mkItem('Plato E17-F', 900);

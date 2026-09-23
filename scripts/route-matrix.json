@@ -36,6 +36,7 @@
   { "method": "GET", "path": "/v1/restaurants/:slug/config", "auth": "ANON", "note": "Config pública con whitelist estricta, sin credenciales (etapa 08)." },
   { "method": "GET", "path": "/v1/restaurants/:slug/capabilities", "auth": "ANON", "note": "Capacidades efectivas del local; separa configuración de disponibilidad real (plan integral etapa 00)." },
   { "method": "POST", "path": "/v1/restaurants/:slugOrId/ai-sommelier", "auth": "ANON", "note": "IA acotada sin fallbacks; mocks en tests (etapas 04/20)." },
+  { "method": "GET", "path": "/v1/restaurants/:slugOrId/ai/diagnostics", "auth": "MANAGER", "note": "Diagnóstico seguro de IA y proveedor por manager (E10)." },
   { "method": "PATCH", "path": "/v1/restaurants/:slugOrId/branding", "auth": "MANAGER", "note": "Manager + tenant vía requireManagedRestaurant (etapa 09)." },
   { "method": "POST", "path": "/v1/restaurants/:slugOrId/menu/ai-generate", "auth": "MANAGER", "note": "Manager + tenant; IA acotada (etapas 09/20)." },
   { "method": "DELETE", "path": "/v1/restaurants/:slugOrId/menu/categories/:categoryId", "auth": "MANAGER", "note": "Manager + tenant (etapa 09)." },
@@ -69,13 +70,19 @@
   { "method": "POST", "path": "/v1/staff/service/tasks/:taskType/:targetId/resolve", "auth": "STAFF", "note": "Cierre auditable de la toma después del hecho operativo (S03/S07)." },
   { "method": "POST", "path": "/v1/staff/service/tasks/:taskType/:targetId/act", "auth": "STAFF", "note": "Intención operativa única: reclama y ejecuta la acción en una transacción (E06)." },
   { "method": "GET", "path": "/v1/staff/restaurants/:id/rewards/customer", "auth": "STAFF", "note": "Consulta de saldo/ledger Rewards por teléfono desde la pantalla compartida (etapa 18)." },
+  { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/customer", "auth": "STAFF", "note": "Alta con consentimiento explícito de cliente Rewards asistido por staff (E09)." },
   { "method": "GET", "path": "/v1/staff/restaurants/:id/rewards/items", "auth": "STAFF", "note": "Catálogo de premios Rewards del tenant (etapa 18)." },
-  { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/accrual", "auth": "STAFF", "note": "Acreditación manual auditable con idempotencia (etapa 18)." },
+  { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/accrual", "auth": "MANAGER", "note": "Acreditación manual o ajuste auditable con idempotencia por encargado (etapa 18, E09)." },
   { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/redeem", "auth": "STAFF", "note": "Canje atómico de puntos desde la pantalla compartida (etapa 18)." },
   { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/redemptions/:redemptionId/cancel", "auth": "MANAGER", "note": "Reversión autorizada de un canje Rewards (etapa 18)." },
+  { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/ledger/:ledgerId/reverse", "auth": "MANAGER", "note": "Reversión auditable de movimiento de ledger Rewards por encargado (E09)." },
+  { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/reconcile-payment", "auth": "STAFF", "note": "Reconciliación de rewards tras pago manual confirmado con advertencia (E09)." },
+  { "method": "POST", "path": "/v1/staff/restaurants/:id/rewards/reconcile-settlement", "auth": "STAFF", "note": "Reconciliación de rewards tras liquidación de cuenta confirmada con advertencia (E09)." },
   { "method": "GET", "path": "/v1/staff/restaurants/:id/waitlist", "auth": "STAFF", "note": "Cola del tenant sin PII expuesta (etapa 16)." },
   { "method": "POST", "path": "/v1/staff/tables/:tableId/orders/items", "auth": "STAFF", "note": "Carga directa por mozo del tenant (etapa 15)." },
   { "method": "PATCH", "path": "/v1/staff/waitlist/:id/call", "auth": "STAFF", "note": "Aviso del tenant (etapa 16)." },
+  { "method": "PATCH", "path": "/v1/staff/waitlist/:id/cancel", "auth": "STAFF", "note": "Cancelación de turno por personal del tenant (E07)." },
+  { "method": "PATCH", "path": "/v1/staff/waitlist/:id/no-show", "auth": "STAFF", "note": "Marcación de no-show por personal del tenant tras aviso sin comparecencia (E07)." },
   { "method": "PATCH", "path": "/v1/staff/waitlist/:id/seat", "auth": "STAFF", "note": "Mesa destino validada del tenant (etapa 16)." },
   { "method": "GET", "path": "/v1/staff", "auth": "MANAGER", "note": "Plantel del tenant (etapa 07)." },
   { "method": "POST", "path": "/v1/staff", "auth": "MANAGER", "note": "Alta cerrada: sólo manager (etapa 07)." },
@@ -91,6 +98,7 @@
   { "method": "GET", "path": "/v1/tables/states/:restaurantId", "auth": "STAFF", "note": "Snapshot FSM del tenant (etapa 17)." },
   { "method": "POST", "path": "/v1/waitlist/join", "auth": "ANON", "note": "Público con rate-limit IP+tenant; sin PII en respuesta (etapas 16/25)." }
   ,{ "method": "GET", "path": "/v1/waitlist/:id/status", "auth": "ANON", "note": "Estado del propio ticket validado por teléfono; no expone PII ni lista." }
+  ,{ "method": "POST", "path": "/v1/waitlist/:id/cancel", "auth": "ANON", "note": "Cancelación segura pública de ticket por comensal validada por teléfono (E07)." }
   ,{ "method": "POST", "path": "/v1/staff/sessions/:sessionId/settle", "auth": "STAFF", "note": "B04: liquidación por cuenta; mozo con WAITER_CASH y flag allowWaitersToCollectCash o manager; verifySettlementAuthorization nunca anónimo (E12/E21)." }
   ,{ "method": "POST", "path": "/v1/staff/sessions/:sessionId/settle-and-close", "auth": "STAFF", "note": "E03: comando atómico Cobrar y cerrar; mozo con WAITER_CASH y flag o manager; idempotencyKey + versión total + TO_CLEAN (E12/E21)." }
   ,{ "method": "POST", "path": "/v1/staff/tables/:tableId/orders", "auth": "STAFF", "note": "S05: pedido presencial por tanda atómica, origen y actor auditados." }

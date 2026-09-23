@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { OrderService } from '../services/order.service';
 import { verifyStaffToken, verifySettlementAuthorization } from '../middlewares/auth.middleware';
-import { AddOrderItemDTO, ClaimItemDTO, SplitMode, OrderStatus } from '@mesaya/shared';
+import { AddOrderItemDTO, ClaimItemDTO, SplitMode, SplitOperation, OrderStatus } from '@mesaya/shared';
 import { sendSanitizedError } from '../lib/errorHandler';
 
 export const orderRoutes: FastifyPluginAsync = async (fastify) => {
@@ -224,6 +224,9 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
       tipMinor?: number;
       responsibleStaffUserId?: string;
       allocations?: Array<{ orderId: string; amountMinor: number }>;
+      split?: SplitOperation;
+      customerPhone?: string;
+      rewardsConsent?: boolean;
     };
   }>(
     '/staff/sessions/:sessionId/settle',
@@ -243,7 +246,10 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
           responsibleStaffUserId: body.responsibleStaffUserId,
           amountMinor: body.amountMinor,
           tipMinor: body.tipMinor,
-          allocations: body.allocations
+          allocations: body.allocations,
+          split: body.split,
+          customerPhone: body.customerPhone,
+          rewardsConsent: body.rewardsConsent
         });
         return reply.status(result.idempotentReplay ? 200 : 201).send(result);
       } catch (err: any) {
@@ -269,6 +275,9 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
       tipMinor?: number;
       responsibleStaffUserId?: string;
       allocations?: Array<{ orderId: string; amountMinor: number }>;
+      split?: SplitOperation;
+      customerPhone?: string;
+      rewardsConsent?: boolean;
     };
   }>(
     '/staff/sessions/:sessionId/settle-and-close',
@@ -288,7 +297,10 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
           responsibleStaffUserId: body.responsibleStaffUserId,
           amountMinor: body.amountMinor,
           tipMinor: body.tipMinor,
-          allocations: body.allocations
+          allocations: body.allocations,
+          split: body.split,
+          customerPhone: body.customerPhone,
+          rewardsConsent: body.rewardsConsent
         });
         return reply.status(result.idempotentReplay ? 200 : 201).send(result);
       } catch (err: any) {
@@ -416,7 +428,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.post<{
     Params: { id: string };
-    Body: { paymentMethod?: string; tipAmount?: number; idempotencyKey?: string; customerPhone?: string };
+    Body: { paymentMethod?: string; tipAmount?: number; idempotencyKey?: string; customerPhone?: string; rewardsConsent?: boolean };
   }>(
     '/staff/orders/:id/pay',
     { preHandler: [verifyStaffToken] },
@@ -430,7 +442,7 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
         'E01: cobro por comanda deprecado; usar cuenta por sesión'
       );
       const { id } = request.params;
-      const { paymentMethod, tipAmount, idempotencyKey, customerPhone } = request.body || {};
+      const { paymentMethod, tipAmount, idempotencyKey, customerPhone, rewardsConsent } = request.body || {};
 
       try {
         const staffRestaurantId = request.staffUser?.restaurantId;
@@ -449,7 +461,8 @@ export const orderRoutes: FastifyPluginAsync = async (fastify) => {
           paymentMethod,
           tipAmount,
           idempotencyKey,
-          customerPhone
+          customerPhone,
+          rewardsConsent
         });
         return reply.send(result);
       } catch (err: any) {

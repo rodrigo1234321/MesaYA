@@ -73,8 +73,9 @@ export const CashManager: React.FC<{ restaurantId: string }> = ({ restaurantId }
         paymentKeys.current.set(order.id, key);
       }
       const tipAmount = Math.max(0, Number(tipByOrder[order.id] || 0));
-      const customerPhone = rewardsConsentByOrder[order.id] ? (phoneByOrder[order.id] || undefined) : undefined;
-      const result = await StaffApi.payOrder(order.id, paymentMethod, tipAmount, key, customerPhone);
+      const customerPhone = phoneByOrder[order.id] ? phoneByOrder[order.id].trim() : undefined;
+      const rewardsConsent = Boolean(rewardsConsentByOrder[order.id]);
+      const result = await StaffApi.payOrder(order.id, paymentMethod, tipAmount, key, customerPhone, rewardsConsent);
       if (result?.rewardsWarning) setError(`Cobro registrado. Rewards requiere revisión: ${result.rewardsWarning}`);
       paymentKeys.current.delete(order.id);
       await refresh();
@@ -135,6 +136,7 @@ export const CashManager: React.FC<{ restaurantId: string }> = ({ restaurantId }
               <input type="checkbox" checked={Boolean(rewardsConsentByOrder[order.id])} onChange={(event) => setRewardsConsentByOrder((prev) => ({ ...prev, [order.id]: event.target.checked }))} className="accent-rose-500" />
               Cliente acepta recibir puntos Rewards
             </label>
+            <p className="text-[10px] text-slate-500">Rewards es asistido por personal y la propina no genera puntos.</p>
             <div className="grid grid-cols-2 gap-2">
               <button disabled={busyOrderId === order.id} onClick={() => pay(order)} className="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1"><CreditCard className="w-3.5 h-3.5" /> Registrar cobro</button>
               <button disabled={busyOrderId === order.id} onClick={() => release(order)} className="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold text-xs flex items-center justify-center gap-1"><LockKeyhole className="w-3.5 h-3.5" /> Liberar mesa</button>

@@ -68,6 +68,7 @@ describe('E18 — Admin accesible, tenant-scoped y sin pérdida de Ventas (S25)'
       'requireWaiterValidation',
       'enableUpsell',
       'enableSmartTips',
+      'enableReviews',
       'enableWaitlist',
       'enableWaitlistPreOrder',
       'enableRewards'

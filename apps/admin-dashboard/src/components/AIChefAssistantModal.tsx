@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { ChefAIGenerateResponse, MenuTemplateId } from '@mesaya/shared';
+import { AiDiagnosticsDTO, ChefAIGenerateResponse, MenuTemplateId } from '@mesaya/shared';
 import { AdminApi } from '../lib/api';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { Sparkles, Check, Loader2, X, AlertTriangle } from 'lucide-react';
+import { Sparkles, Check, Loader2, X, AlertTriangle, Activity } from 'lucide-react';
 
 interface AIChefAssistantModalProps {
   isOpen: boolean;
@@ -22,6 +22,22 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [generatedResult, setGeneratedResult] = useState<ChefAIGenerateResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<AiDiagnosticsDTO | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagError, setDiagError] = useState<string | null>(null);
+
+  const handleCheckDiagnostics = async () => {
+    setDiagLoading(true);
+    setDiagError(null);
+    try {
+      const res = await AdminApi.getAiDiagnostics(restaurantSlug, false);
+      setDiagnostics(res);
+    } catch (err: any) {
+      setDiagError(err.message || 'Error al obtener diagnóstico de IA');
+    } finally {
+      setDiagLoading(false);
+    }
+  };
 
   const focusTrapRef = useFocusTrap(isOpen, onClose);
 
@@ -134,6 +150,60 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
             </div>
           )}
 
+          {/* Diagnóstico Seguro de IA (E10) - Acción explícita de Manager */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Estado de Integración IA (Diagnóstico E10)</span>
+                </span>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Verifica el estado del proveedor de forma controlada sin realizar llamadas desatendidas.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={diagLoading}
+                onClick={handleCheckDiagnostics}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 disabled:opacity-50 shrink-0 transition-all"
+              >
+                {diagLoading ? 'Verificando...' : 'Comprobar Estado'}
+              </button>
+            </div>
+
+            {diagError && (
+              <div className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/30 text-rose-300 text-[11px]">
+                {diagError}
+              </div>
+            )}
+
+            {diagnostics && (
+              <div className="pt-2 border-t border-slate-800/80 text-[11px] grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-300">
+                <div className="flex justify-between p-1.5 bg-slate-900/60 rounded-lg">
+                  <span className="text-slate-400">Función IA:</span>
+                  <span className={diagnostics.enabled ? 'text-emerald-400 font-semibold' : 'text-rose-400'}>
+                    {diagnostics.enabled ? 'Habilitada' : 'Deshabilitada'}
+                  </span>
+                </div>
+                <div className="flex justify-between p-1.5 bg-slate-900/60 rounded-lg">
+                  <span className="text-slate-400">Clave configurada:</span>
+                  <span className={diagnostics.keyConfigured ? 'text-emerald-400 font-semibold' : 'text-amber-400'}>
+                    {diagnostics.keyConfigured ? `Sí (${diagnostics.keySource})` : 'No (Fallback Local)'}
+                  </span>
+                </div>
+                <div className="flex justify-between p-1.5 bg-slate-900/60 rounded-lg">
+                  <span className="text-slate-400">Modelo primario:</span>
+                  <span className="font-mono text-slate-200">{diagnostics.primaryModel}</span>
+                </div>
+                <div className="flex justify-between p-1.5 bg-slate-900/60 rounded-lg">
+                  <span className="text-slate-400">Fallback local:</span>
+                  <span className="text-emerald-400 font-semibold">{diagnostics.fallbackLocalAvailable ? 'Operativo' : 'No'}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Quick Gastronomy Presets */}
           <div className="space-y-2">
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
@@ -208,6 +278,20 @@ export const AIChefAssistantModal: React.FC<AIChefAssistantModalProps> = ({
                     Template sugerido: <strong className="text-amber-300">{generatedResult.suggestedTemplateId}</strong>
                   </p>
                 </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950/80 border border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400 text-[11px]">Origen:</span>
+                  <span className={`text-[11px] font-bold ${generatedResult.poweredBy === 'gemini' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {generatedResult.poweredBy === 'gemini'
+                      ? '✨ Gemini (modelo externo, solo preview)'
+                      : '📋 Heurística local / fallback (solo preview)'}
+                  </span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/30 self-start sm:self-auto">
+                  Solo Vista Previa (Revisión humana obligatoria)
+                </span>
               </div>
 
               <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
