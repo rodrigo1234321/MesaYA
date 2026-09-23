@@ -218,6 +218,59 @@ describe('B06 — submit idempotente y carrito concurrente', () => {
     expect(account.draft?.totalMinor).toBe(450000);
   });
 
+  it('ORDER_REVIEW_REQUIRED bloquea cliente, mozo, carga manual, pre-pedido y envío/validación aun con isAvailable=true', async () => {
+    const item = await mkItem('Fauno precio a consultar', 0);
+    await prisma.menuItem.update({
+      where: { id: item.id },
+      data: { isAvailable: true, tags: JSON.stringify(['ORDER_REVIEW_REQUIRED', 'PRICE_FROM']) }
+    });
+    const reviewError = { statusCode: 422, code: 'ITEM_NOT_AVAILABLE' };
+
+    const guest = await mkSession('Mesa review guest');
+    await expect(add(guest.session.token, item.id)).rejects.toMatchObject(reviewError);
+
+    const staff = await mkSession('Mesa review staff');
+    await expect(OrderService.addItemByStaff({
+      tableId: staff.table.id,
+      menuItemId: item.id,
+      quantity: 1,
+      staffRestaurantId: rest1.id
+    })).rejects.toMatchObject(reviewError);
+
+    const manual = await mkSession('Mesa review manual');
+    await expect(OrderService.addManualOrderByStaff({
+      tableId: manual.table.id,
+      lines: [{ menuItemId: item.id, quantity: 1 }],
+      staffRestaurantId: rest1.id
+    })).rejects.toMatchObject(reviewError);
+
+    const preorder = await mkSession('Mesa review preorder');
+    await expect(OrderService.addPreOrderByStaff({
+      tableId: preorder.table.id,
+      lines: [{ menuItemId: item.id, quantity: 1 }],
+      staffRestaurantId: rest1.id
+    })).rejects.toMatchObject(reviewError);
+    await expect(prisma.$transaction((tx) => OrderService.addPreOrderByStaffTx(tx, {
+      tableId: preorder.table.id,
+      lines: [{ menuItemId: item.id, quantity: 1 }],
+      staffRestaurantId: rest1.id
+    }))).rejects.toMatchObject(reviewError);
+
+    const submit = await mkSession('Mesa review submit');
+    const draft = await prisma.order.create({
+      data: {
+        tableSessionId: submit.session.id,
+        items: { create: [{ menuItemId: item.id, quantity: 1, unitPrice: 0, addedByGuest: 'review-test' }] }
+      }
+    });
+    const submitted = await OrderService.submitOrder(submit.session.token);
+    expect(submitted.id).toBe(draft.id);
+    const pending = await prisma.order.findUniqueOrThrow({ where: { id: draft.id } });
+    expect(pending.status).toBe('PENDING_VALIDATION');
+    expect(pending.reviewReasonCode).toBe('STOCK_UNAVAILABLE');
+    await expect(OrderService.validateOrder(pending.id, 'Mozo', rest1.id)).rejects.toMatchObject(reviewError);
+  });
+
   it('T11b borrado concurrente del mismo ítem: uno gana, otro 404/409, total consistente', async () => {
     const { session } = await mkSession('Mesa B06-11b');
     const item = await mkItem('Plato H', 700);

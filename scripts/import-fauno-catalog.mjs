@@ -14,6 +14,22 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const defaultCatalogPath = path.join(root, 'apps', 'client-web', 'public', 'demo', 'fauno-olavarria', 'catalog.json');
+const orderReviewRequiredKeys = new Set([
+  'papas__papas-al-verdeo',
+  'tacos__tacos-veggie',
+  'tacos__tacos-pollo-carne',
+  'sin-alcohol__frozzen-fruit',
+  'lo-de-siempre__vermu-con-soda',
+  'caipis-y-mojitos__caiporoska-sernova',
+  'caipis-y-mojitos__caipiroska-absolut',
+  'caipis-y-mojitos__mojito-clasico',
+  'frozzens__daikiri-frozen',
+  'medidas__vodka-sernova',
+  'medidas__malibu',
+  'medidas__tequila-jose-cuervo',
+  'medidas__vodka-absolut',
+  'botellas__sernova-clasico-saborizado-6-speed'
+]);
 
 export function slugify(value) {
   return String(value || '')
@@ -51,10 +67,23 @@ export function buildFaunoBatchMenuImportDTO(catalog, options = {}) {
       }
       seenKeys.add(dupKey);
 
+      const itemKey = `${slugify(categoryName)}__${slugify(name)}`;
       const isComingSoon = Array.isArray(item.tags) && item.tags.includes('COMING_SOON');
-      const isAvailable = isComingSoon ? false : (item.isAvailable !== false);
+      const orderReviewRequired = orderReviewRequiredKeys.has(itemKey);
+      const tags = Array.isArray(item.tags) ? [...item.tags] : [];
+      if (orderReviewRequired && !tags.includes('ORDER_REVIEW_REQUIRED')) tags.push('ORDER_REVIEW_REQUIRED');
+      if (itemKey === 'papas__papas-al-verdeo' && !tags.includes('PRICE_FROM')) tags.push('PRICE_FROM');
+      const isAvailable = isComingSoon || orderReviewRequired ? false : (item.isAvailable !== false);
       const rawExtId = item.externalId && String(item.externalId).trim();
       const externalId = rawExtId || `${slugify(categoryName)}__${slugify(name)}`;
+      const price = Number(item.price);
+      const expectedPriceMinor = Math.round(price * 100);
+      if (!Number.isFinite(price) || price <= 0) {
+        throw new Error(`Precio inválido para "${categoryName} > ${name}".`);
+      }
+      if (item.priceMinor !== undefined && (!Number.isSafeInteger(item.priceMinor) || item.priceMinor !== expectedPriceMinor)) {
+        throw new Error(`priceMinor no coincide con price en ARS para "${categoryName} > ${name}".`);
+      }
 
       if (seenExternalIds.has(externalId.toLowerCase())) {
         throw new Error(`externalId duplicado detectado en catálogo Fauno: "${externalId}" ("${categoryName} > ${name}")`);
@@ -67,8 +96,8 @@ export function buildFaunoBatchMenuImportDTO(catalog, options = {}) {
         categoryIcon,
         name,
         description: item.description?.trim() || undefined,
-        price: Number(item.price),
-        tags: Array.isArray(item.tags) ? item.tags : [],
+        price,
+        tags,
         isFeatured: Boolean(item.isFeatured),
         isAvailable,
         imageUrl: item.imageUrl?.trim() || undefined,
@@ -89,7 +118,7 @@ export function buildFaunoBatchMenuImportDTO(catalog, options = {}) {
  * Simulación pura del algoritmo de sincronización segura (E01).
  * Idéntico a MenuImportService, para pruebas unitarias determinísticas.
  */
-export function simulateMenuSync(existingDbCategories, dto) {
+export function simulateMenuSync(existingDbCategories, dto, { restaurantId = 'restaurant-fauno' } = {}) {
   const isDryRun = Boolean(dto.dryRun);
   const replaceExisting = Boolean(dto.replaceExisting);
   const items = dto.items || [];
@@ -160,7 +189,7 @@ export function simulateMenuSync(existingDbCategories, dto) {
     for (const rawItem of group.items) {
       const normName = rawItem.name.trim().toLowerCase();
       const targetCatalogKey = rawItem.externalId
-        ? `restaurant-fauno:${(rawItem.source || 'default').toLowerCase()}:${rawItem.externalId.toLowerCase()}`
+        ? `${restaurantId}:${(rawItem.source || 'default').toLowerCase()}:${rawItem.externalId.toLowerCase()}`
         : null;
 
       let existing = null;
@@ -178,7 +207,8 @@ export function simulateMenuSync(existingDbCategories, dto) {
       }
 
       const isComingSoon = rawItem.tags?.includes('COMING_SOON') ?? false;
-      const isAvailable = isComingSoon ? false : (rawItem.isAvailable !== false);
+      const isOrderReviewRequired = rawItem.tags?.includes('ORDER_REVIEW_REQUIRED') ?? false;
+      const isAvailable = isComingSoon || isOrderReviewRequired ? false : (rawItem.isAvailable !== false);
 
       if (existing) {
         itemsUpdated++;
@@ -245,7 +275,8 @@ export function simulateMenuSync(existingDbCategories, dto) {
 
 // Ejecución como script CLI
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const catalogPath = process.argv[2] ? path.resolve(process.argv[2]) : defaultCatalogPath;
+  const catalogArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
+  const catalogPath = catalogArg ? path.resolve(catalogArg) : defaultCatalogPath;
   const isDryRun = process.argv.includes('--dry-run');
   const replaceExisting = !process.argv.includes('--no-replace');
   const emitJson = process.argv.includes('--json');

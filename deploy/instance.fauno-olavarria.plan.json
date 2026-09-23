@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "instanceKey": "fauno-olavarria",
+  "restaurant": {
+    "name": "Fauno Olavarría",
+    "slug": "fauno-olavarria",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "currency": "ARS"
+  },
+  "domains": {
+    "api": "https://fauno-olavarria-api.vercel.app",
+    "client": "https://fauno-olavarria-menu-demo.vercel.app",
+    "staff": "https://fauno-olavarria-staff.vercel.app",
+    "admin": "https://fauno-olavarria-admin.vercel.app"
+  },
+  "modules": {
+    "ordering": true,
+    "waiterValidation": true,
+    "manualPayment": true,
+    "digitalPayment": false,
+    "splitBill": true,
+    "waitlist": false,
+    "preOrder": false,
+    "rewards": false,
+    "sommelier": false,
+    "upsell": false,
+    "reviews": false,
+    "whatsappFallback": false
+  },
+  "deployment": {
+    "release": "fauno-olavarria-preflight-2026-09-23",
+    "schema": "postgresql-v1",
+    "vercelProjects": {
+      "api": "fauno-olavarria-api",
+      "client": "fauno-olavarria-menu-demo",
+      "staff": "fauno-olavarria-staff",
+      "admin": "fauno-olavarria-admin"
+    }
+  },
+  "customization": {
+    "mode": "BASE_RELEASE",
+    "parentRelease": "7c024fa6e9aa724c58dfd52cb31ff134ab639797",
+    "overrideBranch": "",
+    "overrideCommit": ""
+  }
+}

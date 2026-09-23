@@ -275,9 +275,12 @@
           "description": "Porción abundante. Crema verdeo y panceta",
           "price": 14400,
           "priceMinor": 1440000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED",
+            "PRICE_FROM"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -381,10 +384,11 @@
           "price": 14400,
           "priceMinor": 1440000,
           "tags": [
-            "VEGETARIAN"
+            "VEGETARIAN",
+            "ORDER_REVIEW_REQUIRED"
           ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -392,9 +396,11 @@
           "description": "3 tacos de pollo o carne salteado de verduras con 2 salsas a elección (pico de gallo, guacamole o cheddar). Abundantes!",
           "price": 15600,
           "priceMinor": 1560000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         }
       ]
@@ -812,9 +818,11 @@
           "description": "Presentación de Daiquiri sin alcohol Sabores: Frutilla, Maracuyá, Ananá y Mango",
           "price": 7500,
           "priceMinor": 750000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -959,9 +967,11 @@
           "description": "Vermú disponibles: Carpano Rosso - Martini (Dry-Bianco-Rosso) - Pun e Mes rosso",
           "price": 7200,
           "priceMinor": 720000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -1025,9 +1035,11 @@
           "description": "Vodka, jugo de lima y azúcar. Elegí tu reversión eligiendo uno de las siguientes variedades de SERNOVA: Citrus - Apple Pears - Tropical Passion - Raspberry",
           "price": 8000,
           "priceMinor": 800000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -1035,9 +1047,11 @@
           "description": "Vodka, jugo de lima y azúcar. Elegí tu reversión eligiendo uno de las siguientes variedades de ABSOLUT: Vainilla - Cardamomo - Pomelo - Lima - Mango - Mandarina - Frutos rojos",
           "price": 8000,
           "priceMinor": 800000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -1045,9 +1059,11 @@
           "description": "Ron blanco Havana CLub, jugo de limón, lima macerada en almíbar y menta. Su version con Frutos rojos le da un dulzor y un toque de acidez que le entrega una personalidad unica",
           "price": 8500,
           "priceMinor": 850000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -1397,9 +1413,11 @@
           "description": "Con base de Ron Havana. Sabores: Frutilla, Maracuya, Anana o Mango",
           "price": 9500,
           "priceMinor": 950000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -1481,9 +1499,11 @@
           "description": "Medida de Vodka Sernova con gaseosa o jugo a elección",
           "price": 8000,
           "priceMinor": 800000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -1491,9 +1511,11 @@
           "description": "Medida de Malibu con gaseosa o jugo a elección",
           "price": 8500,
           "priceMinor": 850000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -1501,9 +1523,11 @@
           "description": "Medida de Tequila Jose Cuervo con gaseosa o jugo a elección, Tambien en chupitos con limon",
           "price": 8500,
           "priceMinor": 850000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -1511,9 +1535,11 @@
           "description": "Medida de Vodka Absolut con gaseosa o jugo a elección",
           "price": 9500,
           "priceMinor": 950000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {
@@ -1665,9 +1691,11 @@
           "description": "citrus,passion,berries,clasico + 6 speed o 2 jarras jugo-",
           "price": 52000,
           "priceMinor": 5200000,
-          "tags": [],
+          "tags": [
+            "ORDER_REVIEW_REQUIRED"
+          ],
           "isFeatured": false,
-          "isAvailable": true,
+          "isAvailable": false,
           "source": "fauno-user-catalog-2026-09-20"
         },
         {

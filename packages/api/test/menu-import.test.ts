@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   categoryDelete: vi.fn(),
   categoryDeleteMany: vi.fn(),
   itemFindMany: vi.fn(),
+  itemFindFirst: vi.fn(),
   itemCreate: vi.fn(),
   itemUpdate: vi.fn(),
   itemDelete: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock('../src/lib/prisma', () => ({
     },
     menuItem: {
       findMany: (...args: unknown[]) => mocks.itemFindMany(...args),
+      findFirst: (...args: unknown[]) => mocks.itemFindFirst(...args),
       create: (...args: unknown[]) => mocks.itemCreate(...args),
       update: (...args: unknown[]) => mocks.itemUpdate(...args),
       delete: (...args: unknown[]) => mocks.itemDelete(...args),
@@ -414,6 +416,42 @@ describe('E01 — Importación de Menú Idempotente, No Destructiva y con dryRun
     }
   });
 
+  it('6b. ORDER_REVIEW_REQUIRED no se activa aunque el lote solicite isAvailable=true', async () => {
+    mocks.categoryFindMany.mockResolvedValue([]);
+    mocks.categoryCreate.mockImplementation(({ data }: any) => Promise.resolve({ id: 'cat-consultas', ...data }));
+    mocks.itemCreate.mockImplementation(({ data }: any) => Promise.resolve({ id: 'item-consulta', ...data }));
+
+    const app = await createApp();
+    try {
+      const token = app.jwt.sign({ sub: 'manager-1', role: 'MANAGER', restaurantId: 'restaurant-fauno' });
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/restaurant-fauno/menu/import',
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          items: [{
+            category: 'Consultar',
+            name: 'Plato con precio desde',
+            price: 0,
+            tags: ['ORDER_REVIEW_REQUIRED', 'PRICE_FROM'],
+            isAvailable: true
+          }]
+        }
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mocks.itemCreate).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          name: 'Plato con precio desde',
+          isAvailable: false,
+          tags: JSON.stringify(['ORDER_REVIEW_REQUIRED', 'PRICE_FROM'])
+        })
+      }));
+    } finally {
+      await app.close();
+    }
+  });
+
   it('7. Renombrar un plato conservando externalId preserva el MenuItem.id en base de datos', async () => {
     const existingDb = [
       {
@@ -708,6 +746,27 @@ describe('E01 — Importación de Menú Idempotente, No Destructiva y con dryRun
               orderIndex: 0
             }
           ]
+        },
+        {
+          id: 'cat-revision-pedido',
+          restaurantId: 'restaurant-fauno',
+          name: 'Consultar disponibilidad',
+          icon: '🍽️',
+          orderIndex: 3,
+          items: [
+            {
+              id: 'item-review-required',
+              categoryId: 'cat-revision-pedido',
+              name: 'Plato con precio desde',
+              description: 'Consultar al mozo',
+              price: 0,
+              imageUrl: null,
+              isAvailable: true, // Fila histórica inconsistente: el tag debe ganar al exponer el menú.
+              isFeatured: false,
+              tags: JSON.stringify(['ORDER_REVIEW_REQUIRED', 'PRICE_FROM']),
+              orderIndex: 0
+            }
+          ]
         }
       ]
     };
@@ -716,31 +775,58 @@ describe('E01 — Importación de Menú Idempotente, No Destructiva y con dryRun
 
     const app = await createApp();
     try {
-      // 1. Consulta por defecto: conserva cat-activa y cat-coming-soon, pero omite cat-inactiva
+      // 1. Consulta por defecto: conserva contenido disponible, adelantos y platos para consultar.
       const resDefault = await app.inject({
         method: 'GET',
         url: '/restaurants/restaurant-fauno/menu'
       });
       expect(resDefault.statusCode).toBe(200);
       const jsonDefault = resDefault.json();
-      expect(jsonDefault.categories.length).toBe(2);
+      expect(jsonDefault.categories.length).toBe(3);
       const categoryIdsDefault = jsonDefault.categories.map((c: any) => c.id);
       expect(categoryIdsDefault).toContain('cat-activa');
       expect(categoryIdsDefault).toContain('cat-coming-soon');
+      expect(categoryIdsDefault).toContain('cat-revision-pedido');
       expect(categoryIdsDefault).not.toContain('cat-inactiva');
+      const reviewRequiredItem = jsonDefault.categories
+        .find((category: any) => category.id === 'cat-revision-pedido').items[0];
+      expect(reviewRequiredItem.isAvailable).toBe(false);
+      expect(reviewRequiredItem.tags).toContain('ORDER_REVIEW_REQUIRED');
 
-      // 2. Consulta con includeEmpty=true: incluye todas las categorías (3)
+      mocks.itemFindFirst.mockResolvedValue({
+        id: 'item-review-required',
+        tags: JSON.stringify(['ORDER_REVIEW_REQUIRED', 'PRICE_FROM'])
+      });
+      mocks.itemUpdate.mockImplementation(({ data }: any) => Promise.resolve({
+        id: 'item-review-required',
+        isAvailable: data.isAvailable,
+        tags: data.tags ?? JSON.stringify(['ORDER_REVIEW_REQUIRED', 'PRICE_FROM'])
+      }));
+      const patchAvailability = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/restaurant-fauno/menu/items/item-review-required',
+        headers: { authorization: `Bearer ${app.jwt.sign({ sub: 'manager-1', role: 'MANAGER', restaurantId: 'restaurant-fauno' })}` },
+        payload: { isAvailable: true }
+      });
+      expect(patchAvailability.statusCode).toBe(200);
+      expect(mocks.itemUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ isAvailable: false })
+      }));
+      expect(patchAvailability.json().isAvailable).toBe(false);
+
+      // 2. Consulta con includeEmpty=true: incluye todas las categorías (4)
       const resWithEmpty = await app.inject({
         method: 'GET',
         url: '/restaurants/restaurant-fauno/menu?includeEmpty=true'
       });
       expect(resWithEmpty.statusCode).toBe(200);
       const jsonWithEmpty = resWithEmpty.json();
-      expect(jsonWithEmpty.categories.length).toBe(3);
+      expect(jsonWithEmpty.categories.length).toBe(4);
       const categoryIdsWithEmpty = jsonWithEmpty.categories.map((c: any) => c.id);
       expect(categoryIdsWithEmpty).toContain('cat-activa');
       expect(categoryIdsWithEmpty).toContain('cat-coming-soon');
       expect(categoryIdsWithEmpty).toContain('cat-inactiva');
+      expect(categoryIdsWithEmpty).toContain('cat-revision-pedido');
     } finally {
       await app.close();
     }

@@ -19,9 +19,11 @@ if (!result.ok) {
 
 const { manifest } = result;
 const originList = ['client', 'staff', 'admin'].map((key) => manifest.domains[key]).join(',');
-// `digitalPayment` sólo controla una opción informativa en la release base;
-// una dependencia de proveedor aparece únicamente si se solicita split real.
-const needsMercadoPago = manifest.modules.splitBill;
+// `digitalPayment` sólo controla una preferencia informativa en la release base;
+// `splitBill` (E05) se liquida presencialmente por staff vía settle/settle-and-close.
+// La release actual no integra ningún proveedor de cobro en línea, por lo que
+// Mercado Pago nunca es una dependencia del plan (sin sandbox, credenciales ni webhooks).
+const splitPresencial = manifest.modules.splitBill === true;
 const needsWhatsApp = manifest.modules.whatsappFallback;
 const plan = {
   mode: 'PLAN_ONLY',
@@ -42,9 +44,7 @@ const plan = {
   ],
   externalDependencies: {
     supabase: 'proyecto aislado por instancia; migraciones y backup fuera de Git',
-    mercadoPago: needsMercadoPago
-      ? 'sandbox requerido para split real: vendedor/comprador, credenciales cifradas, firma de webhook y Preview accesible'
-      : 'no requerido; la opción informativa no realiza cobros',
+    mercadoPago: 'no requerido; la release actual no integra cobro en línea (split presencial E05 por staff; digitalPayment informativo)',
     whatsapp: needsWhatsApp
       ? 'proveedor y número autorizados; consentimiento y deduplicación antes de activar'
       : 'no requerido por la configuración declarada'
@@ -57,7 +57,7 @@ const plan = {
     'Crear el restaurante raíz y el manager temporal mediante bootstrap idempotente',
     'Crear cuatro proyectos Vercel desde la misma revisión: api, client, staff y admin',
     'Cargar variables por proyecto sin imprimir valores',
-    ...(needsMercadoPago ? ['Cargar credenciales sandbox de Mercado Pago en el vault y ejecutar el gate de webhooks antes de habilitar la capability'] : []),
+    ...(splitPresencial ? ['Verificar división presencial de cuenta (E05) vía settle/settle-and-close de staff, sin proveedor externo de cobro'] : []),
     ...(needsWhatsApp ? ['Configurar proveedor WhatsApp y callback verificado; probar fallback sin duplicar llamados'] : []),
     'Publicar la misma release y ejecutar health/config/menu/QR smoke checks',
     'Rotar el PIN inicial, registrar backup y guardar inventario de versión sin secretos'

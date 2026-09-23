@@ -107,7 +107,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
             description: item.description || null,
             price: item.price,
             imageUrl: item.imageUrl || null,
-            isAvailable: item.isAvailable,
+            isAvailable: item.isAvailable && !parsedTags.includes('ORDER_REVIEW_REQUIRED'),
             isFeatured: item.isFeatured,
             tags: parsedTags,
             orderIndex: item.orderIndex
@@ -116,10 +116,12 @@ export async function menuRoutes(fastify: FastifyInstance) {
       }));
 
       // P2 / P3: En la carta operativa pública, omitir categorías vacías o inactivas salvo includeEmpty=true.
-      // Conservar una categoría si tiene al menos un plato disponible O un plato en prelanzamiento ('COMING_SOON').
+      // Conservar también platos visibles que requieren revisión de pedido; siguen sin ser ordenables.
       if (!shouldIncludeEmpty) {
         formattedCategories = formattedCategories.filter((cat) =>
-          cat.items.some((item) => item.isAvailable || (Array.isArray(item.tags) && item.tags.includes('COMING_SOON')))
+          cat.items.some((item) => item.isAvailable || (Array.isArray(item.tags) && (
+            item.tags.includes('COMING_SOON') || item.tags.includes('ORDER_REVIEW_REQUIRED')
+          )))
         );
       }
 
@@ -312,7 +314,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
         orderIndex?: number;
         categoryId?: string;
       };
-      const existingItem = await prisma.menuItem.findFirst({ where: { id: itemId, category: { restaurantId: request.managedRestaurantId! } }, select: { id: true } });
+      const existingItem = await prisma.menuItem.findFirst({ where: { id: itemId, category: { restaurantId: request.managedRestaurantId! } }, select: { id: true, tags: true } });
       if (!existingItem) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Recurso no encontrado' });
       if (body.categoryId !== undefined) {
         const targetCategory = await prisma.menuCategory.findFirst({ where: { id: body.categoryId, restaurantId: request.managedRestaurantId! }, select: { id: true } });
@@ -320,6 +322,11 @@ export async function menuRoutes(fastify: FastifyInstance) {
       }
 
       const updateData: any = {};
+      let effectiveTags: string[] = [];
+      try {
+        const storedTags = JSON.parse(existingItem.tags || '[]');
+        effectiveTags = Array.isArray(body.tags) ? body.tags : (Array.isArray(storedTags) ? storedTags : []);
+      } catch (_) {}
       if (body.name !== undefined) updateData.name = body.name.trim();
       if (body.description !== undefined) updateData.description = body.description.trim() || null;
       if (body.price !== undefined) {
@@ -332,6 +339,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
       if (body.tags !== undefined) updateData.tags = JSON.stringify(body.tags);
       if (body.orderIndex !== undefined) updateData.orderIndex = Number(body.orderIndex);
       if (body.categoryId !== undefined) updateData.categoryId = body.categoryId;
+      if (effectiveTags.includes('ORDER_REVIEW_REQUIRED')) updateData.isAvailable = false;
 
       const item = await prisma.menuItem.update({
         where: { id: itemId },
@@ -345,6 +353,7 @@ export async function menuRoutes(fastify: FastifyInstance) {
 
       return reply.send({
         ...item,
+        isAvailable: item.isAvailable && !parsedTags.includes('ORDER_REVIEW_REQUIRED'),
         tags: parsedTags
       });
     } catch (err: any) {

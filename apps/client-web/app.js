@@ -1427,7 +1427,7 @@ function openDishDetailSheet(item, categoryId) {
   }
   if (titleEl) titleEl.textContent = item.name;
   if (descEl) descEl.textContent = item.description || 'Elaborado artesanalmente en el momento con ingredientes frescos de primera calidad.';
-  if (priceEl) priceEl.textContent = `$${Number(item.price).toLocaleString('es-AR')}`;
+  if (priceEl) priceEl.textContent = formatMenuPrice(item);
 
   if (tagsEl) {
     tagsEl.innerHTML = '';
@@ -1477,9 +1477,14 @@ function openDishDetailSheet(item, categoryId) {
 
   const orderSpecificBtn = document.getElementById('btnOrderSpecificDish');
   const dishAvailable = item.isAvailable !== false;
+  const orderReviewRequired = isOrderReviewRequired(item);
   const availEl = document.getElementById('dishSheetAvailability');
   if (availEl) {
-    if (dishAvailable) {
+    if (orderReviewRequired) {
+      availEl.className = 'rounded-xl border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-[11px] leading-relaxed text-amber-200';
+      availEl.textContent = 'Consultar al mozo para elegir opciones y confirmar precio. Este plato no se puede agregar al carrito hasta que se confirme.';
+      availEl.classList.remove('hidden');
+    } else if (dishAvailable) {
       availEl.className = 'rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] leading-relaxed text-emerald-200';
       availEl.textContent = '✅ Disponible — agregar al carrito no cobra. Podés editar cantidad, nota larga y nombre sin perder otro cambio de la mesa.';
       availEl.classList.remove('hidden');
@@ -1491,15 +1496,17 @@ function openDishDetailSheet(item, categoryId) {
   }
   if (orderSpecificBtn) {
     const isSynthetic = isSyntheticItemId(item?.id);
-    const canOrder = dishAvailable && !publicMenuOnly && !staticMenuOnly && !isSynthetic;
+    const canOrder = dishAvailable && !orderReviewRequired && !publicMenuOnly && !staticMenuOnly && !isSynthetic;
     orderSpecificBtn.disabled = !canOrder;
     orderSpecificBtn.setAttribute('aria-disabled', String(!canOrder));
     orderSpecificBtn.classList.toggle('opacity-50', !canOrder);
     orderSpecificBtn.classList.toggle('cursor-not-allowed', !canOrder);
     const orderLabel = orderSpecificBtn.querySelector('span');
-    if (orderLabel) orderLabel.textContent = (publicMenuOnly || staticMenuOnly || isSynthetic)
-      ? '📖 Sólo consulta en esta demo'
-      : (dishAvailable ? '🛒 Agregar al carrito — no se cobra aún' : '⛔ No disponible');
+    if (orderLabel) orderLabel.textContent = orderReviewRequired
+      ? '🛎️ Consultar opciones y precio con el mozo'
+      : (publicMenuOnly || staticMenuOnly || isSynthetic)
+        ? '📖 Sólo consulta en esta demo'
+        : (dishAvailable ? '🛒 Agregar al carrito — no se cobra aún' : '⛔ No disponible');
   }
 
   rememberModalFocus(trigger);
@@ -1885,6 +1892,12 @@ async function addDishToCart(item, quantity, notes) {
     showToast('Este plato es demostrativo y no puede agregarse a una comanda real.', 'warning');
     return;
   }
+  if (isOrderReviewRequired(item) || item?.isAvailable === false) {
+    showToast(isOrderReviewRequired(item)
+      ? 'Consultá al mozo para elegir opciones y confirmar el precio de este plato.'
+      : 'Este plato no está disponible para agregar ahora.', 'warning');
+    return;
+  }
   if (activeOrderPolicy.allowOrdering === false || activeRestaurantConfig?.allowOrdering === false) {
     closeDishDetailSheet();
     showToast('Este local usa carta informativa. Llamá al mozo para pedir.', 'info');
@@ -2235,6 +2248,15 @@ function bindDishCardActivation(card, dish) {
   });
 }
 
+function isOrderReviewRequired(item) {
+  return Array.isArray(item?.tags) && item.tags.includes('ORDER_REVIEW_REQUIRED');
+}
+
+function formatMenuPrice(item) {
+  const amount = `$${Number(item?.price).toLocaleString('es-AR')}`;
+  return Array.isArray(item?.tags) && item.tags.includes('PRICE_FROM') ? `Desde ${amount}` : amount;
+}
+
 function renderDynamicMenu(menuResponse) {
   lastMenuResponse = menuResponse;
   const { restaurant, categories } = menuResponse;
@@ -2372,7 +2394,8 @@ function renderDynamicMenu(menuResponse) {
     } else {
     menuContainer.innerHTML = filteredCategories.map(({ cat, idx, visibleItems }) => {
       const itemsHtml = visibleItems.map(item => {
-        const formattedPrice = `$${Number(item.price).toLocaleString('es-AR')}`;
+        const orderReviewRequired = isOrderReviewRequired(item);
+        const formattedPrice = formatMenuPrice(item);
         const tagsHtml = (item.tags || []).map(t => {
           const tagObj = MENU_TAG_MAP[t];
           if (!tagObj) return '';
@@ -2383,8 +2406,12 @@ function renderDynamicMenu(menuResponse) {
         const safeName = escapeHtml(item.name);
         const safeAlt = escapeHtmlAttr(item.name);
         const safeDesc = escapeHtml(item.description || '');
-        const dishActionAttrs = `role="button" tabindex="0" aria-label="${escapeHtmlAttr(`Ver detalle de ${item.name}${item.isAvailable === false ? ' (no disponible)' : ''}`)}"`;
-        const rowActionLabel = item.isAvailable === false ? 'No disponible' : 'Ver detalle →';
+        const dishActionAttrs = `role="button" tabindex="0" aria-label="${escapeHtmlAttr(`Ver detalle de ${item.name}${orderReviewRequired ? ' (consultar opciones y precio con el mozo)' : item.isAvailable === false ? ' (no disponible)' : ''}`)}"`;
+        const rowActionLabel = orderReviewRequired ? 'Consultar al mozo' : item.isAvailable === false ? 'No disponible' : 'Ver detalle →';
+        const orderReviewNoticeHtml = orderReviewRequired
+          ? '<p class="mt-2 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2 py-1.5 text-[10px] leading-relaxed text-amber-200">Consultar al mozo para elegir opciones y confirmar precio.</p>'
+          : '';
+        const dishAvailabilityClass = item.isAvailable === false && !orderReviewRequired ? 'opacity-50' : '';
 
         const safeImgUrl = item.imageUrl ? sanitizeUrl(item.imageUrl) : '';
         const imageHtml = safeImgUrl ? `
@@ -2395,13 +2422,14 @@ function renderDynamicMenu(menuResponse) {
 
         if (templateId === 'NEON_BURGER') {
           return `
-            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row neon-card-street p-4 rounded-3xl cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden shadow-xl ${item.isAvailable ? '' : 'opacity-50'} focus:outline-none focus-visible:ring-2 focus-visible:ring-lime-400">
+            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row neon-card-street p-4 rounded-3xl cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden shadow-xl ${dishAvailabilityClass} focus:outline-none focus-visible:ring-2 focus-visible:ring-lime-400">
               <div class="flex items-start gap-3.5">
                 ${imageHtml}
                 <div class="flex-1 min-w-0 flex flex-col justify-between self-stretch">
                   <div>
                     <h5 class="font-heading font-black text-sm sm:text-base text-white tracking-tight group-hover:text-lime-300 transition-colors uppercase leading-snug">${safeName}</h5>
                     <p class="text-xs text-zinc-300 font-normal leading-relaxed mt-1 line-clamp-2">${safeDesc || 'Doble smash artesanal con queso cheddar fundido.'}</p>
+                    ${orderReviewNoticeHtml}
                   </div>
                   <div class="flex items-center justify-between gap-2 pt-2.5 mt-auto">
                     <span class="neon-price-tag text-xs px-2.5 py-1 rounded-xl font-mono shadow-md">${formattedPrice}</span>
@@ -2417,13 +2445,14 @@ function renderDynamicMenu(menuResponse) {
           `;
         } else if (templateId === 'COASTAL_BEACH') {
           return `
-            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row coastal-card-marine p-4 rounded-3xl cursor-pointer active:scale-[0.98] transition-all group shadow-xl ${item.isAvailable ? '' : 'opacity-50'} focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
+            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row coastal-card-marine p-4 rounded-3xl cursor-pointer active:scale-[0.98] transition-all group shadow-xl ${dishAvailabilityClass} focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
               <div class="flex items-start gap-3.5">
                 ${imageHtml}
                 <div class="flex-1 min-w-0 flex flex-col justify-between self-stretch">
                   <div>
                     <h5 class="font-heading font-black text-sm sm:text-base text-cyan-100 group-hover:text-cyan-300 transition-colors leading-snug">${safeName}</h5>
                     <p class="text-xs text-slate-300 font-normal leading-relaxed mt-1 line-clamp-2">${safeDesc || 'Especialidad fresca de la casa.'}</p>
+                    ${orderReviewNoticeHtml}
                   </div>
                   <div class="flex items-center justify-between gap-2 pt-2.5 mt-auto">
                     <span class="font-mono font-black text-xs text-cyan-300 bg-slate-950/90 px-2.5 py-1 rounded-xl border border-cyan-500/40 shadow-md">${formattedPrice}</span>
@@ -2439,13 +2468,14 @@ function renderDynamicMenu(menuResponse) {
           `;
         } else if (templateId === 'MINIMAL_BISTRO') {
           return `
-            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row p-4 rounded-3xl bg-neutral-900/90 hover:bg-neutral-850 border border-neutral-800 cursor-pointer active:scale-[0.98] transition-all group shadow-xl ${item.isAvailable ? '' : 'opacity-50'} focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300">
+            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row p-4 rounded-3xl bg-neutral-900/90 hover:bg-neutral-850 border border-neutral-800 cursor-pointer active:scale-[0.98] transition-all group shadow-xl ${dishAvailabilityClass} focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300">
               <div class="flex items-start gap-3.5">
                 ${imageHtml}
                 <div class="flex-1 min-w-0 flex flex-col justify-between self-stretch">
                   <div>
                     <h5 class="font-heading font-bold text-sm sm:text-base text-neutral-100 tracking-tight group-hover:text-amber-200 transition-colors leading-snug">${safeName}</h5>
                     <p class="text-xs text-neutral-300 font-light leading-relaxed mt-1 line-clamp-2">${safeDesc || 'Elaboración artesanal diaria con materias primas de origen orgánico.'}</p>
+                    ${orderReviewNoticeHtml}
                   </div>
                   <div class="flex items-center justify-between gap-2 pt-2.5 mt-auto">
                     <span class="font-mono font-bold text-xs text-neutral-200 bg-neutral-950 px-2.5 py-1 rounded-xl border border-neutral-700">${formattedPrice}</span>
@@ -2462,13 +2492,14 @@ function renderDynamicMenu(menuResponse) {
         } else {
           // GOURMET_OBSIDIAN (Default)
           return `
-            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row p-4 rounded-3xl bg-slate-900/95 hover:bg-slate-850 border border-amber-500/30 cursor-pointer active:scale-[0.98] transition-all group shadow-xl shadow-amber-950/20 ${item.isAvailable ? '' : 'opacity-50'} focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">
+            <div data-dish-id="${safeDishId}" data-category="dynamic-cat-${idx}" ${dishActionAttrs} class="card-dish-row p-4 rounded-3xl bg-slate-900/95 hover:bg-slate-850 border border-amber-500/30 cursor-pointer active:scale-[0.98] transition-all group shadow-xl shadow-amber-950/20 ${dishAvailabilityClass} focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">
               <div class="flex items-start gap-3.5">
                 ${imageHtml}
                 <div class="flex-1 min-w-0 flex flex-col justify-between self-stretch">
                   <div>
                     <h5 class="font-heading font-black text-sm sm:text-base text-white group-hover:text-amber-300 transition-colors leading-snug">${safeName}</h5>
                     <p class="text-xs text-slate-300 leading-relaxed font-normal mt-1 line-clamp-2">${safeDesc || 'Elaborado artesanalmente en el momento con ingredientes frescos de primera calidad.'}</p>
+                    ${orderReviewNoticeHtml}
                   </div>
                   <div class="flex items-center justify-between gap-2 pt-2.5 mt-auto">
                     <span class="font-mono font-black text-sm text-amber-400 bg-amber-500/15 px-2.5 py-1 rounded-xl border border-amber-500/30 shadow-md">${formattedPrice}</span>

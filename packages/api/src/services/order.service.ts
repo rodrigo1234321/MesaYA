@@ -72,6 +72,20 @@ export const ALLOWED_ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus
   [OrderStatus.CANCELLED]: Object.freeze([]) // Estado final inmutable
 });
 
+function isOrderReviewRequired(tags: unknown): boolean {
+  if (typeof tags !== 'string' || !tags) return false;
+  try {
+    const parsed = JSON.parse(tags);
+    return Array.isArray(parsed) && parsed.includes('ORDER_REVIEW_REQUIRED');
+  } catch {
+    return false;
+  }
+}
+
+function isUnavailableForOrder(menuItem: any): boolean {
+  return !menuItem || !menuItem.isAvailable || isOrderReviewRequired(menuItem.tags);
+}
+
 /** Línea de tanda dentro de la cuenta de sesión (B03). Importes en centavos. */
 export interface SessionTandaLineDTO {
   orderId: string;
@@ -2107,7 +2121,7 @@ export class OrderService {
     }
 
     // Disponibilidad de stock del plato
-    if (!menuItem.isAvailable) {
+    if (isUnavailableForOrder(menuItem)) {
       const error: any = new Error('El plato seleccionado no está disponible');
       error.statusCode = 422;
       error.code = 'ITEM_NOT_AVAILABLE';
@@ -2480,7 +2494,7 @@ export class OrderService {
         // Buscar orden en DRAFT con sus ítems y disponibilidad vigente.
         const draftOrder = await tx.order.findFirst({
           where: { id: draftIds[0].id },
-          include: { items: { include: { menuItem: { select: { name: true, isAvailable: true } } } } }
+          include: { items: { include: { menuItem: { select: { name: true, isAvailable: true, tags: true } } } } }
         });
         if (!draftOrder) return { fallback: true as boolean };
 
@@ -2494,7 +2508,7 @@ export class OrderService {
         // E05: la disponibilidad y el umbral se vuelven un motivo persistido de
         // revisión. El pedido no entra a cocina hasta que el mozo lo acepte o
         // lo rechace; así no se pierde el contexto ni se envía stock imposible.
-        const unavailable = draftOrder.items.filter((item: any) => !item.menuItem || !item.menuItem.isAvailable);
+        const unavailable = draftOrder.items.filter((item: any) => isUnavailableForOrder(item.menuItem));
         const oversized = draftOrder.items.filter((item: any) => item.quantity > reviewQuantityThreshold);
         const reviewReason = reviewReasonForSubmission({
           requireValidation,
@@ -2669,7 +2683,7 @@ export class OrderService {
       where: { id: orderId },
       include: {
         tableSession: { include: { table: true } },
-        items: { include: { menuItem: { select: { name: true, isAvailable: true } } } }
+        items: { include: { menuItem: { select: { name: true, isAvailable: true, tags: true } } } }
       }
     });
 
@@ -2706,7 +2720,7 @@ export class OrderService {
       return fullOrder!;
     }
 
-    const unavailable = order.items.filter((item: any) => !item.menuItem || !item.menuItem.isAvailable);
+    const unavailable = order.items.filter((item: any) => isUnavailableForOrder(item.menuItem));
     if (unavailable.length > 0) {
       const error: any = new Error(
         `El plato "${unavailable[0].menuItem?.name || 'seleccionado'}" sigue sin stock; resolvé la excepción o rechazá la comanda.`
@@ -2978,7 +2992,7 @@ export class OrderService {
       throw error;
     }
 
-    if (!menuItem.isAvailable) {
+    if (isUnavailableForOrder(menuItem)) {
       const error: any = new Error('El plato seleccionado no está disponible');
       error.statusCode = 422;
       error.code = 'ITEM_NOT_AVAILABLE';
@@ -3147,7 +3161,7 @@ export class OrderService {
         error.code = 'ITEM_NOT_FOUND';
         throw error;
       }
-      if (ids.some((id) => !menuById.get(id).isAvailable)) {
+      if (ids.some((id) => isUnavailableForOrder(menuById.get(id)))) {
         const error: any = new Error('Uno o más platos presenciales ya no están disponibles');
         error.statusCode = 422;
         error.code = 'ITEM_NOT_AVAILABLE';
@@ -3281,7 +3295,7 @@ export class OrderService {
       const error: any = new Error('Uno o más platos del pre-pedido no pertenecen a este restaurante');
       error.statusCode = 404; error.code = 'ITEM_NOT_FOUND'; throw error;
     }
-    if (ids.some((id) => !menuById.get(id).isAvailable)) {
+    if (ids.some((id) => isUnavailableForOrder(menuById.get(id)))) {
       const error: any = new Error('Uno o más platos del pre-pedido ya no están disponibles');
       error.statusCode = 422; error.code = 'ITEM_NOT_AVAILABLE'; throw error;
     }

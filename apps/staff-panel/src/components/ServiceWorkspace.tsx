@@ -1589,7 +1589,8 @@ const TableContextPanel: React.FC<{
     TableFSMState.BILL_REQUESTED,
     TableFSMState.PAID
   ].includes(table.currentState as TableFSMState);
-  const canClose = hasOpenOccupancy && !isToClean && balance === 0 && tasks.length === 0;
+  const hasUnresolvedAccountWork = Boolean(account?.account.draft) || (account?.account.pendingValidation.length || 0) > 0;
+  const canClose = Boolean(account) && hasOpenOccupancy && !isToClean && balance === 0 && tasks.length === 0 && !hasUnresolvedAccountWork;
   return (
     <section className="rounded-2xl border border-cyan-400/30 bg-cyan-950/15 p-4 space-y-4" aria-labelledby="table-context-title">
       <div className="flex items-start justify-between gap-3">

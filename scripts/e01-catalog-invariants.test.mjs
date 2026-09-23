@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,10 +24,62 @@ test('E01-1: Catálogo Fauno canónico contiene 26 categorías y 144 ítems vál
     }
   }
 
-  // Verificar los 2 ítems coming soon marcados con isAvailable = false
-  const unavailable = catalog.categories.flatMap((c) => c.items).filter((i) => i.isAvailable === false);
-  assert.equal(unavailable.length, 2, 'Debe haber exactamente 2 ítems no disponibles (coming soon)');
-  assert.ok(unavailable.every((i) => i.tags.includes('COMING_SOON')));
+  const items = catalog.categories.flatMap((c) => c.items);
+  const comingSoon = items.filter((item) => item.tags.includes('COMING_SOON'));
+  assert.equal(comingSoon.length, 2, 'Debe haber exactamente 2 ítems próximamente');
+  assert.ok(comingSoon.every((item) => item.isAvailable === false));
+});
+
+test('E01-1a: Elecciones y precio desde quedan visibles y no pedibles hasta revisión', async () => {
+  const catalogPath = path.join(root, 'apps', 'client-web', 'public', 'demo', 'fauno-olavarria', 'catalog.json');
+  const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  const items = catalog.categories.flatMap((category) => category.items.map((item) => ({ ...item, category: category.name })));
+  const reviewItems = items.filter((item) => item.tags.includes('ORDER_REVIEW_REQUIRED'));
+  const reviewKeys = new Set(reviewItems.map((item) => `${item.category}:::${item.name}`));
+  const expectedReviewKeys = [
+    'Papas:::Papas al verdeo',
+    'Tacos:::Tacos Veggie',
+    'Tacos:::Tacos pollo/carne',
+    'Sin alcohol:::Frozzen Fruit',
+    'Lo de siempre:::Vermu con soda',
+    'Caipis y Mojitos:::Caiporoska Sernova',
+    'Caipis y Mojitos:::Caipiroska Absolut',
+    'Caipis y Mojitos:::Mojito Clásico',
+    'Frozzens:::Daikiri Frozen',
+    'Medidas:::Vodka Sernova',
+    'Medidas:::Malibú',
+    'Medidas:::Tequila Jose Cuervo',
+    'Medidas:::Vodka Absolut',
+    'Botellas:::Sernova (clasico, saborizado) + 6 speed'
+  ];
+
+  assert.equal(reviewItems.length, 14);
+  assert.deepEqual([...reviewKeys].sort(), [...expectedReviewKeys].sort());
+  assert.ok(reviewItems.every((item) => item.isAvailable === false));
+  assert.ok(reviewItems.every((item) => item.price > 0 && item.description));
+  assert.ok(reviewKeys.has('Papas:::Papas al verdeo'));
+  const papasAlVerdeo = reviewItems.find((item) => item.name === 'Papas al verdeo');
+  assert.equal(papasAlVerdeo.price, 14400);
+  assert.ok(papasAlVerdeo.tags.includes('PRICE_FROM'));
+
+  const { buildFaunoBatchMenuImportDTO } = await import('./import-fauno-catalog.mjs');
+  const dto = buildFaunoBatchMenuImportDTO(catalog);
+  const reviewPayloadItems = dto.items.filter((item) => item.tags.includes('ORDER_REVIEW_REQUIRED'));
+  assert.equal(reviewPayloadItems.length, 14);
+  assert.ok(reviewPayloadItems.every((item) => item.isAvailable === false));
+  assert.ok(dto.items.find((item) => item.name === 'Papas al verdeo').tags.includes('PRICE_FROM'));
+});
+
+test('E01-1b: El importador rechaza priceMinor que no coincide con el precio en ARS', async () => {
+  const { buildFaunoBatchMenuImportDTO } = await import('./import-fauno-catalog.mjs');
+  const catalog = {
+    categories: [{ name: 'Entradas', items: [{ name: 'Tequeños', price: 12200, priceMinor: 1220001 }] }]
+  };
+
+  assert.throws(
+    () => buildFaunoBatchMenuImportDTO(catalog),
+    /priceMinor no coincide con price en ARS/
+  );
 });
 test('E01-2: buildFaunoBatchMenuImportDTO genera un payload reproducible e idempotente', async () => {
   const { buildFaunoBatchMenuImportDTO } = await import('./import-fauno-catalog.mjs');
@@ -153,6 +206,37 @@ test('E01-9: Idempotencia estricta: re-importar el catálogo Fauno produce 0 cre
   const secondItemIds = secondRun.newDbState.flatMap((c) => c.items.map((i) => i.id));
   assert.deepEqual(firstCatIds, secondCatIds, 'Los IDs de categoría deben preservarse idénticos');
   assert.deepEqual(firstItemIds, secondItemIds, 'Los IDs de platos deben preservarse idénticos');
+});
+
+test('E01-9a: La simulación separa catalogKey al importar Fauno en una instalación nueva', async () => {
+  const { buildFaunoBatchMenuImportDTO, simulateMenuSync } = await import('./import-fauno-catalog.mjs');
+  const catalogPath = path.join(root, 'apps', 'client-web', 'public', 'demo', 'fauno-olavarria', 'catalog.json');
+  const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  const dto = buildFaunoBatchMenuImportDTO(catalog, { replaceExisting: true });
+  const destination = 'fauno-olavarria-staging-20260923';
+
+  const firstRun = simulateMenuSync([], dto, { restaurantId: destination });
+  assert.equal(firstRun.summary.categoriesCreated, 26);
+  assert.equal(firstRun.summary.itemsCreated, 144);
+
+  const importedItems = firstRun.newDbState.flatMap((category) => category.items);
+  assert.ok(importedItems.every((item) => item.catalogKey.startsWith(`${destination}:fauno-user-catalog-2026-09-20:`)));
+
+  const secondRun = simulateMenuSync(firstRun.newDbState, dto, { restaurantId: destination });
+  assert.equal(secondRun.summary.itemsCreated, 0);
+  assert.equal(secondRun.summary.itemsUpdated, 144);
+  assert.equal(secondRun.summary.itemsDeactivated, 0);
+});
+
+test('E01-9b: El CLI acepta --dry-run sin exigir una ruta de catálogo', () => {
+  const importerPath = path.join(root, 'scripts', 'import-fauno-catalog.mjs');
+  const output = execFileSync(process.execPath, [importerPath, '--dry-run'], { encoding: 'utf8' });
+  const result = JSON.parse(output);
+
+  assert.equal(result.status, 'OK');
+  assert.equal(result.dryRun, true);
+  assert.equal(result.categoriesCount, 26);
+  assert.equal(result.itemsCount, 144);
 });
 
 test('E01-10: Desactivación segura (no hard-delete): ítem ausente pasa a isAvailable: false y conserva registro', async () => {

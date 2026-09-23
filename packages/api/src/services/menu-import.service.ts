@@ -349,7 +349,8 @@ export class MenuImportService {
         const price = Number(rawItem.price) || 0;
         const priceMinor = Math.round(price * 100);
         const isComingSoon = rawItem.tags?.includes('COMING_SOON') ?? false;
-        const isAvailable = isComingSoon ? false : (rawItem.isAvailable !== false);
+        const requiresOrderReview = rawItem.tags?.includes('ORDER_REVIEW_REQUIRED') ?? false;
+        const isAvailable = isComingSoon || requiresOrderReview ? false : (rawItem.isAvailable !== false);
         const isFeatured = Boolean(rawItem.isFeatured);
         const tagsJson = JSON.stringify(rawItem.tags || []);
         const description = rawItem.description?.trim() || null;
