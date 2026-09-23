@@ -1,96 +1,126 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-20",
+  "updatedAt": "2026-09-23",
   "sourceOfTruth": "deploy/mesaya-canonical-manifest.json",
   "repository": {
     "remote": "https://github.com/rodrigo1234321/MesaYA.git",
     "canonicalBranches": {
       "full": {
-        "branch": "codex/servicio-remediacion",
-        "role": "MesaYA completo; linea conectada a la topologia productiva",
-        "localCheckout": "mdpmesasvivas-servicio-remediacion",
-        "tipAtManifestGeneration": "7c38bd526cf39c2162f399160f6aa12792eccd50"
-      },
-      "soloMozos": {
-        "branch": "codex/solo-mozos",
-        "role": "MesaYA reducido para llamar al mozo y pedir la cuenta",
-        "localCheckout": "mdpmesasvivas-solo-mozos",
-        "currentLocalTip": "ca8e4710f6920dbd15594072e23b395106d121f2",
-        "historicalSource": "Mesaya solo mozos",
-        "historicalSourceBaseline": "d932969cc85cdc96d9a037abd333a9af140a151e"
+        "branch": "main",
+        "role": "MesaYA completo; unica linea activa de trabajo y produccion",
+        "localCheckout": "mdpmesasvivas",
+        "tipAtManifestGeneration": "475e9870fef3985613cb9f8df6ac89d61f814e06"
       }
     },
     "productionRelease": {
-      "sha": "7c38bd526cf39c2162f399160f6aa12792eccd50",
-      "branchAtRelease": "codex/servicio-remediacion",
-      "status": "code_deployed; supabase_backup_and_hardening_pending"
+      "sha": "475e9870fef3985613cb9f8df6ac89d61f814e06",
+      "branchAtRelease": "main",
+      "status": "DEPLOYED_READY_AND_HTTP_SMOKED",
+      "deploymentMethod": "vercel_cli_from_main_checkout",
+      "vercelGitSourceAttached": false,
+      "integrationMergeCommit": "ca4e7dfbabcce639aeb9ca62e42cd3bf61d739a7",
+      "previousProductionSourceSha": "f36999be2ff2f3fe40624dff96c1a8dd4567af3b"
+    },
+    "secondaryProductVariants": {
+      "soloMozos": {
+        "branch": "codex/solo-mozos",
+        "role": "Variante de producto secundaria; preservada, sin trabajo paralelo activo",
+        "localCheckout": "mdpmesasvivas-solo-mozos",
+        "currentLocalTip": "ca8e4710f6920dbd15594072e23b395106d121f2",
+        "historicalSource": "Mesaya solo mozos",
+        "historicalSourceBaseline": "d932969cc85cdc96d9a037abd333a9af140a151e",
+        "status": "PRESERVED_NOT_ACTIVE_IN_THIS_RELEASE"
+      }
     }
   },
   "cloud": {
     "apiProductionUrl": "https://api-mesa-ya.vercel.app",
     "vercelLiveVerification": {
-      "verifiedAt": "2026-09-20",
-      "scope": "manual_cli_production_deploy_and_https_smoke",
+      "verifiedAt": "2026-09-23",
+      "scope": "main_checkout_cli_production_deploy_and_https_smoke",
       "account": "MesaYA",
-      "productionDeploymentBranch": "codex/servicio-remediacion",
-      "productionDeploymentSha": "7c38bd526cf39c2162f399160f6aa12792eccd50"
+      "productionDeploymentBranch": "main",
+      "sourceCheckoutSha": "475e9870fef3985613cb9f8df6ac89d61f814e06",
+      "deploymentMethod": "Vercel CLI 59.15.1",
+      "vercelGitSourceAttached": false,
+      "sourceProvenance": "HEAD recorded from main immediately before production deployment; tracked worktree was clean; Vercel deployment metadata has no gitSource",
+      "untrackedUserDocumentsExcludedByVercelignore": true,
+      "httpSmoke": {
+        "apiHealth": 200,
+        "database": "connected",
+        "clientWeb": 200,
+        "staffPanel": 200,
+        "adminDashboard": 200
+      }
     },
     "vercelProjects": [
       {
         "name": "api",
         "projectId": "prj_nVkzgzJM8lrpchmqaahnhV8ld8PP",
-        "deploymentId": "dpl_Ac6ZzfDrnxFLMBBP6kxyoUK4uBdB",
+        "deploymentId": "dpl_6ARLZvgfiCA4fRsKuJK29ZsbXNtZ",
         "alias": "https://api-mesa-ya.vercel.app",
         "aliases": [
-          "https://api-iota-lake-pe7fryjc6g.vercel.app",
           "https://api-mesa-ya.vercel.app"
         ],
-        "latestProductionDeploymentUrl": "https://api-ek46fans0-mesa-ya.vercel.app",
+        "latestProductionDeploymentUrl": "https://api-dz5ohfpm7-mesa-ya.vercel.app",
         "rootDirectory": ".",
-        "productionSha": "7c38bd526cf39c2162f399160f6aa12792eccd50",
-        "productionStatus": "READY_PROMOTED"
+        "productionStatus": "READY_PROMOTED",
+        "httpStatus": 200,
+        "databaseHealth": "connected",
+        "sourceCheckoutSha": "475e9870fef3985613cb9f8df6ac89d61f814e06",
+        "deploymentMethod": "vercel_cli",
+        "vercelGitSourceAttached": false
       },
       {
         "name": "client-web",
         "projectId": "prj_LyPH2aVPDaLRJzzxFDSYJRNW84MF",
-        "deploymentId": "dpl_A2LJrMqU4RNCKX2LpnnoZbn6K1h3",
+        "deploymentId": "dpl_8YKVKoFpDpfrJJUEEa8Afc8ZChYv",
         "alias": "https://client-web-mesa-ya.vercel.app",
         "aliases": [
           "https://client-web-ebon.vercel.app",
           "https://client-web-mesa-ya.vercel.app"
         ],
-        "latestProductionDeploymentUrl": "https://client-nbb60d9av-mesa-ya.vercel.app",
+        "latestProductionDeploymentUrl": "https://client-pkhzfzxpl-mesa-ya.vercel.app",
         "rootDirectory": "apps/client-web",
-        "productionSha": "7c38bd526cf39c2162f399160f6aa12792eccd50",
-        "productionStatus": "READY_PROMOTED"
+        "productionStatus": "READY_PROMOTED",
+        "httpStatus": 200,
+        "sourceCheckoutSha": "475e9870fef3985613cb9f8df6ac89d61f814e06",
+        "deploymentMethod": "vercel_cli",
+        "vercelGitSourceAttached": false
       },
       {
         "name": "staff-panel",
         "projectId": "prj_vGS7soLNNLjkkfPeHvpmxN1zxibR",
-        "deploymentId": "dpl_HsYquG4KNrzmmg65TWTj2ksJbAAz",
+        "deploymentId": "dpl_5AYkvECqy6ZPHcqkXzUyJpVZmXL3",
         "alias": "https://staff-panel-mesa-ya.vercel.app",
         "aliases": [
           "https://staff-panel-seven.vercel.app",
           "https://staff-panel-mesa-ya.vercel.app"
         ],
-        "latestProductionDeploymentUrl": "https://staff-panel-324vueao7-mesa-ya.vercel.app",
+        "latestProductionDeploymentUrl": "https://staff-panel-q4gca0aql-mesa-ya.vercel.app",
         "rootDirectory": "apps/staff-panel",
-        "productionSha": "7c38bd526cf39c2162f399160f6aa12792eccd50",
-        "productionStatus": "READY_PROMOTED"
+        "productionStatus": "READY_PROMOTED",
+        "httpStatus": 200,
+        "sourceCheckoutSha": "475e9870fef3985613cb9f8df6ac89d61f814e06",
+        "deploymentMethod": "vercel_cli",
+        "vercelGitSourceAttached": false
       },
       {
         "name": "admin-dashboard",
         "projectId": "prj_VmjItJarXPtfoIS3CXAYfd8Cq3c4",
-        "deploymentId": "dpl_67664C1ve7x4cdDJ7gns7CEWRusp",
+        "deploymentId": "dpl_9AHaPb5afBhgmW7Ct5VDf4oZpknN",
         "alias": "https://admin-dashboard-mesa-ya.vercel.app",
         "aliases": [
           "https://admin-dashboard-red-two-44.vercel.app",
           "https://admin-dashboard-mesa-ya.vercel.app"
         ],
-        "latestProductionDeploymentUrl": "https://admin-dashboard-li2q7ex08-mesa-ya.vercel.app",
+        "latestProductionDeploymentUrl": "https://admin-dashboard-70t86x816-mesa-ya.vercel.app",
         "rootDirectory": "apps/admin-dashboard",
-        "productionSha": "7c38bd526cf39c2162f399160f6aa12792eccd50",
-        "productionStatus": "READY_PROMOTED"
+        "productionStatus": "READY_PROMOTED",
+        "httpStatus": 200,
+        "sourceCheckoutSha": "475e9870fef3985613cb9f8df6ac89d61f814e06",
+        "deploymentMethod": "vercel_cli",
+        "vercelGitSourceAttached": false
       }
     ],
     "runtime": {
@@ -101,16 +131,29 @@
       "api": [
         "DATABASE_URL",
         "DIRECT_URL",
-        "JWT_SECRET",
         "ENCRYPTION_SECRET_KEY",
+        "JWT_SECRET",
         "CORS_ORIGIN",
         "MESAYA_INSTANCE_MODE",
         "PUBLIC_ONBOARDING_ENABLED",
-        "NODE_ENV"
+        "NODE_ENV",
+        "ENABLE_AI_FEATURES",
+        "GEMINI_MODEL",
+        "GEMINI_FALLBACK_MODEL",
+        "GOOGLE_API_KEY"
       ],
-      "client-web": ["VITE_API_URL"],
-      "staff-panel": ["VITE_API_URL", "VITE_CLIENT_URL"],
-      "admin-dashboard": ["VITE_API_URL", "VITE_CLIENT_URL", "VITE_CLIENT_WEB_URL"]
+      "client-web": [
+        "VITE_API_URL"
+      ],
+      "staff-panel": [
+        "VITE_API_URL",
+        "VITE_CLIENT_URL"
+      ],
+      "admin-dashboard": [
+        "VITE_API_URL",
+        "VITE_CLIENT_URL",
+        "VITE_CLIENT_WEB_URL"
+      ]
     },
     "productionEnvironmentVariableValues": "not_recorded_or_used",
     "supabase": {
@@ -120,8 +163,8 @@
       "projectRefSource": "Supabase dashboard or Vercel environment metadata; never infer or commit secrets",
       "liveRefRead": false,
       "liveRefReadReason": "Remote PostgreSQL was reached without exposing or recording the exact project ref",
-      "schemaMigrationStatus": "ALIGNED_26_OF_26_NO_PENDING_MIGRATIONS",
-      "hardeningStatus": "PENDING_BACKUP_AND_APPROVED_SQL"
+      "schemaMigrationStatus": "NO_NEW_MIGRATIONS_IN_475E987; production release migrations already deployed on 2026-09-21",
+      "hardeningStatus": "BACKUP_RESTORE_DRILL_PASS_RUN_35629272979; RELEASE_MIGRATION_RUN_35629422089_SUCCESS; exact project ref still pending"
     }
   },
   "workflows": {
@@ -149,7 +192,10 @@
         "ai_features",
         "floorplan"
       ],
-      "callTypes": ["WAITER", "BILL"],
+      "callTypes": [
+        "WAITER",
+        "BILL"
+      ],
       "routeContract": "docs/MATRIZ-RUTAS.md",
       "verificationCommands": [
         "npm ci --ignore-scripts",
@@ -162,12 +208,13 @@
         "npm run build:postgres",
         "npm audit --omit=dev --audit-level=high",
         "npm run dev"
-      ]
+      ],
+      "status": "SECONDARY_VARIANT_PRESERVED_NOT_ACTIVE_IN_THIS_RELEASE"
     },
     "full": {
-      "branch": "codex/servicio-remediacion",
-      "productionReleaseSha": "7c38bd526cf39c2162f399160f6aa12792eccd50",
-      "tipAtManifestGeneration": "7c38bd526cf39c2162f399160f6aa12792eccd50",
+      "branch": "main",
+      "productionReleaseSha": "475e9870fef3985613cb9f8df6ac89d61f814e06",
+      "tipAtManifestGeneration": "475e9870fef3985613cb9f8df6ac89d61f814e06",
       "allowedCapabilities": [
         "configurable_table_ordering",
         "configurable_collaborative_cart",
@@ -202,22 +249,22 @@
     }
   },
   "releaseProcedure": [
-    "Checkout exactly one canonical branch and record git rev-parse HEAD.",
-    "Confirm a clean worktree and compare the candidate SHA with this manifest.",
-    "Run the workflow-specific local gates and the LAN smoke test from that same checkout.",
-    "Perform independent review of the diff, route contract, security boundaries, and migrations.",
-    "Commit the approved change on the canonical branch; do not deploy from main or a historical worktree.",
-    "Deploy all four Vercel projects from the same approved SHA and record their deployment IDs.",
-    "Apply the Supabase migration/backup procedure for the same release and record the exact project ref outside source code.",
+    "Use only the existing mdpmesasvivas checkout on main; do not create parallel worktrees or branches for MesaYA work.",
+    "Record git rev-parse HEAD; keep tracked changes clean before deployment and preserve user-owned untracked documents.",
+    "Run the workflow-specific tests, builds, route/schema checks, and required browser/LAN smoke tests from that checkout.",
+    "Review the complete diff, route contract, security boundaries, and migrations before release.",
+    "Commit and push the approved change on main; finish the task on main.",
+    "Deploy the four Vercel projects sequentially from the same verified main SHA and record deployment IDs; note when the CLI does not attach Git source metadata.",
+    "Apply Supabase changes only through the reviewed release migration workflow; never use db push or seed against production, and keep the exact project ref out of source code.",
     "Verify cloud health, CORS, QR/NFC traversal, waiter calls, accounts, kitchen, tickets, settlement, and module flags.",
     "Update this manifest only after the release evidence is available."
   ],
   "historicalArtifacts": [
     {
       "kind": "branch_and_checkout",
-      "name": "main",
-      "checkout": "mdpmesasvivas",
-      "status": "historical; preserve current dirty user changes; do not deploy"
+      "name": "codex/servicio-remediacion",
+      "checkout": "mdpmesasvivas-remediacion-20260921",
+      "status": "historical candidate integrated into main at ca4e7df; retained, do not deploy directly"
     },
     {
       "kind": "branch_and_checkout",
@@ -273,24 +320,27 @@
   ],
   "dependencyInventory": {
     "activeRepositoryAutomation": [
-      ".github/workflows/e22-postgres-load.yml filters codex/servicio-remediacion"
+      ".github/workflows/ci.yml runs for main pushes and pull requests",
+      ".github/workflows/e22-postgres-load.yml is manually dispatchable and its selective push trigger now targets main"
     ],
     "historicalDocumentReferences": [
       "docs/produccion and older implementation reports contain historical branch names; they are not release instructions",
       "this manifest supersedes stale branch labels in historical topology documents"
     ],
-    "vercelProductionDeployments": "VERIFIED_READY; all four manually deployed from codex/servicio-remediacion source SHA 7c38bd5",
-    "vercelHistoricalRefDeploymentSearch": "0 deployments returned for all listed historical refs and codex/solo-mozos",
+    "vercelProductionDeployments": "VERIFIED_READY; all four deployed sequentially from main checkout SHA 475e987 and HTTPS-smoked; Vercel gitSource is null because CLI deploy was used",
+    "vercelHistoricalRefDeploymentSearch": "Historical ref search predates the 2026-09-23 main release; current production deployments are CLI-sourced and gitSource is null",
     "vercelPreviewBranchTriggers": "PENDING_LIVE_INVENTORY",
     "vercelProductionEnvironmentKeys": "INVENTORIED_BY_NAME_ONLY; no branch-specific keys found",
-    "supabaseEnvironmentDependencies": "REMOTE_SCHEMA_READONLY_VERIFIED; exact project ref, backup/restore and hardening pending",
-    "remoteBranchDeletion": "NOT_PERFORMED; no remote push or destructive ref deletion executed",
+    "supabaseEnvironmentDependencies": "REMOTE_SCHEMA_READONLY_VERIFIED; backup/restore drill and release migration passed; exact project ref still pending",
+    "remoteBranchDeletion": "NOT_PERFORMED; main commits pushed to origin; no remote refs deleted",
     "localHistoricalDeletion": "NOT_PERFORMED; dirty historical worktrees retained to preserve user changes"
   },
   "cleanupPolicy": {
-    "canonicalBranchCount": 2,
-    "canonicalBranches": ["codex/solo-mozos", "codex/servicio-remediacion"],
-    "historicalBranchesAndCheckouts": "retain_until_dependency_inventory_is_complete",
+    "canonicalBranchCount": 1,
+    "canonicalBranches": [
+      "main"
+    ],
+    "historicalBranchesAndCheckouts": "preserve until dependency inventory is complete; do not use for concurrent MesaYA work",
     "deletionRequires": [
       "verify no Vercel project is connected to the target branch",
       "verify no deployment or environment documentation depends on the target checkout",

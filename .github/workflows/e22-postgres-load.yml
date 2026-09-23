@@ -1,12 +1,12 @@
 # E22 — carga funcional sobre PostgreSQL efímero, separada de producción.
-# Este workflow es manual y no usa secretos, Supabase ni Vercel.
+# Este workflow se ejecuta manualmente o por cambios de carga en main; no usa secretos, Supabase ni Vercel.
 name: e22-postgres-load
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - codex/servicio-remediacion
+      - main
     paths:
       - '.github/workflows/e22-postgres-load.yml'
       - 'packages/api/prisma/seed.ts'
