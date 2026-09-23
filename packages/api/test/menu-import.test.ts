@@ -42,7 +42,7 @@ vi.mock('../src/lib/prisma', () => ({
       delete: (...args: unknown[]) => mocks.itemDelete(...args),
       deleteMany: (...args: unknown[]) => mocks.itemDeleteMany(...args)
     },
-    $transaction: (fn: any) => mocks.transaction(fn)
+    $transaction: (fn: any, options?: unknown) => mocks.transaction(fn, options)
   }
 }));
 
@@ -139,6 +139,10 @@ describe('E01 — Importación de Menú Idempotente, No Destructiva y con dryRun
       expect(json.summary.itemsCreated).toBe(3);
       expect(json.summary.itemsUpdated).toBe(0);
       expect(json.summary.itemsDeactivated).toBe(0);
+      expect(mocks.transaction).toHaveBeenCalledWith(
+        expect.any(Function),
+        { maxWait: 10_000, timeout: 60_000 }
+      );
 
       // Invariante E01: CERO llamadas a delete o deleteMany
       expect(mocks.categoryDelete).not.toHaveBeenCalled();
