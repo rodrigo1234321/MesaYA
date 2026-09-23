@@ -464,8 +464,13 @@ export class MenuImportService {
       return runSync(prisma);
     }
 
+    // Fauno imports a full catalog in one atomic transaction. On a remote
+    // Supabase pooler, 144 sequential catalog writes can exceed Prisma's
+    // 5-second interactive-transaction default even though the work is healthy.
+    // Keep the all-or-nothing guarantee while allowing a bounded production
+    // window that fits within the Free Vercel function limit.
     return prisma.$transaction(async (tx) => {
       return runSync(tx);
-    });
+    }, { maxWait: 10_000, timeout: 60_000 });
   }
 }
