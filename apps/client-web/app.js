@@ -531,7 +531,9 @@ async function getDeviceCoordinates() {
 }
 
 // Fetch with automatic retry
-async function fetchWithRetry(url, options = {}, retries = 2, timeoutMs = 3000) {
+// Default 15000ms: production GETs measured 3.59-4.34s (sessions) and 8.73s
+// (orders/session) via remote Vercel-to-Supabase cold/query latency.
+async function fetchWithRetry(url, options = {}, retries = 2, timeoutMs = 15000) {
   for (let i = 0; i < retries; i++) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
