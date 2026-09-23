@@ -188,8 +188,10 @@ describe('Global Error Sanitization (P0-05, R02)', () => {
     // NO debe exponer el contenido inseguro de error
     expect(body.error).not.toContain('FAKE_REVIEW_ONLY');
     expect(body.error).not.toContain('password');
-    // Debe caer a fallback seguro o coincidir con publicCode
-    expect(body.error).toBe('BAD_REQUEST');
+    // Debe caer a un mensaje canónico legible; el identificador va en `code`.
+    expect(body.error).toBe('Solicitud incorrecta');
+    expect(body.message).toBe('Solicitud incorrecta');
+    expect(body.code).toBe('BAD_REQUEST');
   });
 
   it('extraFields no puede sobrescribir campos del contrato ni inyectar claves arbitrarias', async () => {
@@ -387,7 +389,27 @@ describe('Global Error Sanitization (P0-05, R02)', () => {
     expect(response.body).not.toContain('example.invalid');
     // Deben recibir mensajes canónicos seguros
     expect(body.message).toBe('Error en la solicitud');
-    expect(body.error).toBe('BAD_REQUEST');
+    expect(body.error).toBe('Error en la solicitud');
+  });
+
+  it('mantiene el código registrado y el mensaje legible del contrato público', async () => {
+    const app = await buildApp();
+
+    app.get('/test-registered-code', async (_req, reply) => {
+      const err = Object.assign(new Error('La cuenta cambió; actualizá el resumen antes de cobrar.'), {
+        statusCode: 409,
+        code: 'STALE_ACCOUNT_VERSION'
+      });
+      return sendSanitizedError(reply, err);
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/test-registered-code' });
+
+    expect(response.statusCode).toBe(409);
+    const body = JSON.parse(response.body);
+    expect(body.code).toBe('STALE_ACCOUNT_VERSION');
+    expect(body.error).toBe('La cuenta cambió; actualizá el resumen antes de cobrar.');
+    expect(body.message).toBe(body.error);
   });
 
   it('P1-REPRO: rechaza codigos no registrados en el contrato publico asignando el canonico', async () => {
@@ -409,6 +431,35 @@ describe('Global Error Sanitization (P0-05, R02)', () => {
     const body = JSON.parse(response.body);
     expect(body.code).toBe('BAD_REQUEST');
     expect(body.message).toBe('Error en la solicitud');
+  });
+
+  it('bloquea loopback, localhost, link-local y hosts internos en messages y details', async () => {
+    const app = await buildApp();
+
+    app.get('/test-internal-hosts', async (_req, reply) => {
+      const err = Object.assign(new Error('No se pudo conectar a http://localhost:3000/health'), {
+        statusCode: 400,
+        details: {
+          metadataEndpoint: 'http://169.254.169.254/latest/meta-data',
+          loopbackEndpoint: 'http://[::1]:5432/health',
+          localDomain: 'https://api.localhost/private',
+          publicUrl: 'https://example.com/help',
+          tableId: 'mesa-01'
+        }
+      });
+      return sendSanitizedError(reply, err);
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/test-internal-hosts' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).not.toContain('localhost');
+    expect(response.body).not.toContain('169.254.169.254');
+    expect(response.body).not.toContain('::1');
+    expect(response.body).not.toContain('example.com');
+    const body = JSON.parse(response.body);
+    expect(body.message).toBe('Error en la solicitud');
+    expect(body.details).toEqual({ tableId: 'mesa-01' });
   });
 
   it('P1-REAL-ROUTE: ruta real del servidor Fastify procesa error a traves del error handler global', async () => {

@@ -103,7 +103,8 @@ describe('Etapa 26 (corrección) — CAS en vía rápida y rutas HTTP reales', (
     });
     expect(stale.statusCode).toBe(409);
     const body = JSON.parse(stale.body);
-    expect(body.error).toBe('LAYOUT_VERSION_CONFLICT');
+    expect(body.code).toBe('LAYOUT_VERSION_CONFLICT');
+    expect(body.error).toContain('El plano cambió desde tu última carga');
     expect(body.details.currentVersion).toBe(base.layout.version + 1);
 
     const kept = await prisma.table.findUniqueOrThrow({ where: { id: tableId } });
@@ -144,7 +145,8 @@ describe('Etapa 26 (corrección) — CAS en vía rápida y rutas HTTP reales', (
       }
     });
     expect(conflict.statusCode).toBe(409);
-    expect(JSON.parse(conflict.body).error).toBe('LAYOUT_VERSION_CONFLICT');
+    expect(JSON.parse(conflict.body).code).toBe('LAYOUT_VERSION_CONFLICT');
+    expect(JSON.parse(conflict.body).error).toContain('El plano cambió desde tu última carga');
 
     const badZone = await app.inject({
       method: 'PUT',
@@ -155,7 +157,8 @@ describe('Etapa 26 (corrección) — CAS en vía rápida y rutas HTTP reales', (
       }
     });
     expect(badZone.statusCode).toBe(404);
-    expect(JSON.parse(badZone.body).error).toBe('ZONE_NOT_FOUND');
+    expect(JSON.parse(badZone.body).code).toBe('ZONE_NOT_FOUND');
+    expect(JSON.parse(badZone.body).error).toContain('Una o más zonas no pertenecen a este restaurante.');
 
     const kept = await prisma.table.findUniqueOrThrow({ where: { id: tableId } });
     expect(kept.posX).toBe(51);

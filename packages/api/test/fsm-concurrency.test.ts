@@ -109,7 +109,8 @@ describe('Etapa 11 — Concurrencia real FSM con SQLite efímera', () => {
     expect(successBody.newState).toBe(TableFSMState.OCCUPIED_NO_ORDER);
 
     const conflictBody = conflictRes.json();
-    expect(conflictBody.error).toBe('STATE_CONFLICT');
+    expect(conflictBody.code).toBe('STATE_CONFLICT');
+    expect(conflictBody.error).toContain('Conflicto de concurrencia');
     expect(conflictBody.message).toContain('Conflicto de concurrencia');
 
     const finalTable = await prisma.table.findUnique({ where: { id: table.id } });

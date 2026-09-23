@@ -5,7 +5,6 @@
  * audita el conteo de `any`, verifica hooks de React y falla si la deuda no controlada crece.
  */
 import { execSync } from 'child_process';
-import { writeFileSync } from 'fs';
 
 console.log('🔍 Ejecutando auditoría de deuda técnica y linting...');
 

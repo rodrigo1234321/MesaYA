@@ -326,7 +326,8 @@ describe('Etapa 11 — Autorizar plano y transiciones FSM', () => {
 
     expect(staleTap.statusCode).toBe(409);
     const body = JSON.parse(staleTap.body);
-    expect(body.error).toBe('STATE_CONFLICT');
+    expect(body.code).toBe('STATE_CONFLICT');
+    expect(body.error).toContain('Conflicto de concurrencia');
     expect(mocks.handleTapAction).toHaveBeenCalledWith(
       'table-a1',
       'next',

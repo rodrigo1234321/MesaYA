@@ -176,8 +176,64 @@ export const KNOWN_PUBLIC_DOMAIN_CODES = new Set<string>([
   'INSUFFICIENT_REWARD_POINTS',
   'REWARDS_DISABLED',
   'GEOFENCE_EXCEEDED',
-  'GUEST_NAME_TOO_LONG'
+  'GUEST_NAME_TOO_LONG',
+
+  // Códigos de dominio emitidos por otros servicios y contratos compartidos.
+  // Mantenerlos registrados conserva los mensajes accionables sin aceptar códigos arbitrarios.
+  'CANCELLATION_REASON_REQUIRED',
+  'CAPABILITY_NOT_AVAILABLE',
+  'CLOSE_CONFLICT',
+  'CLOSE_REQUIRES_FULL_SETTLEMENT',
+  'CONCURRENCY_CONFLICT',
+  'COVERAGE_EXCEEDS_SESSION_CONSUMPTION',
+  'COVERAGE_EXCEEDS_TOTAL',
+  'DELIVERY_UNDO_EXPIRED',
+  'DELIVERY_UNDO_UNAVAILABLE',
+  'DIGITAL_METHOD_UNAVAILABLE',
+  'FEEDBACK_ALREADY_EXISTS',
+  'FISCAL_DOC_ALREADY_EXISTS',
+  'FORBIDDEN_LEGACY_ROUTE',
+  'FORCE_REASON_REQUIRED',
+  'INVALID_FISCAL_COVERAGE',
+  'INVALID_FISCAL_DOC',
+  'INVALID_IDEMPOTENCY_KEY',
+  'INVALID_MENU_ITEM_ID',
+  'INVALID_ORDER_ITEM_ID',
+  'INVALID_PAYLOAD',
+  'INVALID_PREORDER',
+  'INVALID_SERVICE_ACTION',
+  'INVALID_SERVICE_TASK',
+  'INVALID_SETTLE_REQUEST',
+  'INVALID_SUBMIT_KEY',
+  'ITEM_ALREADY_PAID',
+  'NOTHING_TO_SETTLE',
+  'ORDER_NOT_FOUND',
+  'ORDER_NOT_REVIEWABLE',
+  'ORDER_REVIEW_CONFLICT',
+  'OVERPAYMENT',
+  'OVERPAYMENT_NOT_ALLOWED',
+  'PIN_INVALID',
+  'REJECTION_REASON_REQUIRED',
+  'ROTATION_CONFLICT',
+  'SERVICE_ACTION_NOT_SUPPORTED',
+  'SETTLE_CONFLICT',
+  'SETTLE_CLOSURE_INCOMPLETE',
+  'STAFF_ACTOR_REQUIRED',
+  'STALE_ACCOUNT_VERSION',
+  'STALE_SESSION_CONFLICT',
+  'SUBMIT_CONFLICT',
+  'SUBMIT_KEY_REUSED',
+  'TABLE_STATE_NOT_ORDERABLE',
+  'TASK_ALREADY_CLAIMED',
+  'TASK_RELEASE_FORBIDDEN',
+  'TASK_RESOLVE_FORBIDDEN',
+  'WAITLIST_ENTRY_NOT_FOUND'
 ]);
+
+// Redes privadas, loopback y link-local que nunca deben aparecer en errores públicos.
+const PRIVATE_NETWORK_ADDRESS_PATTERN = /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3})\b|(?:\[\s*::1\s*\]|(?<![A-Za-z0-9:])::1(?![A-Fa-f0-9:]))/i;
+const INTERNAL_HOSTNAME_PATTERN = /\b(?:localhost|[\w.-]+\.(?:internal|local|lan|private|corp|intranet|invalid|localhost|test))\b/i;
+const URL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/i;
 
 // Patrones estrictos que bloquean cualquier contenido inseguro, de infraestructura, URLs o secretos
 const UNSAFE_MESSAGE_PATTERNS = [
@@ -190,12 +246,12 @@ const UNSAFE_MESSAGE_PATTERNS = [
   /at (?:[a-zA-Z0-9_$.]+ )?\(?.*:\d+:\d+\)?/, // Stack traces 'at Module (file:line:col)'
   /[\r\n]/,                 // Múltiples líneas
   /prisma|foreign key|unique constraint|syntax error|database|column .* does not exist|table .* does not exist|invalid .* invocation/i,
-  // IPs privadas o internas (10.x, 172.16-31.x, 192.168.x, 127.x)
-  /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/,
+  PRIVATE_NETWORK_ADDRESS_PATTERN,
   // URLs con credenciales embebidas (scheme://user:pass@host)
   /[a-z]+:\/\/[^/]*:[^/]*@/i,
   // Hostnames internos o de infraestructura
-  /\b[\w.-]+\.(?:internal|local|lan|private|corp|intranet|invalid)\b/i,
+  INTERNAL_HOSTNAME_PATTERN,
+  URL_PATTERN,
   // Rutas de archivos de infraestructura
   /(?:^|\s)[/\\](?:[\w.-]+[/\\]){2,}/i
 ];
@@ -212,7 +268,7 @@ export function isSafeDomainCode(code: unknown): code is string {
 
 /**
  * Valida si un mensaje es texto legible y seguro para el usuario final.
- * - Sin saltos de línea, sin stack traces, sin signos '=', sin URLs, sin IPs internas ni secrets.
+ * - Sin saltos de línea, stack traces, URLs, direcciones internas ni secretos.
  * - Longitud máxima razonable (< 250 chars).
  */
 export function isSafePublicMessage(msg: unknown): msg is string {
@@ -246,12 +302,11 @@ function isSensitiveDetailValue(val: unknown): boolean {
     if (/password|secret|token|hash|api_key|database_url/i.test(val)) return true;
     // Connection URIs (postgres://, mysql://, mongodb://, redis://, sqlite:, amqp://, etc.)
     if (/(?:postgres|mysql|mongodb|redis|sqlite|amqp|mariadb|mssql)(?:ql)?:\/?\//i.test(val)) return true;
+    if (URL_PATTERN.test(val)) return true;
     // Any URL with embedded credentials (scheme://user:pass@host)
     if (/[a-z]+:\/\/[^/]*:[^/]*@/i.test(val)) return true;
-    // Private/internal IP addresses (10.x, 172.16-31.x, 192.168.x, 127.x)
-    if (/\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/.test(val)) return true;
-    // Internal hostnames (.internal, .local, .lan, .private, .corp, .intranet, .invalid)
-    if (/\b[\w.-]+\.(?:internal|local|lan|private|corp|intranet|invalid)\b/i.test(val)) return true;
+    if (PRIVATE_NETWORK_ADDRESS_PATTERN.test(val)) return true;
+    if (INTERNAL_HOSTNAME_PATTERN.test(val)) return true;
     // File system paths (Unix or Windows)
     if (/(?:^|\s)[/\\](?:[\w.-]+[/\\]){2,}/i.test(val)) return true;
   }
@@ -369,21 +424,13 @@ export function buildSanitizedErrorPayload(
     ? rawMessage
     : (CANONICAL_STATUS_MESSAGES[statusCode] || 'Error en la solicitud');
 
-  let publicError: string;
-  if (isSafeDomainCode(errObj.error)) {
-    publicError = errObj.error.trim();
-  } else if (errObj.error === publicCode) {
-    publicError = publicCode;
-  } else {
-    publicError = publicCode;
-  }
-
   const sanitizedDetails = isUnregisteredCode ? undefined : sanitizeDetails(errObj.details);
   const safeExtra = sanitizeExtraFields(extraFields);
 
   const payload: SanitizedErrorResponse = {
     code: publicCode,
-    error: publicError,
+    // Keep the legacy `error` field user-readable; `code` is the machine identifier.
+    error: publicMessage,
     message: publicMessage,
     statusCode,
     requestId,
