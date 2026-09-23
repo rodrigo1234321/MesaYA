@@ -9,7 +9,7 @@
         "branch": "main",
         "role": "MesaYA completo; unica linea activa de trabajo y produccion",
         "localCheckout": "mdpmesasvivas",
-        "tipAtManifestGeneration": "475e9870fef3985613cb9f8df6ac89d61f814e06"
+        "tipAtManifestGeneration": "2b0570b5710662b6a7f45a021f04a037c174d540"
       }
     },
     "productionRelease": {
@@ -214,7 +214,7 @@
     "full": {
       "branch": "main",
       "productionReleaseSha": "475e9870fef3985613cb9f8df6ac89d61f814e06",
-      "tipAtManifestGeneration": "475e9870fef3985613cb9f8df6ac89d61f814e06",
+      "tipAtManifestGeneration": "2b0570b5710662b6a7f45a021f04a037c174d540",
       "allowedCapabilities": [
         "configurable_table_ordering",
         "configurable_collaborative_cart",
@@ -246,6 +246,20 @@
         "npm run smoke:serverless",
         "npm run dev"
       ]
+    },
+    "mainCi": {
+      "runId": "35821537906",
+      "headSha": "2b0570b5710662b6a7f45a021f04a037c174d540",
+      "status": "PASS",
+      "jobs": ["build-and-test", "postgres"]
+    },
+    "e22PostgresLoad": {
+      "runId": "35821537927",
+      "headSha": "2b0570b5710662b6a7f45a021f04a037c174d540",
+      "sourceReleaseSha": "475e9870fef3985613cb9f8df6ac89d61f814e06",
+      "status": "PASS",
+      "profileResults": {"read": "PASS", "flow": "PASS"},
+      "database": "ephemeral PostgreSQL service; production data not touched"
     }
   },
   "releaseProcedure": [
