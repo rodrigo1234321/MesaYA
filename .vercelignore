@@ -9,6 +9,7 @@ build
 **/build
 screenshots
 docs
+ERRORES_MESAYA_COMPLETO.md
 *.db
 *.sqlite
 .env
