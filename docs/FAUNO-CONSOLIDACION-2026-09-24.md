@@ -29,6 +29,16 @@ Cada agente recibe una ficha con un único dueño de archivos, una pregunta veri
 
 Las fichas de producción se ejecutan en este orden: medición → cambio pequeño → pruebas locales → preview/deploy → smoke autenticado → revisión independiente → promoción. Si un agente queda sin cuota, el integrador continúa con el mismo contrato y deja la tarea marcada como no ejecutada; no se presenta una respuesta del agente como evidencia.
 
+## Cierre verificado después de la implementación
+
+- Código en `main` actualizado a `c6b489d` y publicado en `origin/main`.
+- API Fauno: deployment `dpl_AbxNf623BSWnhtavXyhQjfWwfqow`, fuente de código `1f79ff7`, estado `Ready`, región `gru1`, alias de producción activo.
+- Staff: deployment `dpl_EJzoUc3siV1oedDu6AwtoSR3Pmg5`, fuente `c6b489d`, estado `Ready`, alias de producción activo.
+- Admin: deployment `dpl_EKHfwt5NHrHVhTgbXg5NczUZe3cv`, estado `Ready`, alias de producción activo. Cliente: deployment `dpl_BwSGTHWvcaaSXQPdTKqmLASPmg36`, estado `Ready`.
+- Smoke autenticado repetido contra producción: admin y staff HTTP 200; mesas, plano y workspace HTTP 200; muestras recientes entre aproximadamente 100 y 630 ms por petición desde este entorno.
+- Flujo real controlado en Mesa 8 (sin tocar Mesa 1): dos clientes agregaron productos con nombres de participante distintos al mismo carrito, la comanda se envió y el mozo la validó; la cuenta apareció en Caja/Servicio; se liquidó en dos partes iguales de 520000 centavos, el saldo terminó en cero y repetir la segunda clave devolvió replay idempotente HTTP 200. La sesión se cerró y la mesa se devolvió a `AVAILABLE`.
+- El flujo anterior usa efectivo presencial de prueba; no se ejecutaron cobros digitales ni se inventaron precios. Los ítems elegidos fueron productos disponibles de la carta real.
+
 ## Criterios de cierre
 
 - Staff y admin mantienen sesión ante fallos transitorios y se recuperan; autenticación inválida pide PIN.
