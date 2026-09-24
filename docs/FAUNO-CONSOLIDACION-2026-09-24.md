@@ -31,7 +31,7 @@ Las fichas de producción se ejecutan en este orden: medición → cambio peque�
 
 ## Cierre verificado después de la implementación
 
-- Código en `main` actualizado a `c6b489d` y publicado en `origin/main`.
+- Código funcional en `main` actualizado a `c6b489d`; documentación/evidencia final en `90a8378`, ambos publicados en `origin/main`.
 - API Fauno: deployment `dpl_AbxNf623BSWnhtavXyhQjfWwfqow`, fuente de código `1f79ff7`, estado `Ready`, región `gru1`, alias de producción activo.
 - Staff: deployment `dpl_EJzoUc3siV1oedDu6AwtoSR3Pmg5`, fuente `c6b489d`, estado `Ready`, alias de producción activo.
 - Admin: deployment `dpl_EKHfwt5NHrHVhTgbXg5NczUZe3cv`, estado `Ready`, alias de producción activo. Cliente: deployment `dpl_BwSGTHWvcaaSXQPdTKqmLASPmg36`, estado `Ready`.
