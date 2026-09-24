@@ -191,7 +191,9 @@ export const ServiceWorkspace: React.FC<ServiceWorkspaceProps> = ({
     if (syncSnapshot !== undefined) {
       setSnapshot(syncSnapshot);
       setLoading(syncLoading ?? false);
-      if (syncError !== undefined) setError(syncError);
+      // Keep this banner aligned with the shared sync state; action errors are
+      // tracked separately in actionError and remain visible independently.
+      setError(syncError ?? null);
     }
   }, [syncSnapshot, syncLoading, syncError]);
   const [filter, setFilter] = useState<TaskFilter>('ALL');

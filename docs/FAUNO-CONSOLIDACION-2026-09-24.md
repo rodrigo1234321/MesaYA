@@ -23,6 +23,12 @@ Conservar la carta y funciones actuales de Fauno, con enlaces de mesas, un staff
 5. Integrador/revisor: pruebas enfocadas, builds secuenciales, revisión independiente, despliegues y mediciones comparables. Verificar 8 enlaces, dos clientes en una mesa de prueba, carrito, cuenta/split y visibilidad de mozo.
 6. Consolidación: publicar un mapa único de enlaces; redirigir accesos históricos a Fauno y suspender operación duplicada reversible después de verificar recuperación y dependencias. No borrar proyectos/base como atajo.
 
+## Contrato para agentes y prompts
+
+Cada agente recibe una ficha con un único dueño de archivos, una pregunta verificable y un límite de mutación. El prompt debe exigir: leer el estado actual antes de editar, no tocar secretos ni otra instalación, no crear proyectos, no cambiar datos reales sin una prueba previa, ejecutar una prueba enfocada y devolver archivos, SHA, resultado y pendientes. El revisor recibe el diff y la evidencia, no el resumen del implementador, y debe poder rechazar la ficha por una regresión de aislamiento, autenticación, latencia o contabilidad.
+
+Las fichas de producción se ejecutan en este orden: medición → cambio pequeño → pruebas locales → preview/deploy → smoke autenticado → revisión independiente → promoción. Si un agente queda sin cuota, el integrador continúa con el mismo contrato y deja la tarea marcada como no ejecutada; no se presenta una respuesta del agente como evidencia.
+
 ## Criterios de cierre
 
 - Staff y admin mantienen sesión ante fallos transitorios y se recuperan; autenticación inválida pide PIN.
