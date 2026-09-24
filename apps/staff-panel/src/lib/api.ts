@@ -36,6 +36,11 @@ export const API_BASE = (
 ).replace(/\/$/, '');
 
 export class StaffApi {
+  static isUnauthorizedError(error: unknown): boolean {
+    const value = error as { statusCode?: number; code?: string } | null;
+    return value?.statusCode === 401 || value?.code === 'STAFF_UNAUTHORIZED';
+  }
+
   static getTerminalId(): string {
     const storageKey = 'mesaya_staff_terminal_id';
     if (typeof localStorage === 'undefined') return 'terminal-server';

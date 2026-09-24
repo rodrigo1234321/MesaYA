@@ -60,6 +60,16 @@ export const App: React.FC = () => {
   const loginFocusTrapRef = useFocusTrap(authRequired && restaurants.length > 0);
   const registerFocusTrapRef = useFocusTrap(publicOnboardingEnabled && showRegisterModal, () => setShowRegisterModal(false));
 
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setAuthRequired(true);
+      setTables([]);
+      setCurrentShift(null);
+    };
+    window.addEventListener('mesaya:admin-auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('mesaya:admin-auth-expired', handleAuthExpired);
+  }, []);
+
   const activeRestaurant = restaurants.find(r => r.slug === selectedSlug || r.id === selectedSlug) || {
     id: selectedSlug,
     slug: selectedSlug,
@@ -378,7 +388,9 @@ export const App: React.FC = () => {
               fallbackTitle="Error en Plano de Salón"
               fallbackMessage="Ocurrió un problema al cargar el editor de plano interactivo. Puedes reintentar."
             >
-              <FloorPlanManager restaurantSlug={selectedSlug} refreshKey={floorPlanRefreshKey} />
+              {selectedSlug && !authRequired && AdminApi.getAuthToken() ? (
+                <FloorPlanManager restaurantSlug={selectedSlug} refreshKey={floorPlanRefreshKey} />
+              ) : null}
             </ErrorBoundary>
           </div>
         )}

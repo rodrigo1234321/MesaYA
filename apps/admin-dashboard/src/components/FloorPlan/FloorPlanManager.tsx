@@ -48,6 +48,11 @@ export const FloorPlanManager: React.FC<FloorPlanManagerProps> = ({ restaurantSl
 
   // 2. Fetch initial floor plan layout from REST API
   const loadFloorPlan = async () => {
+    if (!restaurantSlug) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -59,6 +64,11 @@ export const FloorPlanManager: React.FC<FloorPlanManagerProps> = ({ restaurantSl
   };
 
   useEffect(() => {
+    if (!restaurantSlug) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     loadFloorPlan();
   }, [restaurantSlug, refreshKey]);
 

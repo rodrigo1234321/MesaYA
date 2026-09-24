@@ -1,6 +1,7 @@
 {
   "version": 2,
   "framework": null,
+  "regions": ["gru1"],
   "outputDirectory": "public",
   "functions": {
     "api/index.ts": {

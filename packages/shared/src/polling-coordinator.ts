@@ -46,6 +46,11 @@ export interface PollingCoordinatorOptions<T> {
   maxBackoffMs?: number;
 
   /**
+   * Tiempo máximo de espera de cada request (ms). Default: 15000.
+   */
+  requestTimeoutMs?: number;
+
+  /**
    * Función inyectable que indica si la pestaña/ventana está oculta.
    * En producción se conecta a `document.hidden`. En tests se puede
    * inyectar un stub que siempre devuelva false.
@@ -67,6 +72,7 @@ export class PollingCoordinator<T> {
   private _onAuthError: PollingCoordinatorOptions<T>['onAuthError'];
   private _intervalMs: number;
   private _maxBackoffMs: number;
+  private _requestTimeoutMs: number;
   private _isHidden: () => boolean;
   private _isAuthError: (err: unknown) => boolean;
 
@@ -76,6 +82,7 @@ export class PollingCoordinator<T> {
   private _isPollingBusy = false;
   private _failures = 0;
   private _pollingTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _requestTimeout: ReturnType<typeof setTimeout> | null = null;
   private _abortController: AbortController | null = null;
 
   constructor(options: PollingCoordinatorOptions<T>) {
@@ -85,6 +92,7 @@ export class PollingCoordinator<T> {
     this._onAuthError = options.onAuthError;
     this._intervalMs = options.intervalMs ?? 3000;
     this._maxBackoffMs = options.maxBackoffMs ?? 15000;
+    this._requestTimeoutMs = options.requestTimeoutMs ?? 15000;
     this._isHidden = options.isHidden ?? (() => false);
     this._isAuthError = options.isAuthError ?? ((err: unknown) => {
       const e = err as any;
@@ -175,6 +183,10 @@ export class PollingCoordinator<T> {
       clearTimeout(this._pollingTimeout);
       this._pollingTimeout = null;
     }
+    if (this._requestTimeout) {
+      clearTimeout(this._requestTimeout);
+      this._requestTimeout = null;
+    }
     if (this._abortController) {
       this._abortController.abort();
       this._abortController = null;
@@ -208,9 +220,31 @@ export class PollingCoordinator<T> {
     const currentSeq = ++this._requestSeq;
     const controller = new AbortController();
     this._abortController = controller;
+    let timedOut = false;
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
     try {
-      const data = await this._fetchFn(currentIdentifier, controller.signal);
+      const request = this._fetchFn(currentIdentifier, controller.signal);
+      const cancelled = new Promise<never>((_, reject) => {
+        controller.signal.addEventListener('abort', () => {
+          if (!timedOut) {
+            const error = new Error('Request aborted');
+            error.name = 'AbortError';
+            reject(error);
+          }
+        }, { once: true });
+      });
+      const timed = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          const error = new Error(`Polling request timed out after ${this._requestTimeoutMs}ms`);
+          error.name = 'RequestTimeoutError';
+          reject(error);
+          controller.abort();
+        }, this._requestTimeoutMs);
+        this._requestTimeout = timeoutHandle;
+      });
+      const data = await Promise.race([request, cancelled, timed]);
 
       // Respuesta desfasada: el identificador cambió o la seq fue superada
       if (currentSeq !== this._requestSeq || currentIdentifier !== this._activeIdentifier) {
@@ -245,6 +279,10 @@ export class PollingCoordinator<T> {
         Math.random() * 1000;
       this._scheduleNextPoll(backoff);
     } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+        if (this._requestTimeout === timeoutHandle) this._requestTimeout = null;
+      }
       if (currentSeq === this._requestSeq) {
         this._isPollingBusy = false;
         this._abortController = null;

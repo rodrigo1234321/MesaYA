@@ -40,7 +40,8 @@ export interface UseServiceSyncResult {
 export function useServiceSync(
   restaurantId: string | null,
   enabled: boolean = true,
-  onNewCall?: (call: CallEventData) => void
+  onNewCall?: (call: CallEventData) => void,
+  onAuthError?: () => void
 ): UseServiceSyncResult {
   const [connected, setConnected] = useState<boolean>(false);
   const [syncState, setSyncState] = useState<SyncConnectionState>('connecting');
@@ -52,6 +53,8 @@ export function useServiceSync(
   const knownTasksRef = useRef<Set<string>>(new Set());
   const onNewCallRef = useRef(onNewCall);
   onNewCallRef.current = onNewCall;
+  const onAuthErrorRef = useRef(onAuthError);
+  onAuthErrorRef.current = onAuthError;
 
   // Instancia única del coordinador de polling HTTP de @mesaya/shared
   const coordinatorRef = useRef<PollingCoordinator<ServiceWorkspaceDTO> | null>(null);
@@ -65,10 +68,7 @@ export function useServiceSync(
       intervalMs: 4000,
       maxBackoffMs: 15000,
       isHidden: () => typeof document !== 'undefined' && document.hidden,
-      isAuthError: (err: unknown) => {
-        const e = err as any;
-        return e?.statusCode === 401 || e?.code === 'STAFF_UNAUTHORIZED';
-      }
+      isAuthError: StaffApi.isUnauthorizedError
     });
   }
 
@@ -136,6 +136,7 @@ export function useServiceSync(
     setSyncState('auth_error');
     setLastError('Sesión o credencial expirada');
     StaffApi.lockOperator();
+    onAuthErrorRef.current?.();
   };
 
   // Reloj para cálculo de tiempo transcurrido desde el último éxito

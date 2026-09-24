@@ -916,14 +916,62 @@ export class OrderService {
         table: { restaurantId: restaurant.id },
         orders: { some: { status: { not: OrderStatus.CANCELLED } } }
       },
-      select: { id: true },
+      select: { id: true, tableId: true },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
     });
-    const accounts: SessionAccountDTO[] = [];
-    for (const session of sessions) {
-      accounts.push(await this.getSessionAccount(session.id));
+    if (sessions.length === 0) return [];
+
+    const sessionIds = sessions.map((session) => session.id);
+    const [orders, settlements] = await Promise.all([
+      prisma.order.findMany({
+        where: { tableSessionId: { in: sessionIds } },
+        include: {
+          items: {
+            include: { menuItem: { select: { name: true } } },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
+          },
+          payments: true
+        },
+        orderBy: [
+          { tableSessionId: 'asc' },
+          { createdAt: 'asc' },
+          { id: 'asc' }
+        ]
+      }),
+      prisma.accountSettlement.findMany({
+        where: { tableSessionId: { in: sessionIds }, status: 'SETTLED' },
+        include: {
+          allocations: { orderBy: { orderId: 'asc' } },
+          adjustments: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }
+        },
+        orderBy: [
+          { tableSessionId: 'asc' },
+          { createdAt: 'asc' },
+          { id: 'asc' }
+        ]
+      })
+    ]);
+
+    const ordersBySession = new Map<string, any[]>();
+    for (const order of orders) {
+      const sessionOrders = ordersBySession.get(order.tableSessionId) ?? [];
+      sessionOrders.push(order);
+      ordersBySession.set(order.tableSessionId, sessionOrders);
     }
-    return accounts;
+
+    const settlementsBySession = new Map<string, any[]>();
+    for (const settlement of settlements) {
+      const sessionSettlements = settlementsBySession.get(settlement.tableSessionId) ?? [];
+      sessionSettlements.push(settlement);
+      settlementsBySession.set(settlement.tableSessionId, sessionSettlements);
+    }
+
+    return sessions.map((session) => this.buildSessionAccount(
+      session.id,
+      session.tableId,
+      ordersBySession.get(session.id) ?? [],
+      settlementsBySession.get(session.id) ?? []
+    ));
   }
 
   /**

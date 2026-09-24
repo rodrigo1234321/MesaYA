@@ -75,9 +75,14 @@ export const App: React.FC = () => {
         slug: savedRestaurant?.slug || savedUser.restaurantId
       });
       StaffApi.getActiveCalls(savedUser.restaurantId)
-        .catch(() => {
-          StaffApi.lockOperator();
-          setCurrentUser(null);
+        .catch((error: any) => {
+          // Only a definitive 401 invalidates the saved operator. Network and
+          // server errors are retried by useServiceSync without losing identity.
+          if (StaffApi.isUnauthorizedError(error)) {
+            StaffApi.lockOperator();
+            setCurrentUser(null);
+            setPinModalOpen(true);
+          }
         });
     } else if (savedRestaurant) {
       setRestaurant(savedRestaurant);
@@ -125,7 +130,13 @@ export const App: React.FC = () => {
     refresh: refreshSync
   } = useServiceSync(
     activeRestaurantId,
-    Boolean(activeRestaurantId)
+    Boolean(activeRestaurantId),
+    undefined,
+    () => {
+      setCurrentUser(null);
+      setPinModalOpen(true);
+      setPendingAction(null);
+    }
   );
 
   const selectTab = (tab: ActiveTab) => {
@@ -165,6 +176,9 @@ export const App: React.FC = () => {
       });
     }
     setPinModalOpen(false);
+    // Re-start a coordinator stopped after a definitive 401, even when the
+    // restaurant identifier itself did not change during PIN re-entry.
+    void refreshSync();
     if (pendingAction?.action) {
       try {
         pendingAction.action();

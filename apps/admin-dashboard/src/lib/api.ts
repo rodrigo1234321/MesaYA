@@ -55,11 +55,21 @@ export class AdminApi {
   static async requireAuthorized(response: Response, fallback: string) {
     if (response.ok) return;
     const error = await response.json().catch(() => ({ error: fallback }));
-    if (response.status === 401 || response.status === 403) {
-      this.logout();
+    if (response.status === 401) {
+      this.handleUnauthorized();
       throw new Error('Tu sesión no tiene autorización para esta acción. Volvé a iniciar sesión.');
     }
+    if (response.status === 403) {
+      throw new Error(error.message || error.error || 'No tenés permisos para esta acción.');
+    }
     throw new Error(error.error || fallback);
+  }
+
+  static handleUnauthorized() {
+    this.logout();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('mesaya:admin-auth-expired'));
+    }
   }
   static getAuthToken(): string | null {
     return localStorage.getItem('mesaya_admin_token');
@@ -397,6 +407,7 @@ export class AdminApi {
       signal
     });
     if (res.status === 401) {
+      this.handleUnauthorized();
       const error: any = new Error('Sesión de administrador expirada');
       error.statusCode = 401;
       error.code = 'ADMIN_UNAUTHORIZED';
